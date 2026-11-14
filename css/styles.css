@@ -204,3 +204,14 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 .cal-advice { list-style: none; padding: 0; margin: 10px 0 0; display: grid; gap: 6px; }
 .cal-advice li.ok { color: var(--fg); }
 .cal-advice li.warn { color: var(--bad); font-weight: 500; }
+
+/* ---------- side panel show/hide (small screens only) ---------- */
+.panel-toggle { display: none; }
+@media (max-width: 860px) {
+  .panel-toggle {
+    display: block; width: 100%; text-align: left; border: 0; background: transparent;
+    font-weight: 600; padding: 2px 0 10px; color: var(--accent);
+  }
+  #sidePanel.collapsed .panel-toggle { padding-bottom: 0; }
+  #sidePanel.collapsed #sidePanelBody { display: none; }
+}

@@ -44,7 +44,7 @@ let lastResult = null;
 let arrowIndex = 0;
 
 const engine = new AudioEngine();
-const player = new Player(engine);
+const player = new Player();
 const meter = new Meter($('liveTuner'));
 const DEBUG_MODE = new URLSearchParams(location.search).get('debug'); // 'synth' | 'capture' | other
 const DEBUG = DEBUG_MODE != null;
@@ -98,6 +98,10 @@ function syncForm() {
   $('calInfo').textContent = describeCalibration(loadCalibration(s.instrument), INSTRUMENTS[s.instrument].name);
   $('saveItemBtn').hidden = !editingId;
   $('addBtn').textContent = editingId ? 'Add as new' : 'Add to my list';
+  // name field: empty means "use the automatic name", shown as the placeholder
+  const editing = editingId && list.find((x) => x.id === editingId);
+  $('o-itemName').placeholder = autoName(s);
+  if (document.activeElement !== $('o-itemName')) $('o-itemName').value = editing && !editing.autoName ? editing.name : '';
 }
 
 form.addEventListener('change', (e) => {
@@ -336,7 +340,7 @@ $('playBtn').addEventListener('click', async () => {
   if (player.playing) { stopPlayback(); return; }
   if (!exercise.ok) return;
   stopSession(true);
-  engine.unlock('playback'); // must happen inside the tap (iOS)
+  player.prime(); // must happen inside the tap (iOS)
   $('playBtn').textContent = '■ Stop';
   setStatus('Preparing the sound…');
   await new Promise((r) => setTimeout(r, 30)); // let the message show before the sound is rendered
@@ -457,7 +461,9 @@ function listAction(act, item, idx) {
 }
 
 $('addBtn').addEventListener('click', () => {
-  const item = makeItem(settings, autoName(settings));
+  const typed = $('o-itemName').value.trim().slice(0, 120);
+  const item = makeItem(settings, typed || autoName(settings), !typed);
+  $('o-itemName').value = '';
   list.push(item);
   activeId = item.id;
   editingId = null;
@@ -472,7 +478,10 @@ $('saveItemBtn').addEventListener('click', () => {
   const item = list.find((x) => x.id === editingId);
   if (!item) return;
   item.settings = compactSettings(settings);
-  if (item.autoName) item.name = autoName(settings);
+  const typed = $('o-itemName').value.trim().slice(0, 120);
+  if (typed) { item.name = typed; item.autoName = false; }
+  else { item.name = autoName(settings); item.autoName = true; }
+  $('o-itemName').value = '';
   editingId = null;
   activeId = item.id;
   saveList(list);
@@ -530,6 +539,15 @@ function checkShareLink() {
   try { addImported(decodeShare(m[1]), 'shared link'); }
   catch { $('shareMsg').textContent = 'The shared link could not be read.'; }
 }
+
+// ---------------------------------------------------------------- side panel show/hide (small screens)
+function setPanelCollapsed(c) {
+  prefs.panelCollapsed = !!c; savePrefs();
+  $('sidePanel').classList.toggle('collapsed', !!c);
+  $('panelToggle').setAttribute('aria-expanded', String(!c));
+  $('panelToggle').innerHTML = c ? 'Show my list &amp; options ▾' : 'Hide my list &amp; options ▴';
+}
+$('panelToggle').addEventListener('click', () => setPanelCollapsed(!prefs.panelCollapsed));
 
 // ---------------------------------------------------------------- views, tabs, theme
 function setView(v) {
@@ -650,6 +668,7 @@ function init() {
   updateExercise();
   renderList();
   setView(prefs.view || (list.length ? 'list' : 'all'));
+  setPanelCollapsed(!!prefs.panelCollapsed);
   setTab(prefs.tab === 'tuner' ? 'tuner' : 'practice');
   checkShareLink();
 }

@@ -30,6 +30,8 @@
   <section id="tab-practice" role="tabpanel" aria-labelledby="tabBtnPractice">
     <div class="practice-layout">
       <aside class="card panel" id="sidePanel">
+        <button type="button" class="panel-toggle" id="panelToggle" aria-expanded="true" aria-controls="sidePanelBody">Hide my list &amp; options ▴</button>
+        <div id="sidePanelBody">
         <div class="view-switch">
           <div class="seg" role="tablist" aria-label="View">
             <button role="tab" data-view="list" aria-selected="true">My list</button>
@@ -88,12 +90,14 @@
             <div class="field"><label for="o-a4">Tuning A =</label><input type="number" id="o-a4" min="415" max="446" step="1"></div>
             <p class="small muted" id="calInfo" style="margin:6px 0 0"></p>
           </fieldset>
+          <div class="field"><label for="o-itemName">Name in my list</label><input type="text" id="o-itemName" maxlength="120" autocomplete="off"></div>
           <div class="row">
             <button type="button" class="btn primary" id="addBtn">Add to my list</button>
             <button type="button" class="btn" id="saveItemBtn" hidden>Save changes</button>
           </div>
           <p class="muted small" id="addMsg" role="status"></p>
         </form>
+        </div>
       </aside>
 
       <section class="card stage" id="stage" aria-live="polite">
