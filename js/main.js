@@ -375,6 +375,7 @@ function finishSession(result) {
   lastResult = result;
   renderSummary($('summary'), { result, seq, prec: prec(), settings });
   colourAll(result);
+  showSummary();
   const item = activeId && list.find((x) => x.id === activeId);
   if (item && sameSettings(expandSettings(item.settings), settings)) {
     const run = makeRun(result, seq, settings.rhythm, Date.now(), (n) => noteName(n, { octave: true }), scoresAtLevels(result, undefined, precisionAt));
@@ -674,6 +675,13 @@ function hideTabBar() {
   const top = $('tab-practice').getBoundingClientRect().top + window.scrollY - 4;
   if (Math.abs(window.scrollY - top) > 2) window.scrollTo({ top, behavior: 'smooth' });
   setTimeout(() => { if (isPhoneLandscape() && Math.abs(window.scrollY - top) > 2) window.scrollTo(0, top); }, 450);
+}
+/** Landscape phones: the score fills the screen, so bring the summary into view after a run. */
+function showSummary() {
+  if (!isPhoneLandscape() || $('tab-practice').hidden) return;
+  const top = $('summary').getBoundingClientRect().top + window.scrollY - 6;
+  window.scrollTo({ top, behavior: 'smooth' });
+  setTimeout(() => { if (isPhoneLandscape() && Math.abs(window.scrollY - top) > 40) window.scrollTo(0, top); }, 600);
 }
 phoneLandscapeQuery.addEventListener('change', () => {
   if (settings.display === 'score') redrawKeepingColours();

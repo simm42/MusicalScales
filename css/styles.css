@@ -307,7 +307,8 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   /* the tab bar scrolls away (see hideTabBar in main.js): the practice box gets the full height */
   .app-header { position: static; }
   .pc-layout { min-height: 100dvh; }
-  .score-wrap { max-height: calc(100dvh - 112px - var(--safe-b)); min-height: 100px; }
+  /* a swipe past the end of the score carries on and scrolls the page down to the summary */
+  .score-wrap { max-height: calc(100dvh - 112px - var(--safe-b)); min-height: 100px; overscroll-behavior: auto; }
   .footer-note { display: none; }
 }
 .res-block svg { width: 100%; height: auto; display: block; }
