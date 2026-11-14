@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scale Practice – tests</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+  .pass { color: #137333; } .fail { color: #b3261e; }
+  pre { white-space: pre-wrap; margin: 2px 0 8px 20px; }
+  small { color: #777; }
+</style>
+</head>
+<body>
+<h1>Scale Practice – tests</h1>
+<div id="out">Running…</div>
+<script type="module">
+  import { run } from './harness.js';
+  import './theory.test.js';
+  import './audio.test.js';
+  import './scoring.test.js';
+  import './list.test.js';
+  run(document.getElementById('out'));
+</script>
+</body>
+</html>
