@@ -3,7 +3,7 @@
 
 import { Segmenter, estimateNoiseFloor, SEG } from './segmenter.js';
 import { Follower } from './follower.js';
-import { align } from './align.js';
+import { align, detectGlobalOffset } from './align.js';
 import { scoreRun } from './scoring.js';
 import { Metronome } from './metronome.js';
 import { detectionRange } from './instruments.js';
@@ -214,6 +214,7 @@ export class PracticeSession {
       doubleStopEval: this.doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
     });
     result.noiseFloor = this.noiseFloor;
+    if (!this.doubleStop) result.globalOffset = detectGlobalOffset(notes, seq.events);
     this.on.done(result);
   }
 
@@ -257,6 +258,7 @@ export function analyseRecording(o) {
     metronome: metronomeT0 != null ? { t0: metronomeT0, spb: 60 / s.bpm } : null,
     doubleStopEval: doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
   });
+  if (!doubleStop) result.globalOffset = detectGlobalOffset(notes, seq.events);
   const gate = segmenter.gate;
   return { exercise, seq, frames, notes, alignment, result, noiseFloor: segmenter.noiseFloor, gate, prec, minFreq, maxFreq };
 }

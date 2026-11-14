@@ -187,3 +187,19 @@ test('calibration corrects a shifted recording so a perfect scale scores ~100', 
   const applied = applyCalibration(cal, 440);
   near(1200 * Math.log2(applied.a4 / 440), shift, 4);
 });
+
+import { detectGlobalOffset } from '../js/align.js';
+
+test('a run played consistently off-pitch is recognised and explained', () => {
+  const settings = { instrument: 'cello', type: 'scale', key: 'C', range: '2' };
+  const seq = buildSequence(buildExercise(settings));
+  const shifted = renderPerformance(seq, { bpm: 72, detune: () => 0, timbre: 'cello', a4: 440 * Math.pow(2, -345 / 1200) });
+  const r = analyseRecording({ samples: shifted.signal, sampleRate: 48000, settings, a4: 440 });
+  assert(r.result.globalOffset, 'offset should be detected');
+  near(r.result.globalOffset.cents, -345, 8);
+  const ok = renderPerformance(seq, { bpm: 72, detune: () => 0, timbre: 'cello' });
+  const r2 = analyseRecording({ samples: ok.signal, sampleRate: 48000, settings, a4: 440 });
+  eq(r2.result.globalOffset, null);
+  // a student who is merely out of tune here and there is not flagged
+  eq(detectGlobalOffset([60, 62.3, 64, 65, 67.4, 69, 71, 72].map((m, i) => ({ midi: m, onset: i, end: i + 0.5 })), [60, 62, 64, 65, 67, 69, 71, 72].map((m, i) => ({ midis: [m], onsetBeat: i }))), null);
+});

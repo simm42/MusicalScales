@@ -39,6 +39,16 @@ function chart(result, prec) {
   return s + '</svg></div>';
 }
 
+function offsetNotice(result) {
+  const g = result.globalOffset;
+  if (!g) return '';
+  const c = Math.abs(g.cents);
+  const amount = c >= 100 ? `${(c / 100).toFixed(1).replace(/\.0$/, '')} semitone${c >= 150 ? 's' : ''}` : `${c} cents`;
+  return `<div class="notice error"><b>Everything sounded about ${amount} ${g.cents < 0 ? 'lower' : 'higher'} than expected.</b>
+    Shifted by that amount, ${g.matched} of ${g.of} notes would match (only ${g.matchedAsPlayed} as played). Check that the instrument is tuned to the A set in the options –
+    or, if a recording is playing, that it really is this exercise at concert pitch. If your microphone or device shifts the pitch, use <b>Calibrate microphone</b> on the Tuner page.</div>`;
+}
+
 /**
  * @param {HTMLElement} el
  * @param {object} o  { result, seq, prec, settings, title }
@@ -72,6 +82,7 @@ export function renderSummary(el, { result, seq, prec, settings }) {
         <div class="stat"><div class="v">${r0(result.timing)}</div><div class="l">Timing (25%)</div></div>
         <div class="stat"><div class="v">${result.extras.length}</div><div class="l">Extra notes (−${result.penalty})</div></div>
       </div>
+      ${offsetNotice(result)}
       <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents) · Vibrato ${settings.vibrato ? 'on' : 'off'} · ${result.missing} missing · ${result.wrong} wrong${tempo}${settings.metronome ? ' · timed against the metronome' : ' · timed against your own pulse'}</p>
       ${chart(result, prec)}
       <div class="table-wrap"><table class="notes">

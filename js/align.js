@@ -52,3 +52,33 @@ export function align(detected, expected, cost = pitchCost) {
   extras.reverse();
   return { pairs, extras, cost: D[n * W + m] };
 }
+
+/**
+ * Was nearly everything played at the same wrong pitch? (instrument tuned to a
+ * different A, or a recording playing at the wrong pitch). Tries shifting all
+ * detected notes by whole semitones plus their common fraction and reports the
+ * shift that makes far more notes match. Returns null when there is none.
+ */
+export function detectGlobalOffset(detected, expected) {
+  const pitched = detected.filter((d) => d.midi != null && isFinite(d.midi));
+  if (pitched.length < 5 || expected.length < 5) return null;
+  const matches = (shift) => {
+    const moved = pitched.map((d) => ({ ...d, midi: d.midi - shift }));
+    const a = align(moved, expected);
+    return a.pairs.filter((p) => p.note != null && Math.abs(moved[p.note].midi - expected[p.event].midis[0]) <= 0.5).length;
+  };
+  const fr = pitched.map((d) => d.midi - Math.round(d.midi)).sort((x, y) => x - y);
+  const frac = fr[Math.floor(fr.length / 2)];
+  const base = matches(0);
+  let best = { shift: 0, n: base };
+  for (let k = -7; k <= 7; k++) {
+    const s = k + frac;
+    if (Math.abs(s) < 0.4) continue;
+    const n = matches(s);
+    if (n > best.n) best = { shift: s, n };
+  }
+  if (best.shift !== 0 && best.n >= 0.7 * expected.length && base <= 0.5 * expected.length) {
+    return { cents: Math.round(best.shift * 100), matched: best.n, matchedAsPlayed: base, of: expected.length };
+  }
+  return null;
+}
