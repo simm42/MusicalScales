@@ -5,9 +5,10 @@ A free web page that helps students practise scales and arpeggios on the **violi
 - Choose the exercise: major and minor scales (natural, harmonic or melodic), arpeggios, chromatic scales, dominant and diminished 7ths, double stops (broken or together), double-bass scales in broken and running thirds, thumb-position scales, and double-bass ranges to a 6th or 12th.
 - Choose 1–3 octaves, a rhythm for each note, long notes at the ends, a repeated top note, and slurs.
 - Show only the name, the key signature, or the full score.
+- **Play** performs the exercise in a synthesised violin, viola, cello or double-bass tone at the chosen tempo, with the arrow following along.
 - **The microphone listens.** A tuner bar shows how sharp or flat each note is, and an arrow follows the student through the score. At the end you get a score: intonation counts for 75 % and timing for 25 %. Extra notes cost points, and missing notes score zero.
 - A precision slider runs from Beginner to Expert, and there's an option for players using vibrato.
-- **My list:** students save the exercises they are working on, see their last and best scores, and hide every other option. A teacher can send a list as a link.
+- **My list:** students save the exercises they are working on, step through them with **Back / Next**, see their last and best scores, and hide every other option. A teacher can send a list as a link. The last exercise chosen is remembered for next time.
 - **Tuner page:** tune the open strings in equal temperament or with pure fifths (pure fourths on the bass), with reference tones.
 - Light and dark modes.
 
