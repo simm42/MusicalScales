@@ -7,7 +7,7 @@ import { Meter, fmtCents } from './meter.js';
 import { MicError } from '../audio/mic.js';
 import { periodicWave } from '../audio/timbre.js';
 
-export const TUNER = { fullCents: 3, zeroCents: 25, holdSec: 1.0, smoothSec: 0.15, clarityMin: 0.88, gate: 0.003 };
+export const TUNER = { fullCents: 5, zeroCents: 30, holdSec: 0.8, smoothSec: 0.15, clarityMin: 0.88, gate: 0.003 };
 
 /** Target sounding frequency of each open string. */
 export function stringTargets(instId, system, a4 = 440) {

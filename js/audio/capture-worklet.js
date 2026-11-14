@@ -4,6 +4,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     this.chunk = (options.processorOptions && options.processorOptions.chunk) || 512;
+    this.capture = !!(options.processorOptions && options.processorOptions.capture);
     this.buf = new Float32Array(this.chunk);
     this.n = 0;
     this.start = 0;
@@ -19,6 +20,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
         if (this.n === 0) this.start = currentFrame + i;
         this.buf[this.n++] = ch[i];
         if (this.n === this.chunk) {
+          if (this.capture) this.port.postMessage({ samples: this.buf.slice(), frame: this.start });
           if (this.out) this.out.postMessage({ samples: this.buf, frame: this.start }, [this.buf.buffer]);
           this.buf = new Float32Array(this.chunk);
           this.n = 0;

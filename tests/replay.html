@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Scale Practice – replay recordings</title>
+<style>
+  body { font: 14px/1.4 system-ui, sans-serif; margin: 16px; background: #fff; color: #111; }
+  h2 { font-size: 16px; margin: 24px 0 4px; }
+  .run { border: 1px solid #ddd; border-radius: 8px; padding: 12px; margin: 12px 0; }
+  .muted { color: #666; }
+  table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
+  td, th { padding: 2px 6px; border-bottom: 1px solid #eee; text-align: right; }
+  .ok { color: #137333; } .wrong { color: #b3261e; } .missing { color: #999; }
+  svg { width: 100%; height: auto; display: block; background: #fafafa; border: 1px solid #eee; margin: 8px 0; }
+  .wrap { overflow-x: auto; }
+</style>
+</head>
+<body>
+<h1>Replay recordings</h1>
+<p class="muted">Recordings made in test mode (<code>?debug=capture</code>) are re-analysed here with the current code.
+Put them in the <code>debug-recordings</code> folder next to <code>index.html</code> (local server), or choose files:
+<input type="file" id="files" accept=".wav,audio/wav" multiple></p>
+<div id="out">Looking for recordings…</div>
+<script type="module" src="replay.js"></script>
+</body>
+</html>

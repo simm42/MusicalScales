@@ -7,8 +7,11 @@ import { freqToMidi } from './theory.js';
 
 export const SEG = {
   clarityMin: 0.85,
-  gateOverFloor: 3.2,        // frame must be this many times louder (RMS) than the measured noise floor (~ +10 dB)
+  gateOverFloor: 2.5,        // frame must be this many times louder (RMS) than the measured noise floor (~ +8 dB)
   absMinRms: 0.0012,
+  noiseMaxClarity: 0.6,      // frames clearer than this are music, not background noise
+  defaultNoiseFloor: 0.0005,
+  maxNoiseFloor: 0.008,
   minNoteMs: 70,
   changeSemis: 0.6,          // distance from current note that counts as a new pitch
   changeSemisVibrato: 0.7,
@@ -28,10 +31,15 @@ export const SEG = {
 const median = (a) => { const s = a.slice().sort((x, y) => x - y); const n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : NaN; };
 const quantile = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))] : NaN; };
 
+/**
+ * Background-noise level. Only noise-like frames (no clear pitch) count, so a
+ * student who starts playing straight away – or a recording that is already
+ * running – is not mistaken for background noise.
+ */
 export function estimateNoiseFloor(frames) {
-  const r = frames.map((f) => f.rms).filter((x) => x > 0);
-  if (!r.length) return 0.0005;
-  return Math.min(0.02, Math.max(0.0002, quantile(r, 0.3)));
+  const noisy = frames.filter((f) => f.rms > 0 && !(f.clarity >= SEG.noiseMaxClarity && f.freq > 0)).map((f) => f.rms);
+  if (noisy.length < 3) return SEG.defaultNoiseFloor;
+  return Math.min(SEG.maxNoiseFloor, Math.max(0.0002, quantile(noisy, 0.3)));
 }
 
 export class Segmenter {

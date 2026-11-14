@@ -104,3 +104,44 @@ test('metronome grid timing with constant latency is not penalised', () => {
   const r = scoreRun({ expected: ev, detected: det, alignment, prec: precisionAt(2), metronome: { t0: 2, spb: 0.5 } });
   near(r.timing, 100, 1e-6);
 });
+
+import { analyseRecording } from '../js/practice.js';
+import { encodeWav, decodeWav } from '../js/audio/wav.js';
+
+function highpass(x, fc, sr) { // speaker that can't reproduce low notes: 4th-order roll-off
+  for (let pass = 0; pass < 2; pass++) {
+    const w = 2 * Math.PI * fc / sr, cs = Math.cos(w), al = Math.sin(w) / Math.SQRT2;
+    const b0 = (1 + cs) / 2, b1 = -(1 + cs), b2 = (1 + cs) / 2, a0 = 1 + al, a1 = -2 * cs, a2 = 1 - al;
+    let x1 = 0, x2 = 0, y1 = 0, y2 = 0;
+    for (let i = 0; i < x.length; i++) { const y = (b0 * x[i] + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2) / a0; x2 = x1; x1 = x[i]; y2 = y1; y1 = y; x[i] = y; }
+  }
+  return x;
+}
+function roomEcho(x, sr) {
+  const out = Float32Array.from(x);
+  for (const [d, g] of [[0.023, 0.3], [0.041, 0.25], [0.067, 0.2], [0.089, 0.15]]) { const D = Math.round(d * sr); for (let i = out.length - 1; i >= D; i--) out[i] += g * out[i - D]; }
+  return out;
+}
+
+test('recording played through a speaker, starting straight away, scores ~100', () => {
+  const settings = { instrument: 'cello', type: 'scale', key: 'C', range: '2' };
+  const seq = buildSequence(buildExercise(settings));
+  for (const fc of [120, 200]) {
+    const perf = renderPerformance(seq, { bpm: 72, detune: () => 0, timbre: 'cello', leadIn: 0.05, noise: 0.002 });
+    const sig = roomEcho(highpass(perf.signal, fc, 48000), 48000);
+    const r = analyseRecording({ samples: sig, sampleRate: 48000, settings, a4: 440 });
+    assert(r.result.total > 95, `speaker roll-off ${fc} Hz: total ${r.result.total.toFixed(1)}, missing ${r.result.missing}, wrong ${r.result.wrong}`);
+  }
+});
+
+test('captured WAV round trip keeps samples and run details', () => {
+  const x = new Float32Array(4800).map((_, i) => 0.5 * Math.sin(i / 10));
+  const meta = { settings: { instrument: 'bass', key: 'E' }, a4: 442, startTime: 3.25 };
+  const { blob } = encodeWav(x, 48000, meta);
+  return blob.arrayBuffer().then((buf) => {
+    const d = decodeWav(buf);
+    eq(d.sampleRate, 48000);
+    eq(d.meta, meta);
+    near(d.samples[123], x[123], 1e-4);
+  });
+});

@@ -13,6 +13,7 @@ import { precisionAt, linearScore, scoreClass } from './precision.js';
 import { AudioEngine, MicError } from './audio/mic.js';
 import { PracticeSession } from './practice.js';
 import { Player } from './playback.js';
+import { encodeWav } from './audio/wav.js';
 import { Meter, fmtCents } from './ui/meter.js';
 import { renderSummary } from './ui/summary.js';
 import { TunerPage } from './ui/tunerPage.js';
@@ -43,7 +44,8 @@ let arrowIndex = 0;
 const engine = new AudioEngine();
 const player = new Player(engine);
 const meter = new Meter($('liveTuner'));
-const DEBUG = new URLSearchParams(location.search).get('debug') === 'synth';
+const DEBUG_MODE = new URLSearchParams(location.search).get('debug'); // 'synth' | 'capture' | other
+const DEBUG = DEBUG_MODE != null;
 
 const a4 = () => Math.min(446, Math.max(415, Number(prefs.a4) || 440));
 const prec = () => precisionAt(settings.precision);
@@ -253,6 +255,7 @@ async function startSession() {
   const s = new PracticeSession({
     engine, exercise, seq, settings, a4: a4(), prec: p,
     synth: useSynth ? synthOptions() : null,
+    capture: DEBUG && $('d-capture') && $('d-capture').checked,
     on: {
       state: (st, extra) => {
         if (st === 'starting') setStatus('Starting the microphone…');
@@ -290,10 +293,12 @@ async function startSession() {
 }
 
 function finishSession(result) {
+  const finished = session;
   session = null;
   $('startBtn').textContent = 'Start';
   $('arrow').hidden = true;
   meter.clear();
+  offerCapture(finished, result);
   if (!result) { setStatus('Stopped.'); return; }
   const played = result.perNote.some((r) => r.status !== 'missing');
   if (!played) { setStatus('No notes were heard. Check the microphone and play a little louder, or move closer.'); return; }
@@ -572,13 +577,46 @@ let theme = (() => { try { return localStorage.getItem('scales.theme') || 'auto'
 $('themeBtn').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; applyTheme(theme); });
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (theme === 'auto') applyTheme('auto'); });
 
+// ---------------------------------------------------------------- debug: capture what the microphone hears
+let captureUrl = null;
+function offerCapture(sess, result) {
+  const box = $('d-captureOut');
+  if (!box) return;
+  const cap = engine.takeCapture();
+  if (!cap) return;
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+  const meta = {
+    app: 'scale-practice', kind: 'capture', version: 1, created: new Date().toISOString(),
+    settings: compactSettings(settings), a4: a4(), sampleRate: cap.sampleRate, startTime: cap.startTime,
+    metronomeT0: sess && sess.t0 != null ? sess.t0 : null,
+    synthetic: !!(sess && sess.o.synth),
+    noiseFloor: sess ? sess.noiseFloor : null,
+    live: result ? {
+      total: result.total, intonation: result.intonation, timing: result.timing, missing: result.missing, wrong: result.wrong, extras: result.extras.length,
+      notes: (sess && sess.segmenter ? sess.segmenter.notes : []).map((n) => ({ onset: +n.onset.toFixed(3), end: +n.end.toFixed(3), midi: n.midi != null ? +n.midi.toFixed(3) : null })),
+    } : null,
+    userAgent: navigator.userAgent,
+  };
+  const { blob, clipped } = encodeWav(cap.samples, cap.sampleRate, meta);
+  if (captureUrl) URL.revokeObjectURL(captureUrl);
+  captureUrl = URL.createObjectURL(blob);
+  const name = `scale-capture-${settings.instrument}-${settings.type}-${(settings.type === 'chromatic' || settings.type === 'dim7' ? settings.start : settings.key).replace('#', 's')}-${stamp}.wav`;
+  let peak = 0;
+  for (let i = 0; i < cap.samples.length; i++) peak = Math.max(peak, Math.abs(cap.samples[i]));
+  box.innerHTML = `<p><a class="btn primary" href="${captureUrl}" download="${name}">⬇ Download recording (${(blob.size / 1048576).toFixed(1)} MB)</a></p>
+    <p class="small muted">${(cap.samples.length / cap.sampleRate).toFixed(1)} s at ${cap.sampleRate} Hz · loudest sample ${(20 * Math.log10(peak + 1e-9)).toFixed(1)} dBFS${clipped ? ` · ⚠ ${clipped} samples clipped – move the speaker or instrument a little further away` : ''}. The file contains only this recording and the exercise settings.</p>`;
+}
+
 // ---------------------------------------------------------------- debug (synthetic performance)
 function setupDebug() {
   if (!DEBUG) return;
   const p = $('debugPanel');
   p.hidden = false;
-  p.innerHTML = `<b>Test mode – synthetic performance</b>
-    <label class="check"><input type="checkbox" id="d-use" checked> Use a synthetic performance instead of the microphone</label>
+  p.innerHTML = `<b>Test mode – record what the microphone hears</b>
+    <label class="check"><input type="checkbox" id="d-capture" ${DEBUG_MODE === 'capture' ? 'checked' : ''}> Keep a recording of each run so it can be downloaded for fault-finding</label>
+    <div id="d-captureOut"></div>
+    <b>Test mode – synthetic performance</b>
+    <label class="check"><input type="checkbox" id="d-use" ${DEBUG_MODE === 'synth' ? 'checked' : ''}> Use a synthetic performance instead of the microphone</label>
     <label class="check"><input type="checkbox" id="d-monitor" checked> Play it through the speakers</label>
     <div class="field"><label for="d-bpm">Tempo ♩ =</label><input type="number" id="d-bpm" value="80"></div>
     <div class="field"><label for="d-detune">Random detune (cents SD)</label><input type="number" id="d-detune" value="8"></div>

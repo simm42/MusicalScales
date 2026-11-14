@@ -10,6 +10,10 @@ import { detectionRange } from './instruments.js';
 import { freqToMidi } from './theory.js';
 import { evaluateDoubleStop, liveDoubleStop, doubleStopCost } from './doublestop.js';
 import { renderPerformance, toAudioBuffer } from './audio/synth.js';
+import { analyseSignal } from './pitch.js';
+import { buildExercise } from './exercises.js';
+import { buildSequence } from './sequence.js';
+import { precisionAt } from './precision.js';
 
 export const RUN = {
   calibrateSec: 0.8,
@@ -58,7 +62,7 @@ export class PracticeSession {
       this.truth = perf.truth;
     }
     await engine.start({
-      source: buffer ? 'buffer' : 'mic', buffer, monitor: !!buffer && this.o.synth.monitor !== false, minFreq, maxFreq, peaks: this.doubleStop,
+      source: buffer ? 'buffer' : 'mic', buffer, monitor: !!buffer && this.o.synth.monitor !== false, minFreq, maxFreq, peaks: this.doubleStop, capture: !!this.o.capture,
       onFrames: (frames) => frames.forEach((f) => this.frame(f)),
     });
     this.on.state('calibrating');
@@ -91,6 +95,8 @@ export class PracticeSession {
         }
       },
     });
+    // a student (or recording) that started during the room check still counts
+    for (const f of this.calibration) this.segmenter.push(f);
     if (settings.metronome && this.o.engine.ctx) {
       this.metronome = new Metronome(this.o.engine.ctx);
       this.t0 = this.metronome.start(settings.bpm, { onCountIn: (b) => this.on.state('countin', b) });
@@ -174,4 +180,36 @@ export class PracticeSession {
     if (this.metronome) this.metronome.stop();
     this.o.engine.stop();
   }
+}
+
+/**
+ * Re-run the whole listening pipeline on a recording, exactly as a live run
+ * would (same calibration, segmenter, alignment and scoring). Used by the
+ * replay page to study recordings captured in test mode.
+ * @param {object} o { samples, sampleRate, settings, a4, startTime, metronomeT0 }
+ */
+export function analyseRecording(o) {
+  const { samples, sampleRate, settings, a4 = 440, startTime = 0, metronomeT0 = null } = o;
+  const exercise = buildExercise(settings);
+  const seq = buildSequence(exercise);
+  const s = exercise.settings;
+  const doubleStop = !!exercise.type.doubleStop;
+  const { minFreq, maxFreq } = detectionRange(s.instrument, a4);
+  const frames = analyseSignal(samples, sampleRate, { minFreq, maxFreq, peaks: doubleStop, startTime });
+  const t0 = frames.length ? frames[0].t : startTime;
+  const calibration = frames.filter((f) => f.t - t0 < RUN.calibrateSec);
+  const noiseFloor = estimateNoiseFloor(calibration);
+  const segmenter = new Segmenter({ a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop });
+  for (const f of frames) segmenter.push(f); // same as live: calibration frames are analysed too
+  segmenter.flush();
+  const notes = segmenter.notes;
+  const alignment = align(notes, seq.events, doubleStop ? doubleStopCost(a4) : undefined);
+  const prec = precisionAt(s.precision);
+  const result = scoreRun({
+    expected: seq.events, detected: notes, alignment, prec,
+    metronome: metronomeT0 != null ? { t0: metronomeT0, spb: 60 / s.bpm } : null,
+    doubleStopEval: doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
+  });
+  const gate = Math.max(SEG.absMinRms, noiseFloor * SEG.gateOverFloor);
+  return { exercise, seq, frames, notes, alignment, result, noiseFloor, gate, prec, minFreq, maxFreq };
 }

@@ -42,12 +42,14 @@ export class AudioEngine {
    * @param {number} o.minFreq
    * @param {number} o.maxFreq
    * @param {boolean} [o.peaks] spectrum peaks for double stops
+   * @param {boolean} [o.capture] keep a copy of everything the microphone hears (fault-finding)
    * @param {(frames:object[])=>void} o.onFrames
    */
   async start(o) {
     await this.stop();
     const ctx = await this.ensureContext();
     this.onFrames = o.onFrames;
+    this.captured = o.capture ? [] : null;
 
     if (o.source === 'mic') {
       const problem = micSupportProblem();
@@ -85,7 +87,8 @@ export class AudioEngine {
 
     if (ctx.audioWorklet) {
       await ctx.audioWorklet.addModule(new URL('./capture-worklet.js', import.meta.url));
-      this.node = new AudioWorkletNode(ctx, 'capture-processor', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit', processorOptions: { chunk: HOP } });
+      this.node = new AudioWorkletNode(ctx, 'capture-processor', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit', processorOptions: { chunk: HOP, capture: !!o.capture } });
+      if (o.capture) this.node.port.onmessage = (e) => { if (this.captured && e.data.samples) this.captured.push(e.data); };
       const ch = new MessageChannel();
       this.node.port.postMessage({ port: ch.port1 }, [ch.port1]);
       this.worker.postMessage({ ...init, port: ch.port2 }, [ch.port2]);
@@ -95,6 +98,7 @@ export class AudioEngine {
       const sp = ctx.createScriptProcessor(HOP, 1, 1);
       sp.onaudioprocess = (ev) => {
         const data = new Float32Array(ev.inputBuffer.getChannelData(0));
+        if (this.captured) this.captured.push({ samples: data.slice(), frame: Math.round(ev.playbackTime * ctx.sampleRate) });
         this.worker.postMessage({ type: 'chunk', samples: data, frame: Math.round(ev.playbackTime * ctx.sampleRate) }, [data.buffer]);
       };
       this.node = sp;
@@ -104,6 +108,18 @@ export class AudioEngine {
     if (o.source !== 'mic') this.source.start(ctx.currentTime + 0.05);
     this.running = true;
     return ctx;
+  }
+
+  /** Everything captured since start(): { samples, sampleRate, startTime } or null. */
+  takeCapture() {
+    const parts = this.captured;
+    this.captured = null;
+    if (!parts || !parts.length || !this.ctx) return null;
+    const n = parts.reduce((a, p) => a + p.samples.length, 0);
+    const samples = new Float32Array(n);
+    let o = 0;
+    for (const p of parts) { samples.set(p.samples, o); o += p.samples.length; }
+    return { samples, sampleRate: this.ctx.sampleRate, startTime: parts[0].frame / this.ctx.sampleRate };
   }
 
   setPeaks(on) { if (this.worker) this.worker.postMessage({ type: 'config', peaks: on }); }
