@@ -55,7 +55,7 @@ export function buildSequence(exercise) {
   list.forEach((st, si) => {
     if (st.long) {
       const beats = 2 * pBeats;
-      glyphs.push({ kind: 'note', notes: st.notes, dur: DUR_FOR_BEATS[beats] || 'h', beats, onsetBeat: beat, stepIndex: si, role: st.role, beamGroup: null });
+      glyphs.push({ kind: 'note', notes: st.notes, dur: DUR_FOR_BEATS[beats] || 'h', beats, onsetBeat: beat, stepIndex: si, role: st.role, beamGroup: null, long: true });
       beat += beats;
       return;
     }
@@ -101,6 +101,8 @@ export function buildSequence(exercise) {
     let cur = [];
     const flush = () => { if (cur.length > 1) groups.push(cur); cur = []; };
     for (const e of events) {
+      // a long (double-length) note always has a bow to itself
+      if (glyphs[e.glyphIndex].long) { flush(); continue; }
       const prev = cur[cur.length - 1];
       if (prev && prev.midis[0] === e.midis[0]) flush(); // same pitch twice needs a bow change
       cur.push(e);

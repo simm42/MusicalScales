@@ -147,13 +147,47 @@ export function renderScore(container, exercise, seq, { clefMode = 'change' } = 
   lines.forEach((line, li) => line.forEach((gi) => lineOf.set(gi, li)));
   const groups = new Map();
   glyphs.forEach((g, gi) => { if (g.slurGroup != null) { if (!groups.has(g.slurGroup)) groups.set(g.slurGroup, []); groups.get(g.slurGroup).push(gi); } });
+  // A slur that crosses a line break is drawn in pieces: running off the end of
+  // one line and in from the start of the next, as in printed music.
+  const headPoint = (note, below) => {
+    const ys = note.getYs();
+    return { x: note.getAbsoluteX() + note.getGlyphWidth() / 2, y: below ? Math.max(...ys) + 7 : Math.min(...ys) - 7 };
+  };
+  const arc = (x1, y1, x2, y2, below) => {
+    const dir = below ? 1 : -1;
+    const span = Math.abs(x2 - x1);
+    const h = Math.min(16, 6 + span * 0.06) * dir;
+    const cx = (x1 + x2) / 2;
+    const cy = (y1 + y2) / 2 + h;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.quadraticCurveTo(cx, cy, x2, y2);
+    ctx.quadraticCurveTo(cx, cy + 2.2 * dir, x1, y1);
+    ctx.closePath();
+    ctx.fill();
+  };
   for (const members of groups.values()) {
     const byLine = new Map();
     for (const gi of members) { const li = lineOf.get(gi); if (!byLine.has(li)) byLine.set(li, []); byLine.get(li).push(gi); }
+    const firstGi = members[0], lastGi = members[members.length - 1];
     for (const part of byLine.values()) {
-      if (part.length < 2) continue;
-      const curve = new V.Curve(noteObjs[part[0]], noteObjs[part[part.length - 1]], { cps: [{ x: 0, y: 12 }, { x: 0, y: 12 }] });
-      curve.setContext(ctx).draw();
+      const opensHere = part.includes(firstGi);
+      const closesHere = part.includes(lastGi);
+      const a = noteObjs[part[0]], b = noteObjs[part[part.length - 1]];
+      if (opensHere && closesHere) {
+        if (part.length < 2) continue;
+        new V.Curve(a, b, { cps: [{ x: 0, y: 12 }, { x: 0, y: 12 }] }).setContext(ctx).draw();
+        continue;
+      }
+      // the side follows the first note of the whole slur: under the heads when its stem is up
+      const below = noteObjs[firstGi].getStemDirection() === 1;
+      const stave = staveOf[part[0]];
+      const startX = stave.getNoteStartX() - 6;
+      const endX = stave.getX() + stave.getWidth() - 4;
+      const pa = headPoint(a, below), pb = headPoint(b, below);
+      if (opensHere) arc(pa.x, pa.y, endX, pb.y + (below ? 4 : -4), below);           // runs off the end of the line
+      else if (closesHere) arc(startX, pa.y + (below ? 4 : -4), pb.x, pb.y, below);   // comes in from the start
+      else arc(startX, pa.y, endX, pb.y, below);                                     // a whole line inside the slur
     }
   }
 

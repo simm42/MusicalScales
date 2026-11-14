@@ -25,6 +25,7 @@ import { renderSummary } from './ui/summary.js';
 import { TunerPage } from './ui/tunerPage.js';
 import { CalibrationWizard } from './ui/calibrationWizard.js';
 import { MetronomeCard } from './ui/metronomeCard.js';
+import { noteIcon, RHYTHM_ICONS } from './ui/noteIcons.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
 import {
   loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings,
@@ -628,7 +629,8 @@ function renderRhythmBar() {
       b.className = 'chip';
       b.setAttribute('role', 'radio');
       b.dataset.rhythm = id;
-      b.textContent = r.short;
+      if (RHYTHM_ICONS[id]) { b.innerHTML = noteIcon(RHYTHM_ICONS[id]); b.setAttribute('aria-label', r.label); }
+      else b.textContent = r.short;
       b.title = r.label;
       b.addEventListener('click', () => { if (settings.rhythm !== id) setGlobal({ rhythm: id }); });
       bar.appendChild(b);

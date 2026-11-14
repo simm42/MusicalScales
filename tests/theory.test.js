@@ -200,3 +200,14 @@ test('slurred switch: grouping from the exercise, only for crotchet rhythms', ()
   eq(buildSequence(buildExercise({ ...base, slur: 0, slurred: true, range: '1' })).slurGroups, 7);
   eq(buildSequence(buildExercise({ ...base, slurred: true, rhythm: 'crotchetLong' })).slurGroups, 4);
 });
+
+test('long notes are never inside a slur', () => {
+  const seq = buildSequence(buildExercise({ instrument: 'violin', type: 'scale', key: 'G', range: '2', rhythm: 'crotchetLongMid', slur: 4, slurred: true }));
+  const longs = seq.glyphs.filter((g) => g.long);
+  eq(longs.length, 5); // bottom, middle tonic up, top, middle tonic down, end
+  assert(longs.every((g) => g.slurGroup == null), 'long notes are separate bows');
+  // the notes after a long note start a new slur
+  const afterFirst = seq.glyphs[seq.glyphs.indexOf(longs[0]) + 1];
+  assert(afterFirst.slurStart, 'slur restarts after a long note');
+  for (const g of seq.glyphs) if (g.slurGroup != null) assert(!g.long);
+});

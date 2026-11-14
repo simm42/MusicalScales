@@ -308,3 +308,5 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   .icon-btn { padding: 5px 9px; }
   .practice { padding: 10px; }
 }
+
+.chip .note-icon { display: block; height: 20px; width: auto; margin: -1px 0; }
