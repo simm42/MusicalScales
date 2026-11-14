@@ -58,6 +58,7 @@ export class CalibrationWizard {
 
   async start() {
     if (this.running) return;
+    this.engine.unlock('play-and-record'); // inside the tap (iOS)
     if (this.beforeStart) this.beforeStart();
     const inst = this.getInstrument();
     const info = instrumentInfo(inst);

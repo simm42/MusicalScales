@@ -35,6 +35,38 @@ export class AudioEngine {
   }
 
   /**
+   * Call synchronously at the very start of every tap/click handler that will
+   * make or record sound. iOS only lets audio start inside the tap itself –
+   * anything after an await or timer stays silent.
+   */
+  unlock(sessionType = null) {
+    if (sessionType) this.setSessionType(sessionType);
+    if (!this.ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      this.ctx = new AC({ latencyHint: 'interactive' });
+    }
+    if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
+    try {
+      // a one-sample silent sound started inside the tap unlocks output on older iOS
+      const b = this.ctx.createBuffer(1, 1, this.ctx.sampleRate);
+      const src = this.ctx.createBufferSource();
+      src.buffer = b;
+      src.connect(this.ctx.destination);
+      src.start(0);
+    } catch { /* not needed elsewhere */ }
+  }
+
+  /**
+   * iOS audio session (Safari 16.4+): 'playback' plays even with the ring/silent
+   * switch on and uses the loudspeaker; 'play-and-record' is needed while the
+   * microphone is on. Other browsers ignore this.
+   */
+  setSessionType(type) {
+    try { if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type; } catch { /* unsupported */ }
+  }
+
+  /**
    * @param {object} o
    * @param {'mic'|'buffer'} o.source
    * @param {AudioBuffer} [o.buffer] synthetic performance to analyse
@@ -46,8 +78,10 @@ export class AudioEngine {
    * @param {(frames:object[])=>void} o.onFrames
    */
   async start(o) {
+    if (o.source === 'mic') this.setSessionType('play-and-record');
+    const ready = this.ensureContext(); // before any await, so it still counts as part of the tap
     await this.stop();
-    const ctx = await this.ensureContext();
+    const ctx = await ready;
     this.onFrames = o.onFrames;
     this.captured = o.capture ? [] : null;
 

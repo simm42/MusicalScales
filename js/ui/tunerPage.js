@@ -112,6 +112,8 @@ export class TunerPage {
   }
 
   async toggleTone(i, btn) {
+    // inside the tap (iOS); keep the microphone's session if the tuner is listening
+    this.engine.unlock(this.running ? null : 'playback');
     const ctx = await this.engine.ensureContext();
     if (this.tones.has(i)) {
       const t = this.tones.get(i);
@@ -140,6 +142,7 @@ export class TunerPage {
   }
 
   async start() {
+    this.engine.unlock('play-and-record');
     if (this.beforeStart) this.beforeStart();
     this.el.error.hidden = true;
     const inst = this.getInstrument();

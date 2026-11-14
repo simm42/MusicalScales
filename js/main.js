@@ -336,6 +336,7 @@ $('playBtn').addEventListener('click', async () => {
   if (player.playing) { stopPlayback(); return; }
   if (!exercise.ok) return;
   stopSession(true);
+  engine.unlock('playback'); // must happen inside the tap (iOS)
   $('playBtn').textContent = '■ Stop';
   setStatus('Preparing the sound…');
   await new Promise((r) => setTimeout(r, 30)); // let the message show before the sound is rendered
@@ -361,7 +362,7 @@ $('playBtn').addEventListener('click', async () => {
 
 $('startBtn').addEventListener('click', () => {
   if (session) { const s = session; s.stop(); }
-  else startSession();
+  else { engine.unlock(DEBUG && $('d-use') && $('d-use').checked ? 'playback' : 'play-and-record'); startSession(); }
 });
 
 // ---------------------------------------------------------------- practice list

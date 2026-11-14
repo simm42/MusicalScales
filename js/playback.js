@@ -18,7 +18,9 @@ export class Player {
    */
   async play(seq, { bpm = 60, a4 = 440, instrument = 'violin', onEvent, onEnd } = {}) {
     this.stop();
+    if (!this.engine.running) this.engine.setSessionType('playback'); // loudspeaker, and sound even on silent
     const ctx = await this.engine.ensureContext();
+    if (ctx.state !== 'running') throw new Error('the browser blocked sound – tap Play again');
     const perf = renderPerformance(seq, {
       sampleRate: ctx.sampleRate, bpm, a4, detune: () => 0, noise: 0, leadIn: 0.25, tail: 0.6, amp: 0.2, dipFloor: 0.05, timbre: instrument,
     });
