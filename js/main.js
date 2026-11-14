@@ -381,6 +381,8 @@ function finishSession(result) {
     const run = makeRun(result, seq, settings.rhythm, Date.now(), (n) => noteName(n, { octave: true }), scoresAtLevels(result, undefined, precisionAt));
     run.level = settings.precision;
     run.slurred = slurGroup(settings) || 0; // notes per bow, 0 = separate bows
+    run.vib = !!settings.vibrato;
+    run.met = !!settings.metronome;
     recordRun(results, item.id, run);
     saveResults(results);
     renderList();
@@ -719,6 +721,12 @@ function setTab(tab) {
         getResults: () => results,
         getStudentName: () => ($('studentName').value.trim() || prefs.studentName || ''),
         getPrecision: () => settings.precision,
+        // note names for runs saved before they were stored: rebuild the exercise as it was played
+        labelsFor: (item, run) => {
+          const s = normalise({ ...expandSettings(item.settings), rhythm: run.rhythm });
+          const sq = buildSequence(buildExercise(s));
+          return sq.events.map((ev) => ev.notes.map((n) => noteName(n, { octave: true })).join(' + '));
+        },
         setStudentName: (n) => { prefs.studentName = n; savePrefs(); $('studentName').value = n; },
       });
     }

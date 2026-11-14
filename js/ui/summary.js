@@ -53,10 +53,10 @@ function offsetNotice(result) {
  * @param {HTMLElement} el
  * @param {object} o  { result, seq, prec, settings, title }
  */
-export function renderSummary(el, { result, seq, prec, settings }) {
+export function renderSummary(el, { result, seq, labels = null, prec, settings = {}, title = 'Your result' }) {
   if (!result) { el.innerHTML = ''; return; }
-  const ev = seq.events;
-  const label = (r) => ev[r.event].notes.map((n) => noteName(n, { octave: true })).join(' + ');
+  // note names come from the sequence (live run) or are given (a stored run)
+  const label = (r, i) => (labels ? labels[i] : seq.events[r.event].notes.map((n) => noteName(n, { octave: true })).join(' + '));
   const statusPill = (r) => {
     if (r.status === 'missing') return '<span class="pill missing">missing</span>';
     if (r.status === 'wrong') return '<span class="pill wrong">wrong note</span>';
@@ -71,19 +71,21 @@ export function renderSummary(el, { result, seq, prec, settings }) {
     const p = Math.round(r.timingDev * 100);
     return p === 0 ? '0%' : `${p > 0 ? '+' : '−'}${Math.abs(p)}%`;
   };
-  const rows = result.perNote.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(label(r))}</td><td>${centsCell(r)}</td><td>${r0(r.intonation)}</td><td>${timingCell(r)}</td><td>${r0(r.timing)}</td><td style="text-align:left">${statusPill(r)}</td></tr>`).join('');
+  const rows = result.perNote.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(label(r, i))}</td><td>${centsCell(r)}</td><td>${r0(r.intonation)}</td><td>${timingCell(r)}</td><td>${r0(r.timing)}</td><td style="text-align:left">${statusPill(r)}</td></tr>`).join('');
   const tempo = result.bpm ? ` · tempo ≈ ♩ ${Math.round(result.bpm)}` : '';
+  const vib = settings.vibrato == null ? '' : ` · Vibrato ${settings.vibrato ? 'on' : 'off'}`;
+  const timed = settings.metronome == null ? '' : settings.metronome ? ' · timed against the metronome' : ' · timed against your own pulse';
   el.innerHTML = `
     <div class="summary">
-      <h3 style="margin:0 0 10px">Your result</h3>
+      ${title ? `<h3 style="margin:0 0 10px">${esc(title)}</h3>` : ''}
       <div class="totals">
         <div class="stat total"><div class="v">${r0(result.total)}</div><div class="l">Total / 100</div></div>
         <div class="stat"><div class="v">${r0(result.intonation)}</div><div class="l">Intonation (75%)</div></div>
         <div class="stat"><div class="v">${r0(result.timing)}</div><div class="l">Timing (25%)</div></div>
-        <div class="stat"><div class="v">${result.extras.length}</div><div class="l">Errors (−${result.penalty})</div></div>
+        <div class="stat"><div class="v">${result.extras.length}</div><div class="l">Errors${result.penalty != null ? ` (−${r0(result.penalty)})` : ''}</div></div>
       </div>
       ${offsetNotice(result)}
-      <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents) · Vibrato ${settings.vibrato ? 'on' : 'off'} · ${result.missing} missing · ${result.wrong} wrong${tempo}${settings.metronome ? ' · timed against the metronome' : ' · timed against your own pulse'}</p>
+      <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents)${vib} · ${result.missing} missing · ${result.wrong} wrong${tempo}${timed}</p>
       ${chart(result, prec)}
       <div class="table-wrap"><table class="notes">
         <thead><tr><th>#</th><th>Note</th><th>Cents</th><th>Tuning</th><th>Timing</th><th>Score</th><th style="text-align:left">Status</th></tr></thead>

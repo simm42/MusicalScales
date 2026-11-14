@@ -1,7 +1,7 @@
 import { test, eq, near, assert } from './harness.js';
 import {
   RES, recordRun, makeRun, compact, migrateHistory, lastRuns, runsSince, daily, monthly,
-  summaryDaily, summaryMonthly, firstTime, cardStats, dayKey, DAYS, atLevel,
+  summaryDaily, summaryMonthly, firstTime, cardStats, dayKey, DAYS, atLevel, runDetail,
 } from '../js/results.js';
 import { scoresAtLevels } from '../js/scoring.js';
 import { precisionAt } from '../js/precision.js';
@@ -97,6 +97,28 @@ test('a full run records cents per scale note, whatever the rhythm', () => {
   eq(r.e, 1);
   eq(r.labels[0], 'G3');
   eq(r.notes.length, seq.events.length);
+});
+
+test('a stored run gives back the detailed summary', () => {
+  const ex = buildExercise({ instrument: 'violin', type: 'scale', key: 'D', range: '1', rhythm: 'crotchet' });
+  const seq = buildSequence(ex);
+  const perNote = seq.events.map((e, k) => (k === 2 ? { event: k, status: 'missing', cents: null, intonation: 0, timing: 0, timingDev: null }
+    : { event: k, status: k === 5 ? 'wrong' : 'ok', cents: k === 4 ? [3, -8] : [k - 4], intonation: 80 + k, timing: 90, timingDev: 0.05, unsteady: k === 6 }));
+  const r = makeRun({ total: 84, intonation: 82, timing: 90, extras: [{}, {}], penalty: 6, missing: 1, wrong: 1, bpm: 72.4, perNote }, seq, 'crotchet', NOW, (n) => noteName(n, { octave: true }));
+  const d = runDetail(JSON.parse(JSON.stringify(r)));
+  eq(d.labels.length, seq.events.length);
+  eq(d.labels[0], 'D4');
+  eq(d.result.perNote[2].status, 'missing');
+  eq(d.result.perNote[5].status, 'wrong');
+  eq(d.result.perNote[4].cents, [3, -8]);
+  eq(d.result.perNote[0].cents, [-4]);
+  assert(d.result.perNote[6].unsteady && !d.result.perNote[0].unsteady, 'unsteady flag kept');
+  near(d.result.perNote[1].timingDev, 0.05, 1e-9);
+  eq([d.result.total, d.result.extras.length, d.result.penalty, d.result.missing, d.result.wrong, d.result.bpm], [84, 2, 6, 1, 1, 72]);
+  // an older run without note names takes them from the caller, or numbers the notes
+  delete r.nl;
+  eq(runDetail(r).labels[0], 'Note 1');
+  eq(runDetail(r, d.labels).labels[0], 'D4');
 });
 
 

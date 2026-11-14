@@ -2,7 +2,8 @@
 // the last 2 weeks, daily averages for 6 months, monthly all-time; and a
 // summary across the whole syllabus. Also hosts the PDF export controls.
 
-import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, DAYS } from '../results.js';
+import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, DAYS } from '../results.js';
+import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
 import { lineChart, legendHtml, chartPalette } from './charts.js';
 import { Surface3D } from './surface3d.js';
@@ -84,7 +85,9 @@ export function summaryChartsSvg(data, palette, width = 760) {
 }
 
 export class ResultsPage {
-  constructor({ getList, getResults, getStudentName, setStudentName, getPrecision = () => 2 }) {
+  constructor({ getList, getResults, getStudentName, setStudentName, getPrecision = () => 2, labelsFor = () => null }) {
+    this.labelsFor = labelsFor;
+    this.picked = {}; // chosen run (its time) per item for the detailed summary
     this.getPrecision = getPrecision;
     this.getList = getList;
     this.getResults = getResults;
@@ -147,9 +150,37 @@ export class ResultsPage {
       <div class="res-block"><h3>Last 2 weeks – every run</h3>${legendHtml(undefined, true, pal)}${svg.twoWeeks || '<p class="muted">No runs in the last 2 weeks.</p>'}</div>
       <div class="res-block"><h3>Past 6 months – average per day</h3>${legendHtml(undefined, true, pal)}${svg.sixMonths || '<p class="muted">No runs in the past 6 months.</p>'}</div>
       ${svg.allTime ? `<div class="res-block"><h3>All time – average per month</h3>${legendHtml(undefined, true, pal)}${svg.allTime}</div>` : ''}
-      <div class="res-block"><h3>Recent runs</h3>${this.runsTable(data.twoWeeks.length ? data.twoWeeks : last)}</div>`;
+      <div class="res-block"><h3>Recent runs</h3>${this.runsTable(data.twoWeeks.length ? data.twoWeeks : last)}</div>
+      ${last.length ? `<div class="res-block"><h3>Run in detail</h3>
+        <div class="field"><label for="runPick">Choose one of the last ${last.length} runs</label>
+          <select id="runPick">${last.slice().reverse().map((r) => `<option value="${r.d}">${esc(dateTime(r.d))} · ${Math.round(r.t)} / 100${playedHow(r) ? ' · ' + esc(playedHow(r)) : ''}</option>`).join('')}</select></div>
+        <div id="runDetail"></div></div>` : ''}`;
+    if (last.length) {
+      const pick = this.body.querySelector('#runPick');
+      if (last.some((r) => r.d === this.picked[item.id])) pick.value = String(this.picked[item.id]);
+      const show = () => {
+        const run = last.find((r) => String(r.d) === pick.value) || last[last.length - 1];
+        this.picked[item.id] = run.d;
+        this.renderRun(this.body.querySelector('#runDetail'), item, run);
+      };
+      pick.addEventListener('change', show);
+      show();
+    }
     const canvas = this.body.querySelector('#surface');
     this.surface = new Surface3D(canvas, { runs: last, labels, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision()), colors: readPalette() });
+  }
+
+  /** The same detailed summary as after a run, for a stored run (scored at the precision it was played at). */
+  renderRun(el, item, run) {
+    let names = null;
+    if (!run.nl) { try { names = this.labelsFor(item, run); } catch { names = null; } }
+    const d = runDetail(run, names);
+    if (!d) { el.innerHTML = '<p class="muted">The details of this run were not kept.</p>'; return; }
+    renderSummary(el, { result: d.result, labels: d.labels, prec: precisionAt(run.level ?? 2), settings: { vibrato: run.vib, metronome: run.met }, title: null });
+    const note = document.createElement('p');
+    note.className = 'muted small';
+    note.textContent = `Played ${dateTime(run.d)}${playedHow(run) ? ' – ' + playedHow(run) : ''}. Scores are as marked at the time, at the precision used then.`;
+    el.prepend(note);
   }
 
   runsTable(runs) {

@@ -32,6 +32,7 @@ export function monthStart(key) { const [y, m] = key.split('-').map(Number); ret
 
 const r1 = (x) => (x == null || !isFinite(x) ? null : Math.round(x * 10) / 10);
 const STATUS = { ok: 0, wrong: 1, missing: 2 };
+const STATUS_NAME = ['ok', 'wrong', 'missing'];
 
 /** Scores per level for any record (older records without `lv` use their one set of scores). */
 export function levelsOf(x) {
@@ -76,10 +77,55 @@ export function makeRun(result, seq, rhythm, when = Date.now(), noteName = null,
     wrong: result.wrong,
     steps: sum.map((s, k) => (cnt[k] ? r1(s / cnt[k]) : null)),
     labels: noteName && seq.steps ? seq.steps.map((notes) => notes.map((x) => noteName(x)).join('+')) : null,
-    notes: result.perNote.map((p) => [p.cents ? r1(p.cents.filter((c) => c != null)[0] ?? null) : null, Math.round(p.intonation), Math.round(p.timing), STATUS[p.status] ?? 2, r1(p.timingDev != null ? p.timingDev * 100 : null)]),
+    // per note: [cents, tuning score, timing score, status, timing deviation %, flags?, cents of each string?]
+    // flags: 1 = unsteady, 2 = approximate (octave double stop)
+    notes: result.perNote.map((p) => {
+      const row = [p.cents ? r1(p.cents.filter((c) => c != null)[0] ?? null) : null, Math.round(p.intonation), Math.round(p.timing), STATUS[p.status] ?? 2, r1(p.timingDev != null ? p.timingDev * 100 : null)];
+      const flags = (p.unsteady ? 1 : 0) | (p.approx ? 2 : 0);
+      const multi = p.cents && p.cents.length > 1;
+      if (flags || multi) row.push(flags);
+      if (multi) row.push(p.cents.map(r1));
+      return row;
+    }),
   };
+  // for the detailed summary on the Results tab
+  if (noteName) run.nl = result.perNote.map((p) => (seq.events[p.event] ? seq.events[p.event].notes.map(noteName).join(' + ') : ''));
+  if (result.penalty != null) run.pen = r1(result.penalty);
+  if (result.bpm) run.bpm = Math.round(result.bpm);
+  if (result.globalOffset) run.off = result.globalOffset;
   if (lv) run.lv = lv;
   return run;
+}
+
+/**
+ * Turn a stored full run back into the shape the end-of-run summary draws.
+ * Runs saved before note names were stored need `labels` from the caller.
+ */
+export function runDetail(run, labels = null) {
+  if (!run || !Array.isArray(run.notes)) return null;
+  const perNote = run.notes.map((n) => ({
+    cents: n[6] ? n[6] : n[0] == null ? null : [n[0]],
+    intonation: n[1] ?? 0,
+    timing: n[2] ?? 0,
+    status: STATUS_NAME[n[3]] ?? 'missing',
+    timingDev: n[4] == null ? null : n[4] / 100,
+    unsteady: !!(n[5] & 1),
+    approx: !!(n[5] & 2),
+  }));
+  const names = run.nl || labels;
+  return {
+    result: {
+      perNote,
+      total: run.t, intonation: run.i, timing: run.ti,
+      extras: new Array(run.e || 0).fill(null),
+      penalty: run.pen ?? null,
+      missing: run.missing ?? perNote.filter((p) => p.status === 'missing').length,
+      wrong: run.wrong ?? perNote.filter((p) => p.status === 'wrong').length,
+      bpm: run.bpm || null,
+      globalOffset: run.off || null,
+    },
+    labels: names && names.length === perNote.length ? names : perNote.map((_, k) => `Note ${k + 1}`),
+  };
 }
 
 const summaryOf = (r) => ({ d: r.d, lv: levelsOf(r), e: r.e ?? null, rhythm: r.rhythm, slurred: r.slurred });
