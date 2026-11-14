@@ -210,6 +210,16 @@ const project = (x, level, extra = {}) => ({ ...extra, ...atLevel(x, level) });
 /** Newest full runs (oldest first), for the 3D surface. */
 export function lastRuns(store, id, n = RES.fullRuns) { return recOf(store, id).runs.slice(-n); }
 
+/** Runs worth drawing on the 3D plot: those with no more than half of their notes missing. */
+export function surfaceRuns(runs) {
+  return runs.filter((r) => {
+    const n = Array.isArray(r.notes) ? r.notes.length : 0;
+    if (!n) return true;
+    const missing = r.missing ?? r.notes.filter((x) => x[3] === 2).length;
+    return missing <= n / 2;
+  });
+}
+
 /** Every individual run since a time (full and summarised), oldest first. */
 export function runsSince(store, id, since, level = 2) {
   const rec = recOf(store, id);

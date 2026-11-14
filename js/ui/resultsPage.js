@@ -2,7 +2,7 @@
 // the last 2 weeks, daily averages for 6 months, monthly all-time; and a
 // summary across the whole syllabus. Also hosts the PDF export controls.
 
-import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, DAYS } from '../results.js';
+import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, DAYS } from '../results.js';
 import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
 import { lineChart, legendHtml, chartPalette } from './charts.js';
@@ -142,9 +142,13 @@ export class ResultsPage {
     const data = itemData(store, item.id, Date.now(), level);
     const svg = chartsSvg(data, pal, width);
     const last = data.last10;
-    const labels = (last.length && last[last.length - 1].labels) || [];
+    // runs with more than half the notes missing would only draw holes
+    const plotted = surfaceRuns(last);
+    const left = last.length - plotted.length;
+    const labels = (plotted.length && plotted[plotted.length - 1].labels) || (last.length && last[last.length - 1].labels) || [];
     this.body.innerHTML = `${levelNote}
-      <div class="res-block"><h3>Last ${last.length || 10} runs – how sharp or flat each note was</h3>
+      <div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
+        ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
         <p class="muted small">Notes of the scale left to right, oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision()).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision()).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
         <div class="surface-wrap"><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div></div>
       <div class="res-block"><h3>Last 2 weeks – every run</h3>${legendHtml(undefined, true, pal)}${svg.twoWeeks || '<p class="muted">No runs in the last 2 weeks.</p>'}</div>
@@ -167,7 +171,7 @@ export class ResultsPage {
       show();
     }
     const canvas = this.body.querySelector('#surface');
-    this.surface = new Surface3D(canvas, { runs: last, labels, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision()), colors: readPalette() });
+    this.surface = new Surface3D(canvas, { runs: plotted, labels, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision()), colors: readPalette() });
   }
 
   /** The same detailed summary as after a run, for a stored run (scored at the precision it was played at). */

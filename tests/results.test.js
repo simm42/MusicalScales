@@ -1,7 +1,7 @@
 import { test, eq, near, assert } from './harness.js';
 import {
   RES, recordRun, makeRun, compact, migrateHistory, lastRuns, runsSince, daily, monthly,
-  summaryDaily, summaryMonthly, firstTime, cardStats, dayKey, DAYS, atLevel, runDetail,
+  summaryDaily, summaryMonthly, firstTime, cardStats, dayKey, DAYS, atLevel, runDetail, surfaceRuns,
 } from '../js/results.js';
 import { scoresAtLevels } from '../js/scoring.js';
 import { precisionAt } from '../js/precision.js';
@@ -97,6 +97,12 @@ test('a full run records cents per scale note, whatever the rhythm', () => {
   eq(r.e, 1);
   eq(r.labels[0], 'G3');
   eq(r.notes.length, seq.events.length);
+});
+
+test('runs with more than half the notes missing are left off the 3D plot', () => {
+  const notes = (miss) => Array.from({ length: 10 }, (_, k) => [0, 100, 100, k < miss ? 2 : 0, 0]);
+  const runs = [{ d: 1, notes: notes(5), missing: 5 }, { d: 2, notes: notes(6), missing: 6 }, { d: 3, notes: notes(0), missing: 0 }, { d: 4, notes: notes(8) }, { d: 5 }];
+  eq(surfaceRuns(runs).map((r) => r.d), [1, 3, 5]);
 });
 
 test('a stored run gives back the detailed summary', () => {

@@ -4,7 +4,7 @@
 import { chartPalette, svgToPng } from './ui/charts.js';
 import { Surface3D } from './ui/surface3d.js';
 import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS } from './ui/resultsPage.js';
-import { lastRuns, atLevel } from './results.js';
+import { lastRuns, atLevel, surfaceRuns } from './results.js';
 import { precisionAt } from './precision.js';
 
 let loading = null;
@@ -103,8 +103,10 @@ export async function makePdf(o) {
     const svg = chartsSvg(data, pal, W_SVG);
     if (!data.any) { text('No runs yet.', 10, 'normal', [102, 98, 111]); continue; }
     if (o.charts.surface) {
-      const runs = o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10;
+      const recent = o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10;
+      const runs = surfaceRuns(recent); // runs with more than half the notes missing are left out
       text(`Last ${runs.length} runs - how sharp or flat each note was (oldest at the back)`, 11, 'bold');
+      if (runs.length < recent.length) text(`${recent.length - runs.length} run${recent.length - runs.length === 1 ? '' : 's'} with more than half the notes missing left out.`, 9, 'normal', [102, 98, 111]);
       const c = document.createElement('canvas');
       c.width = 1200; c.height = 608;
       const labels = (runs.length && runs[runs.length - 1].labels) || [];
