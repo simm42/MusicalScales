@@ -66,7 +66,7 @@ export function measureString(frames, instrument, stringIndex, a4 = 440) {
 }
 
 /** Combine the measurements into a stored calibration with plain-English advice. */
-export function summarise(instrument, noiseRms, strings, a4 = 440) {
+export function summarise(instrument, noiseRms, strings, a4 = 440, extra = {}) {
   const done = strings.filter(Boolean);
   if (!done.length || noiseRms == null) return null;
   const offsets = done.map((s) => s.cents);
@@ -102,6 +102,18 @@ export function summarise(instrument, noiseRms, strings, a4 = 440) {
     clarity,
     snrDb: snr,
     offsets: Object.fromEntries(strings.map((s, i) => [i, s ? Math.round(s.cents * 10) / 10 : null])),
+    // full per-string measurements (for fault-finding)
+    strings: strings.map((s, i) => (s ? {
+      string: instrumentInfo(instrument).strings[i],
+      cents: Math.round(s.cents * 10) / 10,
+      octave: s.octave,
+      levelDb: Math.round(dB(s.rms) * 10) / 10,
+      clarity: Math.round(s.clarity * 1000) / 1000,
+      frames: s.frames,
+    } : { string: instrumentInfo(instrument).strings[i], skipped: true })),
+    noiseDb: Math.round(dB(noiseRms) * 10) / 10,
+    instrument,
+    ...extra,
     meanCents: mean,
     spreadCents: spread,
     correctCents,

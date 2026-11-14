@@ -628,6 +628,9 @@ function captureMeta(sess, result, cap) {
     synthetic: !!(sess && sess.o.synth),
     noiseFloor: sess ? sess.noiseFloor : null,
     calibration: sess ? sess.o.calibration || null : null,
+    // what the calibration changed: effective A and listening thresholds
+    calibrationApplied: sess && sess.o.calibration ? { a4: sess.a4, ...sess.segOpts } : null,
+    calibrationsStored: loadCalibrationsSafe(),
     audio: engine.describe(),
     analysis: sess ? { minFreq: sess.minFreq, maxFreq: sess.maxFreq, seg: { ...SEG }, run: { ...RUN }, finalNoiseFloor: segm ? segm.noiseFloor : null, finalGate: segm ? segm.gate : null } : null,
     log: sess ? sess.log : null,
@@ -637,11 +640,41 @@ function captureMeta(sess, result, cap) {
       notes: (segm ? segm.notes : []).map((n) => ({ onset: r3(n.onset), end: r3(n.end), midi: n.midi != null ? r3(n.midi) : null, wobble: r3(n.wobble, 1) })),
       perNote: result.perNote.map((p) => ({ e: p.event, n: p.note, s: p.status, c: p.cents ? p.cents.map((c) => r3(c, 1)) : null, i: r3(p.intonation, 1), td: r3(p.timingDev), ts: r3(p.timing, 1) })),
     } : null,
+    // the run's results in full, as shown in the summary
+    result: result ? {
+      total: r3(result.total, 1), intonation: r3(result.intonation, 1), timing: r3(result.timing, 1), penalty: result.penalty,
+      missing: result.missing, wrong: result.wrong, bpm: r3(result.bpm, 1), globalOffset: result.globalOffset || null,
+      precision: { level: settings.precision, ...precisionAt(settings.precision) },
+      notes: result.perNote.map((p) => {
+        const ev = seq.events[p.event];
+        const d = p.note != null && segm ? segm.notes[p.note] : null;
+        return {
+          n: p.event + 1,
+          expected: ev.notes.map((x) => noteName(x, { octave: true, unicode: false })).join('+'),
+          expectedMidi: ev.midis,
+          heardMidi: d && d.midi != null ? r3(d.midi) : null,
+          onset: d ? r3(d.onset) : null,
+          duration: d ? r3(d.end - d.onset) : null,
+          cents: p.cents ? p.cents.map((c) => r3(c, 1)) : null,
+          intonationScore: r3(p.intonation, 1),
+          timingDeviation: r3(p.timingDev),
+          timingScore: r3(p.timing, 1),
+          status: p.status,
+          unsteady: !!p.unsteady,
+        };
+      }),
+      extras: result.extras.map((x) => ({ onset: r3(x.onset), duration: r3(x.end - x.onset), heardMidi: x.midi != null ? r3(x.midi) : null })),
+    } : null,
+    selfTest: window.__selfTest || null,
     // compact live pitch track: [time, freq, clarity, rms, level]
     liveFrames: sess ? sess.frames.map((f) => [r3(f.t), r3(f.freq, 2), r3(f.clarity), +(f.rms || 0).toPrecision(3), +(f.level || 0).toPrecision(3)]) : null,
     screen: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
     userAgent: navigator.userAgent,
   };
+}
+
+function loadCalibrationsSafe() {
+  try { return JSON.parse(localStorage.getItem('scales.calibration.v1')) || null; } catch { return null; }
 }
 
 function offerCapture(sess, result) {
@@ -677,11 +710,40 @@ function offerCapture(sess, result) {
 }
 
 // ---------------------------------------------------------------- debug (synthetic performance)
+async function runSelfTest() {
+  const btn = $('d-selftest');
+  const out = $('d-selftestOut');
+  btn.disabled = true;
+  out.textContent = 'Running…';
+  const t0 = performance.now();
+  try {
+    const h = await import('../tests/harness.js');
+    for (const m of ['theory', 'audio', 'scoring', 'list']) await import(`../tests/${m}.test.js`);
+    const box = document.createElement('div');
+    const results = await h.run(box);
+    const failed = results.filter((r) => !r.ok);
+    window.__selfTest = {
+      appVersion: APP_VERSION, when: new Date().toISOString(), seconds: r3((performance.now() - t0) / 1000, 1),
+      total: results.length, passed: results.length - failed.length,
+      failed: failed.map((f) => ({ name: f.name, error: f.error })),
+      timings: results.map((r) => ({ name: r.name, ms: Math.round(r.ms), ok: r.ok })),
+    };
+    out.innerHTML = failed.length ? `<b style="color:var(--bad)">${failed.length} of ${results.length} failed</b>: ${failed.map((f) => esc(f.name)).join('; ')}` : `<b style="color:var(--good)">All ${results.length} passed</b> in ${window.__selfTest.seconds} s`;
+  } catch (e) {
+    window.__selfTest = { appVersion: APP_VERSION, when: new Date().toISOString(), error: String(e && e.message) };
+    out.textContent = 'Self-test could not run: ' + (e && e.message);
+  }
+  btn.disabled = false;
+}
+
 function setupDebug() {
   if (!DEBUG) return;
   const p = $('debugPanel');
   p.hidden = false;
-  p.innerHTML = `<b>Test mode – record what the microphone hears</b>
+  p.innerHTML = `<b>Test mode – device self-test</b>
+    <p class="small muted" style="margin:4px 0">Runs the app's automatic checks on this device (about a minute on a phone). The results are added to recordings you download.</p>
+    <p><button type="button" class="btn" id="d-selftest">Run self-test</button> <span class="small" id="d-selftestOut"></span></p>
+    <b>Test mode – record what the microphone hears</b>
     <label class="check"><input type="checkbox" id="d-capture" ${DEBUG_MODE === 'capture' ? 'checked' : ''}> Keep a recording of each run so it can be downloaded for fault-finding</label>
     <div id="d-captureOut"></div>
     <b>Test mode – synthetic performance</b>
@@ -693,6 +755,7 @@ function setupDebug() {
     <div class="field"><label for="d-vibrato">Vibrato ± cents</label><input type="number" id="d-vibrato" value="0"></div>
     <div class="field"><label for="d-missing">Missing notes (#, comma)</label><input type="text" id="d-missing" value=""></div>
     <div class="field"><label for="d-extra">Extra note after (#, comma)</label><input type="text" id="d-extra" value=""></div>`;
+  $('d-selftest').addEventListener('click', runSelfTest);
 }
 
 // ---------------------------------------------------------------- start up

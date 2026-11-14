@@ -140,7 +140,12 @@ export class CalibrationWizard {
 
   finish() {
     const inst = this.getInstrument();
-    const cal = summarise(inst, this.noise, this.results, this.getA4());
+    const audio = this.engine.describe ? this.engine.describe() : null;
+    const cal = summarise(inst, this.noise, this.results, this.getA4(), {
+      microphone: audio && audio.track ? audio.track.label : null,
+      micSettings: audio && audio.track ? audio.track.settings : null,
+      userAgent: navigator.userAgent,
+    });
     this.stop();
     if (!cal) { this.setStep('No open strings were measured, so nothing was saved.'); return; }
     saveCalibration(inst, cal);
