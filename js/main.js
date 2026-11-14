@@ -2,10 +2,12 @@
 
 import { INSTRUMENTS } from './instruments.js';
 import {
-  EXERCISE_TYPES, DEFAULT_SETTINGS, RANGE_LABELS, normalise, buildExercise, isPlayable,
-  typesForInstrument, rangesFor, keyListFor,
+  EXERCISE_TYPES, DEFAULT_SETTINGS, RANGE_LABELS, EXERCISE_FIELDS, GLOBAL_FIELDS, normalise, buildExercise, isPlayable,
+  typesForInstrument, rangesFor, keyListFor, pickFields, slurGroup,
 } from './exercises.js';
-import { buildSequence, RHYTHMS } from './sequence.js';
+import { buildSequence, RHYTHMS, isCrotchetRhythm } from './sequence.js';
+import { loadResults, saveResults, recordRun, makeRun, migrateHistory, cardStats, compactAll } from './results.js';
+import { ResultsPage } from './ui/resultsPage.js';
 import { pcName, parsePc, noteName, spellMidi } from './theory.js';
 import { renderScore, renderKeySignature, markNote } from './notation.js';
 import { describeOptions, shortOptions } from './settingsText.js';
@@ -17,13 +19,15 @@ import { encodeWav } from './audio/wav.js';
 import { APP_VERSION } from './version.js';
 import { SEG } from './segmenter.js';
 import { RUN } from './practice.js';
+import { scoresAtLevels } from './scoring.js';
 import { Meter, fmtCents } from './ui/meter.js';
 import { renderSummary } from './ui/summary.js';
 import { TunerPage } from './ui/tunerPage.js';
 import { CalibrationWizard } from './ui/calibrationWizard.js';
+import { MetronomeCard } from './ui/metronomeCard.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
 import {
-  loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings, recordResult,
+  loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings,
   encodeShare, decodeShare, exportJson, importJson,
 } from './practiceList.js';
 
@@ -35,8 +39,17 @@ function loadPrefs() { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) 
 const prefs = { a4: 440, view: null, tab: 'practice', ...loadPrefs() };
 function savePrefs() { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* private mode */ } }
 
-let settings = normalise(prefs.settings || DEFAULT_SETTINGS);
+// Global (practice, display, listening) options live in prefs.global; the
+// exercise itself comes from the selected syllabus item or the Config form.
+if (!prefs.global) {
+  prefs.global = pickFields(normalise({ ...DEFAULT_SETTINGS, ...(prefs.settings || {}) }), GLOBAL_FIELDS);
+  if ((prefs.settings || {}).slur > 1) prefs.global.slurred = true; // earlier versions: slurring was part of the exercise
+}
+let settings = normalise({ ...DEFAULT_SETTINGS, ...(prefs.settings || {}), ...prefs.global });
 let list = loadList();
+let results = compactAll(loadResults());
+// scores kept inside items by earlier versions move to the results store
+if (list.some((x) => migrateHistory(results, x))) { saveList(list); saveResults(results); }
 let activeId = prefs.activeId && list.some((x) => x.id === prefs.activeId) ? prefs.activeId : null;
 let editingId = null;
 let exercise = null;
@@ -86,12 +99,13 @@ function syncForm() {
   fillSelect(sel('range'), rangesFor(s.instrument, s.type).map((r) => ({ value: r, label: RANGE_LABELS[r] + (isPlayable(s, { range: r }) ? '' : ' (too high)'), disabled: !isPlayable(s, { range: r }) && r !== s.range })), s.range);
   sel('octaveUp').checked = s.octaveUp;
   sel('octaveUp').disabled = !s.octaveUp && !isPlayable(s, { octaveUp: true });
-  fillSelect(sel('rhythm'), Object.entries(RHYTHMS).map(([v, r]) => ({ value: v, label: r.label })), s.rhythm);
-  for (const k of ['longEnds', 'longMidTonics', 'repeatTop', 'hint', 'vibrato', 'metronome']) sel(k).checked = !!s[k];
-  const slurOpts = [{ value: 0, label: t.doubleStop ? 'Separate bows (together)' : 'Separate bows' }];
-  if (s.rhythm === 'crotchet') for (const n of t.slurs) slurOpts.push({ value: n, label: `Slurred, ${n} notes to a bow` });
-  fillSelect(sel('slur'), slurOpts, s.slur);
-  sel('slur').disabled = slurOpts.length === 1;
+  for (const k of ['repeatTop', 'hint', 'vibrato', 'metronome']) sel(k).checked = !!s[k];
+  // notes per bow when the Practice page's "Slurred" switch is on
+  const slurOpts = t.slurs.length
+    ? t.slurs.map((n, k) => ({ value: k === 0 ? 0 : n, label: `${n} notes to a bow${k === 0 ? ' (usual)' : ''}` }))
+    : [{ value: 0, label: t.doubleStop ? 'Separate bows only' : 'Not slurred' }];
+  fillSelect(sel('slur'), slurOpts, t.slurs.length && s.slur === t.slurs[0] ? 0 : s.slur);
+  sel('slur').disabled = !t.slurs.length;
   sel('display').value = s.display;
   sel('clefMode').value = s.clefMode;
   sel('bpm').value = s.bpm;
@@ -100,7 +114,8 @@ function syncForm() {
   sel('a4').value = a4();
   $('calInfo').textContent = describeCalibration(loadCalibration(s.instrument), INSTRUMENTS[s.instrument].name);
   $('saveItemBtn').hidden = !editingId;
-  $('addBtn').textContent = editingId ? 'Add as new' : 'Add to my list';
+  $('addBtn').textContent = editingId ? 'Add as new' : 'Add to syllabus';
+  renderRhythmBar();
   // name field: empty means "use the automatic name", shown as the placeholder
   const editing = editingId && list.find((x) => x.id === editingId);
   $('o-itemName').placeholder = autoName(s);
@@ -113,6 +128,7 @@ form.addEventListener('change', (e) => {
   if (el.id === 'o-a4') { prefs.a4 = Math.min(446, Math.max(415, Number(el.value) || 440)); savePrefs(); syncForm(); return; }
   let v = el.type === 'checkbox' ? el.checked : el.value;
   if (['slur', 'bpm', 'precision'].includes(el.name)) v = Number(v);
+  if (GLOBAL_FIELDS.includes(el.name)) { setGlobal({ [el.name]: v }); return; }
   const next = { ...settings };
   if (el.name === 'key') next[EXERCISE_TYPES[settings.type].keyKind === 'start' ? 'start' : 'key'] = v;
   else next[el.name] = v;
@@ -120,8 +136,16 @@ form.addEventListener('change', (e) => {
 });
 sel('precision').addEventListener('input', () => { $('precisionName').textContent = precisionAt(sel('precision').value).name; });
 
+/** Change global (practice/display/listening) options – they apply to every exercise. */
+function setGlobal(patch) {
+  if ('precision' in patch && resultsPage) resultsPage.invalidate();
+  prefs.global = pickFields(normalise({ ...settings, ...patch }), GLOBAL_FIELDS);
+  setSettings({ ...settings, ...prefs.global }, { keepActive: true });
+}
+
 function setSettings(next, { keepActive = false } = {}) {
   settings = normalise(next);
+  prefs.global = pickFields(settings, GLOBAL_FIELDS);
   if (!keepActive && activeId) {
     const item = list.find((x) => x.id === activeId);
     if (!item || !sameSettings(expandSettings(item.settings), settings)) { if (!editingId) activeId = null; }
@@ -177,6 +201,25 @@ function placeArrow(k) {
   a.hidden = false;
   a.style.left = `${t.x}px`;
   a.style.top = `${t.y}px`;
+  followScroll(t);
+}
+
+/** Keep the current note visible: scroll the score box down (and across) as it is played. */
+function followScroll(t) {
+  const box = $('scoreWrap');
+  if (box.scrollHeight <= box.clientHeight + 4 && box.scrollWidth <= box.clientWidth + 4) return;
+  const wantTop = Math.max(0, t.y - 40 - box.clientHeight * 0.15);
+  const visibleTop = box.scrollTop, visibleBottom = box.scrollTop + box.clientHeight;
+  const top = (t.y - 40 < visibleTop || t.y + 120 > visibleBottom) ? wantTop : box.scrollTop;
+  const left = (t.x < box.scrollLeft + 20 || t.x > box.scrollLeft + box.clientWidth - 20) ? Math.max(0, t.x - box.clientWidth / 3) : box.scrollLeft;
+  if (top === box.scrollTop && left === box.scrollLeft) return;
+  box.scrollTo({ top, left, behavior: 'smooth' });
+  // some browsers/power-saving modes don't animate: make sure it gets there
+  clearTimeout(followScroll.timer);
+  followScroll.timer = setTimeout(() => {
+    if (Math.abs(box.scrollTop - Math.min(top, box.scrollHeight - box.clientHeight)) > 2) box.scrollTop = top;
+    if (Math.abs(box.scrollLeft - Math.min(left, box.scrollWidth - box.clientWidth)) > 2) box.scrollLeft = left;
+  }, 400);
 }
 
 // Redraw only when the width changes: phone address bars collapsing fire
@@ -307,6 +350,14 @@ function finishSession(result) {
   const finished = session;
   session = null;
   $('startBtn').textContent = 'Start';
+  // a run that ended by itself: ignore a late tap on Stop (it would start a new run)
+  const auto = finished && finished.log && finished.log.endReason && finished.log.endReason !== 'Stop pressed';
+  if (auto) {
+    const b = $('startBtn');
+    b.disabled = true;
+    clearTimeout(finishSession.timer);
+    finishSession.timer = setTimeout(() => { b.disabled = !exercise || !exercise.ok; }, 1000);
+  }
   $('arrow').hidden = true;
   meter.clear();
   offerCapture(finished, result);
@@ -318,7 +369,16 @@ function finishSession(result) {
   renderSummary($('summary'), { result, seq, prec: prec(), settings });
   colourAll(result);
   const item = activeId && list.find((x) => x.id === activeId);
-  if (item && sameSettings(expandSettings(item.settings), settings)) { recordResult(item, result); saveList(list); renderList(); }
+  if (item && sameSettings(expandSettings(item.settings), settings)) {
+    const run = makeRun(result, seq, settings.rhythm, Date.now(), (n) => noteName(n, { octave: true }), scoresAtLevels(result, undefined, precisionAt));
+    run.level = settings.precision;
+    run.slurred = slurGroup(settings) || 0; // notes per bow, 0 = separate bows
+    recordRun(results, item.id, run);
+    saveResults(results);
+    renderList();
+    if (resultsPage) resultsPage.invalidate();
+    setStatus(`Finished – score ${Math.round(result.total)} / 100. Saved to the results for “${item.name}”.`);
+  }
 }
 
 function stopSession(silent = false) {
@@ -397,9 +457,10 @@ function renderList() {
     const li = document.createElement('li');
     li.className = 'item' + (item.id === activeId ? ' active' : '');
     li.tabIndex = 0;
-    const h = item.history || [];
-    const last = h.length ? h[h.length - 1].t : null;
-    const best = h.length ? Math.max(...h.map((x) => x.t)) : null;
+    const st = cardStats(results, item.id, settings.precision);
+    const h = st.trend.map((t) => ({ t }));
+    const last = st.last;
+    const best = st.best;
     li.innerHTML = `<div class="name">${esc(item.name)}</div>
       <div class="actions">
         <button data-act="edit" title="Change options" aria-label="Change options">⚙</button>
@@ -408,7 +469,7 @@ function renderList() {
         <button data-act="down" title="Move down" aria-label="Move down" ${idx === list.length - 1 ? 'disabled' : ''}>↓</button>
         <button data-act="del" title="Remove" aria-label="Remove">✕</button>
       </div>
-      <div class="meta">${last == null ? 'Not played yet' : `Last ${last} · Best ${best} · ${h.length} run${h.length === 1 ? '' : 's'}`} ${sparkline(h)}</div>`;
+      <div class="meta">${last == null ? 'Not played yet' : `Last ${last} · Best ${best} · ${st.count} run${st.count === 1 ? '' : 's'}`} ${sparkline(h)}</div>`;
     li.addEventListener('click', (e) => {
       const act = e.target.closest('button') && e.target.closest('button').dataset.act;
       if (act) { listAction(act, item, idx); return; }
@@ -419,11 +480,11 @@ function renderList() {
   });
 }
 
-function selectItem(item, scroll = true) {
+function selectItem(item, goPractise = true) {
   activeId = item.id;
   editingId = null;
-  setSettings(expandSettings(item.settings), { keepActive: true });
-  if (scroll) $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setSettings({ ...expandSettings(item.settings), ...prefs.global }, { keepActive: true });
+  if (goPractise && !isWide()) setTab('practice');
 }
 
 // Back / Next through the list (wraps around)
@@ -443,8 +504,11 @@ $('nextBtn').addEventListener('click', () => stepList(1));
 
 function listAction(act, item, idx) {
   if (act === 'del') {
-    if (!confirm(`Remove “${item.name}” from your list?`)) return;
+    if (!confirm(`Remove “${item.name}” from the syllabus? Its results will be deleted too.`)) return;
     list.splice(idx, 1);
+    delete results[item.id];
+    saveResults(results);
+    if (resultsPage) resultsPage.invalidate();
     if (activeId === item.id) activeId = null;
     if (editingId === item.id) editingId = null;
   } else if (act === 'up' && idx > 0) { [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]]; }
@@ -455,8 +519,8 @@ function listAction(act, item, idx) {
   } else if (act === 'edit') {
     activeId = item.id;
     editingId = item.id;
-    setSettings(expandSettings(item.settings), { keepActive: true });
-    setView('all');
+    setSettings({ ...expandSettings(item.settings), ...prefs.global }, { keepActive: true });
+    $('optionsView').scrollIntoView({ behavior: 'smooth', block: 'start' });
     $('addMsg').textContent = `Editing “${item.name}”. Change options, then press Save changes.`;
   }
   saveList(list);
@@ -474,7 +538,8 @@ $('addBtn').addEventListener('click', () => {
   prefs.activeId = activeId; savePrefs();
   syncForm();
   renderList();
-  $('addMsg').textContent = `Added “${item.name}”. Your list has ${list.length} exercise${list.length === 1 ? '' : 's'}.`;
+  $('addMsg').textContent = `Added “${item.name}”. Your syllabus has ${list.length} exercise${list.length === 1 ? '' : 's'}.`;
+  if (resultsPage) resultsPage.invalidate();
 });
 
 $('saveItemBtn').addEventListener('click', () => {
@@ -498,14 +563,14 @@ $('shareBtn').addEventListener('click', async () => {
   const url = `${location.origin}${location.pathname}#list=${encodeShare(list)}`;
   let copied = false;
   try { await navigator.clipboard.writeText(url); copied = true; } catch { /* not allowed */ }
-  $('shareMsg').innerHTML = `${copied ? 'Link copied. ' : ''}Send this link to share your list (scores are not included):<br><input type="text" readonly style="width:100%" value="${esc(url)}" onclick="this.select()">`;
+  $('shareMsg').innerHTML = `${copied ? 'Link copied. ' : ''}Send this link to share your syllabus (scores are not included):<br><input type="text" readonly style="width:100%" value="${esc(url)}" onclick="this.select()">`;
 });
 
 $('exportBtn').addEventListener('click', () => {
-  const blob = new Blob([exportJson(list)], { type: 'application/json' });
+  const blob = new Blob([exportJson(list, results)], { type: 'application/json' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'scale-practice-list.json';
+  a.download = 'scale-practice-syllabus.json';
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
@@ -520,18 +585,24 @@ $('importFile').addEventListener('change', async (e) => {
     const items = importJson(await file.text());
     addImported(items, 'file');
   } catch (err) {
-    $('shareMsg').textContent = 'That file is not a practice list.';
+    $('shareMsg').textContent = 'That file is not a syllabus.';
   }
 });
 
 function addImported(items, source) {
   if (!items.length) { $('shareMsg').textContent = 'There were no exercises to import.'; return; }
-  const ok = confirm(`Add ${items.length} exercise${items.length === 1 ? '' : 's'} from the ${source} to your list?`);
+  const ok = confirm(`Add ${items.length} exercise${items.length === 1 ? '' : 's'} from the ${source} to your syllabus?`);
   if (!ok) return;
+  for (const it of items) {
+    if (it.importedResults) { results[it.id] = it.importedResults; delete it.importedResults; }
+    migrateHistory(results, it);
+  }
+  compactAll(results);
+  saveResults(results);
   list.push(...items);
   saveList(list);
   renderList();
-  setView('list');
+  if (resultsPage) resultsPage.invalidate();
   $('shareMsg').textContent = `Added ${items.length} exercise${items.length === 1 ? '' : 's'}.`;
 }
 
@@ -543,32 +614,83 @@ function checkShareLink() {
   catch { $('shareMsg').textContent = 'The shared link could not be read.'; }
 }
 
-// ---------------------------------------------------------------- side panel show/hide (small screens)
-function setPanelCollapsed(c) {
-  prefs.panelCollapsed = !!c; savePrefs();
-  $('sidePanel').classList.toggle('collapsed', !!c);
-  $('panelToggle').setAttribute('aria-expanded', String(!c));
-  $('panelToggle').innerHTML = c ? 'Show my list &amp; options ▾' : 'Hide my list &amp; options ▴';
-}
-$('panelToggle').addEventListener('click', () => setPanelCollapsed(!prefs.panelCollapsed));
+// ---------------------------------------------------------------- student name (Config; used for PDF results)
+$('studentName').value = prefs.studentName || '';
+$('studentName').addEventListener('change', () => { prefs.studentName = $('studentName').value.trim().slice(0, 80); savePrefs(); });
 
-// ---------------------------------------------------------------- views, tabs, theme
-function setView(v) {
-  prefs.view = v; savePrefs();
-  document.querySelectorAll('.seg [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
-  $('listView').hidden = false; // the list is always visible; options open below it
-  $('optionsView').hidden = v !== 'all';
-  if (v === 'list' && editingId) { editingId = null; syncForm(); $('addMsg').textContent = ''; }
+// ---------------------------------------------------------------- rhythm buttons (Practice page)
+function renderRhythmBar() {
+  const bar = $('rhythmBar');
+  if (!bar.childElementCount) {
+    for (const [id, r] of Object.entries(RHYTHMS)) {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'chip';
+      b.setAttribute('role', 'radio');
+      b.dataset.rhythm = id;
+      b.textContent = r.short;
+      b.title = r.label;
+      b.addEventListener('click', () => { if (settings.rhythm !== id) setGlobal({ rhythm: id }); });
+      bar.appendChild(b);
+    }
+  }
+  for (const b of bar.children) if (b.dataset.rhythm) b.setAttribute('aria-checked', String(b.dataset.rhythm === settings.rhythm));
+  // Slurred / separate bows switch, to the right of the rhythms
+  let sw = $('slurBtn');
+  if (!sw) {
+    sw = document.createElement('button');
+    sw.type = 'button';
+    sw.id = 'slurBtn';
+    sw.className = 'chip toggle';
+    sw.addEventListener('click', () => setGlobal({ slurred: !settings.slurred }));
+    bar.appendChild(sw);
+  }
+  const t = EXERCISE_TYPES[settings.type];
+  const can = t.slurs.length > 0 && isCrotchetRhythm(settings.rhythm);
+  const per = slurGroup({ ...settings, slurred: true });
+  sw.disabled = !can;
+  sw.setAttribute('aria-pressed', String(!!settings.slurred && can));
+  sw.textContent = settings.slurred && can ? `⌒ Slurred ${per}` : '⌒ Slurred';
+  sw.title = !t.slurs.length ? 'This exercise is played with separate bows'
+    : !isCrotchetRhythm(settings.rhythm) ? 'Slurs apply to the crotchet rhythms'
+    : settings.slurred ? `Slurred, ${per} notes to a bow – tap for separate bows` : 'Separate bows – tap to slur';
 }
-document.querySelectorAll('.seg [data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+
+// ---------------------------------------------------------------- tabs (Practice | Config | Results | Tuner)
+const wideQuery = window.matchMedia('(min-width: 1600px)');
+const isWide = () => wideQuery.matches;
+let resultsPage = null;
 
 let tunerPage = null;
 let calWizard = null;
+let metroCard = null;
 function setTab(tab) {
+  // on very wide screens Practice and Config share one page
+  if (tab === 'config' && isWide()) tab = 'practice';
   prefs.tab = tab; savePrefs();
+  const wide = isWide();
+  document.querySelector('.tabs [data-tab="config"]').classList.toggle('wide-hidden', wide);
   document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  const pc = tab === 'practice' || tab === 'config';
+  $('pcLayout').hidden = !pc;
+  $('pcLayout').classList.toggle('both', wide);
   $('tab-practice').hidden = tab !== 'practice';
+  $('tab-config').hidden = !(tab === 'config' || (wide && tab === 'practice'));
+  $('tab-results').hidden = tab !== 'results';
   $('tab-tuner').hidden = tab !== 'tuner';
+  if (tab !== 'practice') { stopSession(true); stopPlayback(); }
+  if (tab === 'results') {
+    if (!resultsPage) {
+      resultsPage = new ResultsPage({
+        getList: () => list,
+        getResults: () => results,
+        getStudentName: () => ($('studentName').value.trim() || prefs.studentName || ''),
+        getPrecision: () => settings.precision,
+        setStudentName: (n) => { prefs.studentName = n; savePrefs(); $('studentName').value = n; },
+      });
+    }
+    resultsPage.show();
+  }
   if (tab === 'tuner') {
     stopSession(true);
     stopPlayback();
@@ -581,21 +703,27 @@ function setTab(tab) {
         setInstrument: (inst) => { setSettings({ ...settings, instrument: inst }); if (calWizard) calWizard.refresh(); },
         beforeStart: () => { if (calWizard) calWizard.cancel(''); },
       });
+      metroCard = new MetronomeCard({
+        engine,
+        getBpm: () => settings.bpm,
+        setBpm: (bpm) => setGlobal({ bpm }),
+      });
       calWizard = new CalibrationWizard({
         engine,
         getInstrument: () => settings.instrument,
         getA4: a4,
-        beforeStart: () => { if (tunerPage.running) tunerPage.stop(); tunerPage.stopTones(); },
+        beforeStart: () => { if (tunerPage.running) tunerPage.stop(); tunerPage.stopTones(); if (metroCard && metroCard.running) metroCard.stop(); },
         onChange: () => syncForm(),
       });
-    } else { tunerPage.refresh(true); calWizard.refresh(); }
+    } else { tunerPage.refresh(true); calWizard.refresh(); metroCard.refresh(); }
   } else {
     if (calWizard) calWizard.cancel('');
+    if (metroCard && metroCard.running) metroCard.stop();
     if (tunerPage) tunerPage.deactivate();
-    syncForm();
-    drawScore();
+    if (pc) { syncForm(); if (tab === 'practice') redrawKeepingColours(); }
   }
 }
+wideQuery.addEventListener('change', () => setTab(prefs.tab || 'practice'));
 document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
 
 const THEMES = ['auto', 'light', 'dark'];
@@ -603,7 +731,7 @@ function applyTheme(t) {
   if (t === 'auto') delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = t;
   try { localStorage.setItem('scales.theme', t); } catch { /* ignore */ }
-  $('themeBtn').textContent = { auto: '◐ Auto', light: '☀ Light', dark: '☾ Dark' }[t];
+  $('themeBtn').innerHTML = { auto: '◐<span class="theme-label"> Auto</span>', light: '☀<span class="theme-label"> Light</span>', dark: '☾<span class="theme-label"> Dark</span>' }[t];
   $('themeBtn').setAttribute('aria-label', `Colour theme: ${t}. Click to change.`);
   meter.refreshPalette();
   if (tunerPage) tunerPage.meter.refreshPalette();
@@ -765,9 +893,7 @@ function init() {
   syncForm();
   updateExercise();
   renderList();
-  setView(prefs.view || (list.length ? 'list' : 'all'));
-  setPanelCollapsed(!!prefs.panelCollapsed);
-  setTab(prefs.tab === 'tuner' ? 'tuner' : 'practice');
+  setTab(['practice', 'config', 'results', 'tuner'].includes(prefs.tab) ? prefs.tab : (list.length ? 'practice' : 'config'));
   checkShareLink();
 }
 

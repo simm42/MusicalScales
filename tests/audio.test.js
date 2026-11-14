@@ -70,7 +70,7 @@ test('segmentation: separate bows', () => {
 });
 
 test('segmentation: slurred legato', () => {
-  const { seq, perf, notes } = segTest({ instrument: 'cello', type: 'scale', key: 'C', range: '2', slur: 7 });
+  const { seq, perf, notes } = segTest({ instrument: 'cello', type: 'scale', key: 'C', range: '2', slur: 7, slurred: true });
   eq(notes.length, seq.events.length);
   notes.forEach((n, i) => near(n.onset, perf.truth[i].onset, 0.06, `onset ${i}`));
 });

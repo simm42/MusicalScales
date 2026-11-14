@@ -4,13 +4,19 @@
 import { midiOf } from './theory.js';
 
 // Each pattern part: dur = VexFlow duration, beats in crotchets, rest flag.
+// longEnds: bottom & top notes double length; longMid: also key notes between octaves.
 export const RHYTHMS = {
-  crotchet: { label: '1 crotchet', parts: [{ dur: 'q', beats: 1 }] },
-  q2:       { label: '2 quavers', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }] },
-  q2c:      { label: '2 quavers + crotchet', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: 'q', beats: 1 }] },
-  q2r:      { label: '2 quavers + quaver rest', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5, rest: true }] },
-  q4:       { label: '4 quavers', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }] },
+  crotchet: { label: '1 crotchet', short: '♩', parts: [{ dur: 'q', beats: 1 }] },
+  crotchetLong: { label: 'Crotchets, long bottom & top', short: '♩ long ends', parts: [{ dur: 'q', beats: 1 }], longEnds: true },
+  crotchetLongMid: { label: 'Crotchets, long bottom, top & key notes', short: '♩ long ends + key notes', parts: [{ dur: 'q', beats: 1 }], longEnds: true, longMid: true },
+  q2:       { label: '2 quavers', short: '2 ♪', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }] },
+  q2c:      { label: '2 quavers + crotchet', short: '2 ♪ + ♩', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: 'q', beats: 1 }] },
+  q2r:      { label: '2 quavers + quaver rest', short: '2 ♪ + rest', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5, rest: true }] },
+  q4:       { label: '4 quavers', short: '4 ♪', parts: [{ dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }, { dur: '8', beats: 0.5 }] },
 };
+
+/** The crotchet rhythms are the ones that can be slurred. */
+export function isCrotchetRhythm(r) { return r === 'crotchet' || r === 'crotchetLong' || r === 'crotchetLongMid'; }
 
 export function patternBeats(rhythm) { return RHYTHMS[rhythm].parts.reduce((a, p) => a + p.beats, 0); }
 
@@ -28,12 +34,15 @@ export function buildSequence(exercise) {
   const last = steps.length - 1;
 
   // mark long notes and repeated top note
+  const rh = RHYTHMS[s.rhythm] || RHYTHMS.crotchet;
+  const longEnds = !!(rh.longEnds || s.longEnds);
+  const longMid = !!(rh.longMid || s.longMidTonics);
   const list = [];
   steps.forEach((st, i) => {
     // "long tonic": first and last notes, and the top note when it is a key note
     // (not the top of a scale to a 6th/12th, or the top of a dominant 7th)
     const isEnd = i === 0 || i === last || (i === top && st.tonic);
-    const long = (s.longEnds && isEnd) || (s.longMidTonics && st.tonic && !isEnd && i !== top);
+    const long = (longEnds && isEnd) || (longMid && st.tonic && !isEnd && i !== top);
     list.push({ ...st, long, role: i === 0 ? 'bottom' : i === last ? 'end' : i === top ? 'top' : '' });
     if (i === top && s.repeatTop) list.push({ ...st, long: false, role: 'repeat' });
   });
@@ -71,6 +80,7 @@ export function buildSequence(exercise) {
       onsetBeat: g.onsetBeat,
       beats: 0,
       role: g.role,
+      stepIndex: g.stepIndex, // position in the scale, whatever the rhythm
       slurred: false,
     });
   });
@@ -82,14 +92,19 @@ export function buildSequence(exercise) {
 
   // slurs: only with one note per step
   const groups = [];
-  if (s.slur > 1 && s.rhythm === 'crotchet') {
+  // notes per bow (0 = separate bows); `slurred` is the practice-page switch
+  const t = exercise.type;
+  const per = s.slurred && isCrotchetRhythm(s.rhythm) && t && t.slurs && t.slurs.length
+    ? (t.slurs.includes(Number(s.slur)) ? Number(s.slur) : t.slurs[0])
+    : 0;
+  if (per > 1) {
     let cur = [];
     const flush = () => { if (cur.length > 1) groups.push(cur); cur = []; };
     for (const e of events) {
       const prev = cur[cur.length - 1];
       if (prev && prev.midis[0] === e.midis[0]) flush(); // same pitch twice needs a bow change
       cur.push(e);
-      if (cur.length === s.slur) flush();
+      if (cur.length === per) flush();
     }
     flush();
     groups.forEach((grp, gid) => {
@@ -105,5 +120,5 @@ export function buildSequence(exercise) {
   // consecutive same pitch (repeated quavers, repeated top) – needs a re-articulation onset
   for (let i = 1; i < events.length; i++) events[i].sameAsPrev = events[i].midis.join() === events[i - 1].midis.join();
 
-  return { glyphs, events, slurGroups: groups.length, totalBeats: beat };
+  return { glyphs, events, slurGroups: groups.length, totalBeats: beat, steps: list.map((st) => st.notes) };
 }

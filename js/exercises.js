@@ -5,6 +5,7 @@ import {
   stepsMidiRange, keyFifths, transpose, noteName, midiOf,
 } from './theory.js';
 import { instrumentInfo } from './instruments.js';
+import { RHYTHMS, isCrotchetRhythm } from './sequence.js';
 
 const ALL = ['violin', 'viola', 'cello', 'bass'];
 const UPPER = ['violin', 'viola', 'cello'];
@@ -37,10 +38,9 @@ export const DEFAULT_SETTINGS = {
   range: '2',
   octaveUp: false,
   rhythm: 'crotchet',
-  longEnds: false,
-  longMidTonics: false,
   repeatTop: false,
-  slur: 0,
+  slur: 0,          // notes per bow when slurred (0 = the usual grouping for this exercise)
+  slurred: false,   // practice choice: slurred or separate bows
   display: 'score',
   clefMode: 'change',
   metronome: false,
@@ -49,6 +49,24 @@ export const DEFAULT_SETTINGS = {
   vibrato: false,
   hint: false,
 };
+
+// What belongs to a syllabus item (and share links) …
+export const EXERCISE_FIELDS = ['instrument', 'type', 'mode', 'key', 'start', 'form', 'interval', 'range', 'octaveUp', 'slur', 'repeatTop'];
+// … and what is a global practice/display/listening preference.
+export const GLOBAL_FIELDS = ['rhythm', 'slurred', 'display', 'clefMode', 'hint', 'precision', 'vibrato', 'metronome', 'bpm'];
+
+/** Notes per bow actually used: 0 when playing separate bows. */
+export function slurGroup(s) {
+  const t = EXERCISE_TYPES[s.type];
+  if (!s.slurred || !t || !t.slurs.length || !isCrotchetRhythm(s.rhythm)) return 0;
+  return t.slurs.includes(Number(s.slur)) ? Number(s.slur) : t.slurs[0];
+}
+
+export function pickFields(s, fields) {
+  const out = {};
+  for (const k of fields) if (s && k in s) out[k] = s[k];
+  return out;
+}
 
 export function typesForInstrument(inst) {
   return Object.entries(EXERCISE_TYPES).filter(([, t]) => t.instruments.includes(inst)).map(([id]) => id);
@@ -69,6 +87,11 @@ export function keyListFor(s) {
 /** Normalise settings so that every field is valid for the chosen instrument/type. */
 export function normalise(input) {
   const s = { ...DEFAULT_SETTINGS, ...input };
+  // older versions stored long notes as separate switches
+  if (s.rhythm === 'crotchet' && s.longEnds) s.rhythm = s.longMidTonics ? 'crotchetLongMid' : 'crotchetLong';
+  delete s.longEnds;
+  delete s.longMidTonics;
+  if (!RHYTHMS[s.rhythm]) s.rhythm = 'crotchet';
   if (!EXERCISE_TYPES[s.type] || !EXERCISE_TYPES[s.type].instruments.includes(s.instrument)) s.type = 'scale';
   const t = EXERCISE_TYPES[s.type];
   if (!t.tonality) s.mode = 'major';
@@ -78,10 +101,12 @@ export function normalise(input) {
   if (!ranges.includes(String(s.range))) s.range = ranges[0];
   s.range = String(s.range);
   if (!t.intervals) s.interval = '6ths';
-  if (s.rhythm !== 'crotchet' || !t.slurs.includes(Number(s.slur))) s.slur = 0;
+  // the bowing belongs to the exercise; it only applies to the crotchet rhythms
+  if (!t.slurs.includes(Number(s.slur))) s.slur = 0;
   s.slur = Number(s.slur);
+  s.slurred = !!s.slurred;
   s.bpm = Math.min(200, Math.max(30, Number(s.bpm) || 60));
-  s.precision = Math.min(4, Math.max(0, Number(s.precision)));
+  s.precision = Math.round(Math.min(4, Math.max(0, Number(s.precision) || 0)));
   return s;
 }
 

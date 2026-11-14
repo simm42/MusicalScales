@@ -1,13 +1,14 @@
-// The student's practice list: saved exercises and score history.
+// The student's syllabus: saved exercises. (Scores live in results.js.)
 // Stored only in this browser (localStorage). Share links put the list after
 // the '#' of the URL, which browsers never send to the server.
 
-import { DEFAULT_SETTINGS, normalise } from './exercises.js';
+import { DEFAULT_SETTINGS, EXERCISE_FIELDS, normalise } from './exercises.js';
 
 const KEY = 'scales.list.v1';
 const HISTORY_MAX = 20;
-// fields that belong to the exercise (A4/theme are device-wide preferences)
-const FIELDS = Object.keys(DEFAULT_SETTINGS);
+// only the exercise itself belongs to a syllabus item; rhythm, display and
+// listening options are global preferences
+const FIELDS = EXERCISE_FIELDS;
 
 export function compactSettings(s) {
   const n = normalise(s);
@@ -22,7 +23,7 @@ export function sameSettings(a, b) { return JSON.stringify(compactSettings(a)) =
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 
 export function makeItem(settings, name, autoName = true) {
-  return { id: uid(), name, autoName, settings: compactSettings(settings), history: [] };
+  return { id: uid(), name, autoName, settings: compactSettings(settings) };
 }
 
 export function loadList() {
@@ -37,11 +38,6 @@ export function saveList(list) {
   try { localStorage.setItem(KEY, JSON.stringify(list)); return true; } catch { return false; }
 }
 
-export function recordResult(item, result) {
-  item.history = item.history || [];
-  item.history.push({ d: Date.now(), t: Math.round(result.total), i: Math.round(result.intonation), ti: Math.round(result.timing) });
-  if (item.history.length > HISTORY_MAX) item.history.splice(0, item.history.length - HISTORY_MAX);
-}
 
 // ---- share / export -----------------------------------------------------
 function b64urlEncode(str) {
@@ -64,22 +60,34 @@ export function encodeShare(list) {
 export function decodeShare(str) {
   const data = JSON.parse(b64urlDecode(str));
   if (!data || !Array.isArray(data.items)) throw new Error('Not a practice list');
-  return data.items.map((x) => ({ id: uid(), name: String(x.n || 'Exercise').slice(0, 120), autoName: !!x.a, settings: compactSettings(expandSettings(x.s || {})), history: [] }));
+  return data.items.map((x) => ({ id: uid(), name: String(x.n || 'Exercise').slice(0, 120), autoName: !!x.a, settings: compactSettings(expandSettings(x.s || {})) }));
 }
 
-export function exportJson(list) {
-  return JSON.stringify({ app: 'scale-practice', version: 1, items: list }, null, 2);
+/** Export the syllabus with its results (for moving to another device). */
+export function exportJson(list, results = {}) {
+  const res = {};
+  for (const x of list) if (results[x.id]) res[x.id] = results[x.id];
+  return JSON.stringify({ app: 'scale-practice', version: 2, items: list, results: res }, null, 2);
 }
 
+/**
+ * @returns items with new ids; each carries `importedResults` (its results
+ * record from the file, if any) and possibly an old-style `history`.
+ */
 export function importJson(text) {
   const data = JSON.parse(text);
   const items = Array.isArray(data) ? data : data.items;
-  if (!Array.isArray(items)) throw new Error('Not a practice list file');
-  return items.filter((x) => x && x.settings).map((x) => ({
-    id: uid(),
-    name: String(x.name || 'Exercise').slice(0, 120),
-    autoName: !!x.autoName,
-    settings: compactSettings(expandSettings(x.settings)),
-    history: Array.isArray(x.history) ? x.history.slice(-HISTORY_MAX) : [],
-  }));
+  if (!Array.isArray(items)) throw new Error('Not a syllabus file');
+  const results = (!Array.isArray(data) && data.results) || {};
+  return items.filter((x) => x && x.settings).map((x) => {
+    const item = {
+      id: uid(),
+      name: String(x.name || 'Exercise').slice(0, 120),
+      autoName: !!x.autoName,
+      settings: compactSettings(expandSettings(x.settings)),
+    };
+    if (Array.isArray(x.history) && x.history.length) item.history = x.history.slice(-HISTORY_MAX);
+    if (results[x.id]) item.importedResults = results[x.id];
+    return item;
+  });
 }

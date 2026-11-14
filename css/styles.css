@@ -69,8 +69,13 @@ button { cursor: pointer; }
 
 /* ---------- layout ---------- */
 main { max-width: 1200px; margin: 0 auto; padding: 16px; }
-.practice-layout { display: grid; grid-template-columns: 340px minmax(0, 1fr); gap: 16px; align-items: start; }
-@media (max-width: 860px) { .practice-layout { grid-template-columns: minmax(0, 1fr); } }
+/* Practice and Config are separate tabs, except on very wide screens */
+.pc-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+.tabs [data-tab="config"].wide-hidden { display: none; }
+@media (min-width: 1600px) {
+  main { max-width: 1800px; }
+  .pc-layout.both { grid-template-columns: 420px minmax(0, 1fr); }
+}
 .card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); }
 .panel { padding: 14px; }
 .panel h2 { font-size: 15px; margin: 0 0 10px; }
@@ -112,9 +117,13 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .empty { color: var(--muted); padding: 8px 0; }
 
 /* ---------- practice area ---------- */
-.list-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: -4px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.control-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 0 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.control-row .btn { padding: 7px 16px; }
+.control-row #startBtn { min-width: 84px; font-weight: 600; }
+.control-row .status { flex: 1 1 140px; min-width: 0; margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.list-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .list-nav .btn { padding: 6px 12px; }
-.list-nav span { text-align: center; flex: 1; min-width: 0; }
+.list-nav span { text-align: center; white-space: nowrap; }
 .sep { border: 0; border-top: 1px solid var(--border); margin: 4px 0 14px; }
 .stage { padding: 16px; }
 .stage h2 { margin: 0; font-size: 22px; }
@@ -205,13 +214,97 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 .cal-advice li.ok { color: var(--fg); }
 .cal-advice li.warn { color: var(--bad); font-weight: 500; }
 
-/* ---------- side panel show/hide (small screens only) ---------- */
-.panel-toggle { display: none; }
-@media (max-width: 860px) {
-  .panel-toggle {
-    display: block; width: 100%; text-align: left; border: 0; background: transparent;
-    font-weight: 600; padding: 2px 0 10px; color: var(--accent);
-  }
-  #sidePanel.collapsed .panel-toggle { padding-bottom: 0; }
-  #sidePanel.collapsed #sidePanelBody { display: none; }
+/* ---------- config ---------- */
+.sec-title { font-size: 15px; margin: 0 0 10px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); }
+.legend-note { text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+/* ---------- practice page ---------- */
+.practice { padding: 12px 16px; }
+.rhythm-bar { display: flex; gap: 6px; overflow-x: auto; padding: 2px 2px 8px; margin: 0 -2px 6px; scrollbar-width: thin; }
+.chip {
+  flex: 0 0 auto; border: 1px solid var(--border); background: var(--surface-2); color: var(--fg);
+  border-radius: 999px; padding: 6px 12px; font-size: 14px; white-space: nowrap;
+}
+.chip[aria-checked="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); font-weight: 600; }
+.chip.toggle { margin-left: 8px; border-style: dashed; }
+.chip.toggle[aria-pressed="true"] { background: var(--accent-soft); border: 1px solid var(--accent); color: var(--fg); font-weight: 600; }
+.chip:disabled { opacity: .45; cursor: not-allowed; }
+.title-row { display: flex; gap: 4px 14px; align-items: baseline; flex-wrap: wrap; margin-bottom: 6px; }
+.title-row h2 { margin: 0; font-size: 20px; }
+.title-row .opts { margin: 0; color: var(--muted); font-size: 13px; }
+.practice-main { display: grid; grid-template-columns: 120px minmax(0, 1fr); gap: 14px; align-items: start; }
+.gauge-col { display: flex; flex-direction: column; align-items: stretch; gap: 8px; position: sticky; top: 64px; }
+.score-col { min-width: 0; }
+.score-wrap { max-height: calc(100dvh - 230px); min-height: 160px; overflow: auto; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.tuner.stack { flex-direction: column; align-items: center; gap: 8px; margin: 0; }
+.tuner.stack .meter { width: 48px; height: 190px; }
+.tuner.stack .readout { text-align: center; flex: 0 0 auto; width: 100%; }
+.tuner.stack .readout .note { font-size: 30px; letter-spacing: 0; }
+.tuner.stack .readout .cents { font-size: 15px; margin-top: 4px; }
+.tuner.stack .readout .hint { font-size: 12px; }
+
+/* ---------- results ---------- */
+.results-head { margin-bottom: 8px; }
+.results-head select { width: auto; max-width: 100%; flex: 1 1 220px; }
+.res-block { margin: 14px 0 22px; }
+.res-block h3 { font-size: 16px; margin: 0 0 4px; }
+.res-block .muted { margin: 0 0 6px; }
+.chart-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; color: var(--muted); margin: 2px 0 4px; }
+.chart-legend i { display: inline-block; width: 12px; height: 3px; vertical-align: middle; margin-right: 4px; border-radius: 2px; }
+.surface-wrap { position: relative; width: 100%; max-width: 900px; touch-action: none; cursor: grab; }
+.surface-wrap canvas { width: 100%; height: auto; display: block; border-radius: 10px; background: var(--surface-2); }
+.pdf-options { border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; margin: 6px 0 10px; display: grid; gap: 8px; }
+.pdf-options .cols { display: flex; gap: 18px; flex-wrap: wrap; }
+.pdf-options fieldset { margin: 0; min-width: 200px; }
+
+/* ---------- phones ---------- */
+@media (max-width: 520px) {
+  .practice-main { grid-template-columns: 76px minmax(0, 1fr); gap: 10px; }
+  .tuner.stack .meter { width: 40px; height: 150px; }
+  .tuner.stack .readout .note { font-size: 22px; }
+  .tuner.stack .readout .cents { font-size: 12px; }
+}
+/* landscape phones: everything on one screen without page scrolling */
+@media (orientation: landscape) and (max-height: 500px) {
+  .app-header { padding: 4px 10px; gap: 8px; }
+  .app-header h1 { font-size: 14px; }
+  .tabs button { padding: 3px 10px; font-size: 13px; }
+  .icon-btn { padding: 3px 9px; font-size: 13px; }
+  main { padding: 6px 10px; }
+  .practice { padding: 8px 10px; }
+  .rhythm-bar { padding-bottom: 4px; margin-bottom: 4px; }
+  .chip { padding: 3px 10px; font-size: 13px; }
+  .control-row { margin-bottom: 4px; padding-bottom: 4px; gap: 6px; }
+  .control-row .btn, .list-nav .btn { padding: 3px 12px; font-size: 14px; }
+  .control-row .status { font-size: 13px; }
+  .title-row h2 { font-size: 16px; }
+  .title-row { margin-bottom: 2px; }
+  .practice-main { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
+  .gauge-col { top: 40px; gap: 6px; }
+  .tuner.stack .meter { height: calc(100dvh - 215px); min-height: 70px; width: 40px; }
+  .tuner.stack .readout .note { font-size: 22px; }
+  .tuner.stack .readout .cents { font-size: 12px; margin-top: 2px; }
+  .score-wrap { max-height: calc(100dvh - 172px); min-height: 100px; }
+  .footer-note { display: none; }
+}
+.res-block svg { width: 100%; height: auto; display: block; }
+
+/* ---------- metronome (Tuner page) ---------- */
+.metro { display: grid; gap: 10px; }
+.metro-tempo { display: flex; align-items: center; gap: 10px; }
+.metro-tempo input[type="number"] { width: 90px; font-size: 20px; font-weight: 700; text-align: center; }
+.metro-tempo input[type="range"] { flex: 1; }
+.m-lights { display: flex; gap: 10px; }
+.m-light { width: 22px; height: 22px; border-radius: 50%; background: var(--surface-2); border: 2px solid var(--border); transition: background .05s; }
+.m-light.accent { border-color: var(--accent); }
+.m-light.on { background: var(--accent); }
+
+/* narrow phones: one-line header */
+@media (max-width: 520px) {
+  .app-header { padding: 6px 10px; gap: 6px; flex-wrap: nowrap; }
+  .app-header h1 { display: none; }
+  .tabs button { padding: 5px 9px; font-size: 14px; }
+  .theme-label { display: none; }
+  .icon-btn { padding: 5px 9px; }
+  .practice { padding: 10px; }
 }

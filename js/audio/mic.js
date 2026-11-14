@@ -58,6 +58,35 @@ export class AudioEngine {
   }
 
   /**
+   * iPhones mute Web Audio when the ring/silent switch is on, but not media
+   * elements. While a looping silent <audio> plays, Web Audio sounds come through
+   * too (metronome, reference tones). Call with true inside the tap.
+   */
+  holdMediaSession(on) {
+    try {
+      if (on) {
+        if (!this.silentEl) {
+          // 1 s of silence as a WAV (16-bit mono, 8 kHz)
+          const n = 8000, buf = new ArrayBuffer(44 + n * 2), dv = new DataView(buf);
+          const w = (p, s) => { for (let i = 0; i < 4; i++) dv.setUint8(p + i, s.charCodeAt(i)); };
+          w(0, 'RIFF'); dv.setUint32(4, 36 + n * 2, true); w(8, 'WAVE'); w(12, 'fmt '); dv.setUint32(16, 16, true);
+          dv.setUint16(20, 1, true); dv.setUint16(22, 1, true); dv.setUint32(24, 8000, true); dv.setUint32(28, 16000, true);
+          dv.setUint16(32, 2, true); dv.setUint16(34, 16, true); w(36, 'data'); dv.setUint32(40, n * 2, true);
+          this.silentEl = new Audio(URL.createObjectURL(new Blob([buf], { type: 'audio/wav' })));
+          this.silentEl.loop = true;
+          this.silentEl.setAttribute('playsinline', '');
+        }
+        this.mediaHolds = (this.mediaHolds || 0) + 1;
+        const p = this.silentEl.play();
+        if (p && p.catch) p.catch(() => {});
+      } else if (this.silentEl) {
+        this.mediaHolds = Math.max(0, (this.mediaHolds || 1) - 1);
+        if (!this.mediaHolds) this.silentEl.pause();
+      }
+    } catch { /* not needed elsewhere */ }
+  }
+
+  /**
    * iOS audio session (Safari 16.4+): 'playback' plays even with the ring/silent
    * switch on and uses the loudspeaker; 'play-and-record' is needed while the
    * microphone is on. Other browsers ignore this.

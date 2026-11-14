@@ -93,3 +93,28 @@ export function scoreRun(o) {
     bpm: metronome ? 60 / metronome.spb : o.secondsPerBeat ? 60 / o.secondsPerBeat : null,
   };
 }
+
+/**
+ * The same run re-scored at each of the five precision levels (Beginner …
+ * Expert), so results stay comparable whatever the slider is set to.
+ * @returns {Array<[total, intonation, timing]>} index = precision level 0–4
+ */
+export function scoresAtLevels(result, levels = [0, 1, 2, 3, 4], precisionAt) {
+  return levels.map((lv) => {
+    const p = precisionAt(lv);
+    let inton = 0, timing = 0;
+    for (const r of result.perNote) {
+      if (r.status === 'ok' && r.cents && r.cents.length) {
+        const cs = r.cents.filter((c) => c != null);
+        inton += cs.length ? cs.reduce((a, c) => a + linearScore(c, p.fullCents, p.zeroCents), 0) / r.cents.length : 0;
+      }
+      if (r.status !== 'missing' && r.timingDev != null) timing += linearScore(r.timingDev, p.fullTiming, p.zeroTiming);
+      else if (r.status !== 'missing') timing += r.timing; // no deviation recorded (single note)
+    }
+    const n = result.perNote.length || 1;
+    inton /= n;
+    timing /= n;
+    const total = Math.max(0, Math.min(100, SCORING.intonationWeight * inton + SCORING.timingWeight * timing - (result.penalty || 0)));
+    return [Math.round(total * 10) / 10, Math.round(inton * 10) / 10, Math.round(timing * 10) / 10];
+  });
+}

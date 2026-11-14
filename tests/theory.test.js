@@ -173,7 +173,7 @@ test('sequence: long ends, repeat top, rhythms and slurs', () => {
   eq(q2r.events[2].onsetBeat, 1.5);
   eq(q2r.events[1].beats, 1);
 
-  const sl = buildSequence(buildExercise({ instrument: 'violin', type: 'scale', key: 'G', range: '2', slur: 7 }));
+  const sl = buildSequence(buildExercise({ instrument: 'violin', type: 'scale', key: 'G', range: '2', slur: 7, slurred: true }));
   eq(sl.slurGroups, 4); // 29 notes: 4 bows of 7, last tonic on its own
   assert(sl.events[1].slurred && !sl.events[7].slurred);
 });
@@ -189,4 +189,14 @@ test('clef changes for cello 3 octaves', () => {
   const a = buildExercise({ instrument: 'cello', type: 'scale', key: 'A', range: '3' });
   const am = a.gen.steps.map((s) => midiOf(s.notes[0]));
   eq(assignClefs('cello', am, 'change')[21], 'treble'); // A5
+});
+
+test('slurred switch: grouping from the exercise, only for crotchet rhythms', () => {
+  const base = { instrument: 'violin', type: 'scale', key: 'G', range: '2', slur: 7 };
+  eq(buildSequence(buildExercise({ ...base, slurred: false })).slurGroups, 0);
+  eq(buildSequence(buildExercise({ ...base, slurred: true })).slurGroups, 4);
+  eq(buildSequence(buildExercise({ ...base, slurred: true, rhythm: 'q2' })).slurGroups, 0);
+  // no grouping chosen: the usual one for the exercise (2 for scales)
+  eq(buildSequence(buildExercise({ ...base, slur: 0, slurred: true, range: '1' })).slurGroups, 7);
+  eq(buildSequence(buildExercise({ ...base, slurred: true, rhythm: 'crotchetLong' })).slurGroups, 4);
 });

@@ -47,7 +47,7 @@ export function renderKeySignature(container, exercise) {
 export function renderScore(container, exercise, seq, { clefMode = 'change' } = {}) {
   container.innerHTML = '';
   const V = VF();
-  const width = Math.max(260, Math.floor(container.clientWidth || 800));
+  const width = Math.max(200, Math.floor(container.clientWidth || 800));
   const glyphs = seq.glyphs;
 
   // clef per step (a step's repeated quavers/rests share its clef)

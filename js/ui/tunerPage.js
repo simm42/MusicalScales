@@ -114,12 +114,14 @@ export class TunerPage {
   async toggleTone(i, btn) {
     // inside the tap (iOS); keep the microphone's session if the tuner is listening
     this.engine.unlock(this.running ? null : 'playback');
+    if (!this.tones.has(i)) this.engine.holdMediaSession(true); // heard even with the iPhone silent switch on
     const ctx = await this.engine.ensureContext();
     if (this.tones.has(i)) {
       const t = this.tones.get(i);
       t.g.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
       t.osc.stop(ctx.currentTime + 0.3);
       this.tones.delete(i);
+      this.engine.holdMediaSession(false);
       btn.setAttribute('aria-pressed', 'false');
       return;
     }
@@ -137,7 +139,7 @@ export class TunerPage {
   }
 
   stopTones() {
-    for (const { osc, g } of this.tones.values()) { try { g.gain.value = 0; osc.stop(); } catch { /* already stopped */ } }
+    for (const { osc, g } of this.tones.values()) { try { g.gain.value = 0; osc.stop(); } catch { /* already stopped */ } this.engine.holdMediaSession(false); }
     this.tones.clear();
   }
 

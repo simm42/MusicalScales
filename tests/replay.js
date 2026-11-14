@@ -99,7 +99,7 @@ function render(name, meta, r) {
     <div>Replayed now: <b>${res.total.toFixed(0)}</b> (intonation ${res.intonation.toFixed(0)}, timing ${res.timing.toFixed(0)}, missing ${res.missing}, wrong ${res.wrong}, extras ${res.extras.length}) · ${live}</div>
     <div class="muted">detected ${r.notes.length} notes for ${ev.length} expected · noise floor ${(20 * Math.log10(r.noiseFloor)).toFixed(1)} dBFS · gate ${(20 * Math.log10(r.gate)).toFixed(1)} dBFS · loudest frame ${(20 * Math.log10(peak + 1e-9)).toFixed(1)} dBFS · ${esc(meta.userAgent || '')}</div>
     ${details}
-    ${extras ? `<div class="muted">extra notes: ${esc(extras)}</div>` : ''}
+    ${extras ? `<div class="muted">errors (extra notes): ${esc(extras)}</div>` : ''}
     ${onsets ? `<details><summary>Live follower (${(meta.log.onsets || []).length} note starts)</summary><div class="small">${esc(onsets)}</div></details>` : ''}
     ${chart(r, meta)}
     <details><summary>Per-note detail</summary><table><tr><th>#</th><th>note</th><th>exp midi</th><th>heard midi</th><th>cents</th><th>onset</th><th>dur</th><th>timing</th><th>status</th></tr>${rows}</table></details>`;

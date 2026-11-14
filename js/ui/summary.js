@@ -80,7 +80,7 @@ export function renderSummary(el, { result, seq, prec, settings }) {
         <div class="stat total"><div class="v">${r0(result.total)}</div><div class="l">Total / 100</div></div>
         <div class="stat"><div class="v">${r0(result.intonation)}</div><div class="l">Intonation (75%)</div></div>
         <div class="stat"><div class="v">${r0(result.timing)}</div><div class="l">Timing (25%)</div></div>
-        <div class="stat"><div class="v">${result.extras.length}</div><div class="l">Extra notes (−${result.penalty})</div></div>
+        <div class="stat"><div class="v">${result.extras.length}</div><div class="l">Errors (−${result.penalty})</div></div>
       </div>
       ${offsetNotice(result)}
       <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents) · Vibrato ${settings.vibrato ? 'on' : 'off'} · ${result.missing} missing · ${result.wrong} wrong${tempo}${settings.metronome ? ' · timed against the metronome' : ' · timed against your own pulse'}</p>

@@ -3,13 +3,17 @@
 A free web page that helps students practise scales and arpeggios on the **violin, viola, cello and double bass**.
 
 - Choose the exercise: major and minor scales (natural, harmonic or melodic), arpeggios, chromatic scales, dominant and diminished 7ths, double stops (broken or together), double-bass scales in broken and running thirds, thumb-position scales, and double-bass ranges to a 6th or 12th.
-- Choose 1–3 octaves, a rhythm for each note, long notes at the ends, a repeated top note, and slurs.
+- Four tabs: **Practice**, **Config**, **Results** and **Tuner**. On very wide screens (1600 px and up) Practice and Config share one page. The layout is made for phones, including landscape.
+- **Practice:** buttons across the top choose the rhythm for each note (crotchet, crotchets with long ends, long ends plus long key notes, 2 quavers, 2 quavers + crotchet, 2 quavers + rest, 4 quavers) and switch **Slurred** on or off. The tuner gauge sits on the left with the note name and cents underneath, and the score scrolls itself as you play.
+- **Config:** student name; the **Syllabus** (the exercises being worked on) with Back / Next on the Practice page; exercise options (1–3 octaves, repeated top note, notes per bow when slurred); and display and listening options that apply to every exercise.
 - Show only the name, the key signature, or the full score.
 - **Play** performs the exercise in a synthesised violin, viola, cello or double-bass tone at the chosen tempo, with the arrow following along.
 - **The microphone listens.** A tuner bar shows how sharp or flat each note is, and an arrow follows the student through the score. At the end you get a score: intonation counts for 75 % and timing for 25 %. Extra notes cost points, and missing notes score zero.
-- A precision slider runs from Beginner to Expert, and there's an option for players using vibrato.
-- **My list:** students save the exercises they are working on, step through them with **Back / Next**, see their last and best scores, and hide every other option. A teacher can send a list as a link. The last exercise chosen is remembered for next time.
-- **Tuner page:** tune the open strings in equal temperament or with pure fifths (pure fourths on the bass), with reference tones.
+- A precision slider has five levels, Beginner to Expert, and there's an option for players using vibrato. Extra notes count as **errors**.
+- **Syllabus:** a teacher can send a syllabus as a link (scores are not included). Export / Import moves a syllabus and its results to another device.
+- **Results:** every run of a syllabus exercise is saved in the browser. The last 10 runs are kept in full; older runs keep their scores, which are averaged per day after a month and per month after a year. Every score is stored at all five precision levels, so the charts stay right when the slider changes. For each exercise there is a 3D surface of the last 10 runs (cents sharp or flat for each note, oldest at the back), every run of the last 2 weeks, daily averages for 6 months and monthly averages for all history; a summary covers the whole syllabus.
+- **Export PDF:** one tap makes a PDF of the results (summary plus every exercise) to send to the teacher, named with the student's name. More options let the student choose exercises, charts, and all history or just the past 2 weeks.
+- **Tuner page:** tune the open strings in equal temperament or with pure fifths (pure fourths on the bass), with reference tones, and a **metronome** with beats per bar and tap tempo.
 - **Microphone calibration** (on the Tuner page): after tuning, stay quiet for a few seconds and then bow each open string. The app learns how loud and how clearly this microphone hears the instrument in this room, and adjusts its listening to match. It also checks that the microphone hears true pitch: if every string reads shifted (by the microphone, or by a recording played back at the wrong speed), it warns you and corrects for it. Calibrations are kept per instrument, in this browser only.
 - Light and dark modes.
 
@@ -75,4 +79,4 @@ Then open <http://localhost:8000>. The microphone is allowed on `localhost`.
 4. When you finish, the notes you played are **aligned** with the expected notes. Unmatched notes count as extra, gaps count as missing, and notes more than 50 cents out count as wrong. Then the notes are scored. Timing is measured against your own pulse, or against the metronome when it is on.
 5. Double stops played together are measured from spectrum peaks. Octave double stops can only be measured approximately, and the summary says so.
 
-Music notation is drawn with [VexFlow](https://www.vexflow.com) (MIT licence, included in `vendor/`).
+Music notation is drawn with [VexFlow](https://www.vexflow.com) and PDFs are made with [jsPDF](https://github.com/parallax/jsPDF) (both MIT licence, included in `vendor/`).
