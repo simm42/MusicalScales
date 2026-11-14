@@ -10,6 +10,7 @@ A free web page that helps students practise scales and arpeggios on the **violi
 - A precision slider runs from Beginner to Expert, and there's an option for players using vibrato.
 - **My list:** students save the exercises they are working on, step through them with **Back / Next**, see their last and best scores, and hide every other option. A teacher can send a list as a link. The last exercise chosen is remembered for next time.
 - **Tuner page:** tune the open strings in equal temperament or with pure fifths (pure fourths on the bass), with reference tones.
+- **Microphone calibration** (on the Tuner page): after tuning, stay quiet for a few seconds and then bow each open string. The app learns how loud and how clearly this microphone hears the instrument in this room, and adjusts its listening to match. It also checks that the microphone hears true pitch: if every string reads shifted (by the microphone, or by a recording played back at the wrong speed), it warns you and corrects for it. Calibrations are kept per instrument, in this browser only.
 - Light and dark modes.
 
 **Privacy:** everything runs in the browser. No sound, scores or settings are sent anywhere. Lists and scores are saved only in that browser on that device. Use *Export* / *Import* to move a list to another device.

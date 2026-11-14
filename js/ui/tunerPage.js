@@ -32,7 +32,8 @@ export function systemsFor(instId) {
 }
 
 export class TunerPage {
-  constructor({ engine, getA4, setA4, getInstrument, setInstrument }) {
+  constructor({ engine, getA4, setA4, getInstrument, setInstrument, beforeStart }) {
+    this.beforeStart = beforeStart;
     this.engine = engine;
     this.getA4 = getA4; this.setA4 = setA4;
     this.getInstrument = getInstrument; this.setInstrument = setInstrument;
@@ -139,6 +140,7 @@ export class TunerPage {
   }
 
   async start() {
+    if (this.beforeStart) this.beforeStart();
     this.el.error.hidden = true;
     const inst = this.getInstrument();
     const { minFreq, maxFreq } = detectionRange(inst, this.getA4());

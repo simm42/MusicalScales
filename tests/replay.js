@@ -39,7 +39,7 @@ function chart(r, meta) {
   s += `<line x1="30" x2="${W - 10}" y1="${dbY(20 * Math.log10(gate))}" y2="${dbY(20 * Math.log10(gate))}" stroke="#b3261e" stroke-dasharray="4 3"/>`;
   s += `<text x="${W - 120}" y="${dbY(20 * Math.log10(gate)) - 3}" font-size="10" fill="#b3261e">loudness gate</text>`;
   let path = '';
-  frames.forEach((f, i) => { path += `${i ? 'L' : 'M'}${x(f.t).toFixed(1)},${dbY(20 * Math.log10(f.level ?? f.rms + 1e-9)).toFixed(1)}`; });
+  frames.forEach((f, i) => { path += `${i ? 'L' : 'M'}${x(f.t).toFixed(1)},${dbY(20 * Math.log10((f.level ?? f.rms) + 1e-9)).toFixed(1)}`; });
   s += `<path d="${path}" fill="none" stroke="#1a73e8" stroke-width="1"/>`;
   let cpath = '';
   frames.forEach((f, i) => { cpath += `${i ? 'L' : 'M'}${x(f.t).toFixed(1)},${(P + 10 + (1 - f.clarity) * (H - P - 20)).toFixed(1)}`; });
@@ -84,7 +84,7 @@ async function analyseBuffer(name, buf) {
   const { samples, sampleRate, meta } = decodeWav(buf);
   const m = meta || { settings: {}, a4: 440 };
   const settings = { ...DEFAULT_SETTINGS, ...(m.settings || {}) };
-  const r = analyseRecording({ samples, sampleRate, settings, a4: m.a4 || 440, startTime: m.startTime || 0, metronomeT0: m.metronomeT0 ?? null });
+  const r = analyseRecording({ samples, sampleRate, settings, a4: m.a4 || 440, startTime: m.startTime || 0, metronomeT0: m.metronomeT0 ?? null, calibration: m.calibration || null });
   render(name, m, r);
 }
 

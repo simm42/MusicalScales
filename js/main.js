@@ -17,6 +17,8 @@ import { encodeWav } from './audio/wav.js';
 import { Meter, fmtCents } from './ui/meter.js';
 import { renderSummary } from './ui/summary.js';
 import { TunerPage } from './ui/tunerPage.js';
+import { CalibrationWizard } from './ui/calibrationWizard.js';
+import { loadCalibration, describeCalibration } from './calibration.js';
 import {
   loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings, recordResult,
   encodeShare, decodeShare, exportJson, importJson,
@@ -93,6 +95,7 @@ function syncForm() {
   sel('precision').value = s.precision;
   $('precisionName').textContent = prec().name;
   sel('a4').value = a4();
+  $('calInfo').textContent = describeCalibration(loadCalibration(s.instrument), INSTRUMENTS[s.instrument].name);
   $('saveItemBtn').hidden = !editingId;
   $('addBtn').textContent = editingId ? 'Add as new' : 'Add to my list';
 }
@@ -256,6 +259,7 @@ async function startSession() {
     engine, exercise, seq, settings, a4: a4(), prec: p,
     synth: useSynth ? synthOptions() : null,
     capture: DEBUG && $('d-capture') && $('d-capture').checked,
+    calibration: loadCalibration(settings.instrument),
     on: {
       state: (st, extra) => {
         if (st === 'starting') setStatus('Starting the microphone…');
@@ -537,6 +541,7 @@ function setView(v) {
 document.querySelectorAll('.seg [data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
 
 let tunerPage = null;
+let calWizard = null;
 function setTab(tab) {
   prefs.tab = tab; savePrefs();
   document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
@@ -551,10 +556,19 @@ function setTab(tab) {
         getA4: a4,
         setA4: (v) => { prefs.a4 = Math.min(446, Math.max(415, Number(v) || 440)); savePrefs(); },
         getInstrument: () => settings.instrument,
-        setInstrument: (inst) => setSettings({ ...settings, instrument: inst }),
+        setInstrument: (inst) => { setSettings({ ...settings, instrument: inst }); if (calWizard) calWizard.refresh(); },
+        beforeStart: () => { if (calWizard) calWizard.cancel(''); },
       });
-    } else tunerPage.refresh(true);
+      calWizard = new CalibrationWizard({
+        engine,
+        getInstrument: () => settings.instrument,
+        getA4: a4,
+        beforeStart: () => { if (tunerPage.running) tunerPage.stop(); tunerPage.stopTones(); },
+        onChange: () => syncForm(),
+      });
+    } else { tunerPage.refresh(true); calWizard.refresh(); }
   } else {
+    if (calWizard) calWizard.cancel('');
     if (tunerPage) tunerPage.deactivate();
     syncForm();
     drawScore();
@@ -591,6 +605,7 @@ function offerCapture(sess, result) {
     metronomeT0: sess && sess.t0 != null ? sess.t0 : null,
     synthetic: !!(sess && sess.o.synth),
     noiseFloor: sess ? sess.noiseFloor : null,
+    calibration: sess ? sess.o.calibration || null : null,
     live: result ? {
       total: result.total, intonation: result.intonation, timing: result.timing, missing: result.missing, wrong: result.wrong, extras: result.extras.length,
       notes: (sess && sess.segmenter ? sess.segmenter.notes : []).map((n) => ({ onset: +n.onset.toFixed(3), end: +n.end.toFixed(3), midi: n.midi != null ? +n.midi.toFixed(3) : null })),

@@ -14,6 +14,7 @@ import { analyseSignal, windowSizeFor } from './pitch.js';
 import { buildExercise } from './exercises.js';
 import { buildSequence } from './sequence.js';
 import { precisionAt } from './precision.js';
+import { applyCalibration } from './calibration.js';
 
 /**
  * Frames whose analysis window may contain a metronome click (clicks fall on
@@ -40,6 +41,7 @@ export class PracticeSession {
    * @param {object} o.exercise  @param {object} o.seq  @param {object} o.settings
    * @param {number} o.a4 @param {object} o.prec
    * @param {object|null} o.synth synthetic performance options (debug), or null for the microphone
+   * @param {object|null} [o.calibration] microphone calibration for this instrument
    * @param {object} o.on callbacks: state, pitch, arrow, noteDone, done, error
    */
   constructor(o) {
@@ -47,7 +49,10 @@ export class PracticeSession {
     this.on = o.on;
     this.doubleStop = !!o.exercise.type.doubleStop;
     this.frames = [];
-    this.calibration = [];
+    this.calFrames = [];
+    const applied = applyCalibration(o.calibration, o.a4);
+    this.a4 = applied.a4;          // includes any pitch correction from calibration
+    this.segOpts = applied.segmenter;
     this.segmenter = null;
     this.follower = new Follower(o.seq.events, { pitchless: this.doubleStop });
     this.metronome = null;
@@ -62,14 +67,14 @@ export class PracticeSession {
   }
 
   async start() {
-    const { engine, settings, a4 } = this.o;
-    const { minFreq, maxFreq } = detectionRange(settings.instrument, a4);
+    const { engine, settings } = this.o;
+    const { minFreq, maxFreq } = detectionRange(settings.instrument, this.a4);
     this.minFreq = minFreq; this.maxFreq = maxFreq;
     this.on.state('starting');
     let buffer = null;
     if (this.o.synth) {
       const ctx = await engine.ensureContext();
-      const perf = renderPerformance(this.o.seq, { sampleRate: ctx.sampleRate, a4, ...this.o.synth });
+      const perf = renderPerformance(this.o.seq, { sampleRate: ctx.sampleRate, a4: this.o.a4, ...this.o.synth });
       buffer = toAudioBuffer(ctx, perf.signal, ctx.sampleRate);
       this.truth = perf.truth;
     }
@@ -82,10 +87,14 @@ export class PracticeSession {
   }
 
   beginListening() {
-    const { settings, a4 } = this.o;
-    const floor = estimateNoiseFloor(this.calibration);
+    const { settings } = this.o;
+    const a4 = this.a4;
+    const measured = estimateNoiseFloor(this.calFrames);
+    // a calibrated room level is more reliable than the first second; take the lower
+    const floor = this.segOpts.noiseFloor ? Math.min(this.segOpts.noiseFloor, measured) : measured;
     this.noiseFloor = floor;
     this.segmenter = new Segmenter({
+      ...this.segOpts,
       a4, noiseFloor: floor, vibrato: settings.vibrato, minFreq: this.minFreq, maxFreq: this.maxFreq, pitchless: this.doubleStop,
       repeats: this.o.seq.events.some((e) => e.sameAsPrev),
       onOnset: (n) => {
@@ -109,7 +118,7 @@ export class PracticeSession {
       },
     });
     // a student (or recording) that started during the room check still counts
-    for (const f of this.calibration) this.segmenter.push(f);
+    for (const f of this.calFrames) this.segmenter.push(f);
     if (settings.metronome && this.o.engine.ctx) {
       this.metronome = new Metronome(this.o.engine.ctx);
       this.t0 = this.metronome.start(settings.bpm, { onCountIn: (b) => this.on.state('countin', b) });
@@ -125,7 +134,7 @@ export class PracticeSession {
     if (this.startT == null) this.startT = f.t;
     this.frames.push(f);
     if (!this.segmenter) {
-      this.calibration.push(f);
+      this.calFrames.push(f);
       if (f.t - this.startT >= RUN.calibrateSec) this.beginListening();
       return;
     }
@@ -141,7 +150,8 @@ export class PracticeSession {
   }
 
   live(f) {
-    const { a4, settings } = this.o;
+    const { settings } = this.o;
+    const a4 = this.a4;
     const gate = this.segmenter.gate; // follows the running background-noise estimate
     if (this.doubleStop) {
       const ev = this.o.seq.events[this.follower.arrow];
@@ -175,7 +185,8 @@ export class PracticeSession {
     if (!this.segmenter) { this.on.done(null); return; }
     this.segmenter.flush();
     const notes = this.segmenter.notes;
-    const { seq, prec, a4 } = this.o;
+    const { seq, prec } = this.o;
+    const a4 = this.a4;
     const cost = this.doubleStop ? doubleStopCost(a4) : undefined;
     const alignment = align(notes, seq.events, cost);
     const result = scoreRun({
@@ -200,10 +211,12 @@ export class PracticeSession {
  * Re-run the whole listening pipeline on a recording, exactly as a live run
  * would (same calibration, segmenter, alignment and scoring). Used by the
  * replay page to study recordings captured in test mode.
- * @param {object} o { samples, sampleRate, settings, a4, startTime, metronomeT0 }
+ * @param {object} o { samples, sampleRate, settings, a4, startTime, metronomeT0, calibration }
  */
 export function analyseRecording(o) {
-  const { samples, sampleRate, settings, a4 = 440, startTime = 0, metronomeT0 = null } = o;
+  const { samples, sampleRate, settings, startTime = 0, metronomeT0 = null, calibration: cal = null } = o;
+  const applied = applyCalibration(cal, o.a4 ?? 440);
+  const a4 = applied.a4;
   const exercise = buildExercise(settings);
   const seq = buildSequence(exercise);
   const s = exercise.settings;
@@ -211,9 +224,9 @@ export function analyseRecording(o) {
   const { minFreq, maxFreq } = detectionRange(s.instrument, a4);
   const frames = analyseSignal(samples, sampleRate, { minFreq, maxFreq, peaks: doubleStop, startTime });
   const t0 = frames.length ? frames[0].t : startTime;
-  const calibration = frames.filter((f) => f.t - t0 < RUN.calibrateSec);
-  const noiseFloor = estimateNoiseFloor(calibration);
-  const segmenter = new Segmenter({ a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop, repeats: seq.events.some((e) => e.sameAsPrev),
+  const measured = estimateNoiseFloor(frames.filter((f) => f.t - t0 < RUN.calibrateSec));
+  const noiseFloor = applied.segmenter.noiseFloor ? Math.min(applied.segmenter.noiseFloor, measured) : measured;
+  const segmenter = new Segmenter({ ...applied.segmenter, a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop, repeats: seq.events.some((e) => e.sameAsPrev),
     clickMask: metronomeT0 != null ? clickMask(metronomeT0, 60 / s.bpm, windowSizeFor(sampleRate, minFreq) / sampleRate) : undefined });
   for (const f of frames) segmenter.push(f); // same as live: calibration frames are analysed too
   segmenter.flush();

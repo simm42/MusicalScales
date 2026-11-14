@@ -86,6 +86,7 @@
             <label class="check"><input type="checkbox" id="o-metronome" name="metronome"> Metronome with one-bar count-in</label>
             <div class="field" id="f-bpm"><label for="o-bpm" title="Used for the metronome and the Play button">Tempo ♩ =</label><input type="number" id="o-bpm" name="bpm" min="30" max="200" step="1"></div>
             <div class="field"><label for="o-a4">Tuning A =</label><input type="number" id="o-a4" min="415" max="446" step="1"></div>
+            <p class="small muted" id="calInfo" style="margin:6px 0 0"></p>
           </fieldset>
           <div class="row">
             <button type="button" class="btn primary" id="addBtn">Add to my list</button>
@@ -136,6 +137,19 @@
       </div>
       <div class="notice error" id="tError" hidden></div>
       <div class="tuner big" id="tMeter"></div>
+    </div>
+    <div class="card stage" id="calCard" style="margin-top:16px">
+      <h2 style="font-size:18px;margin:0 0 6px">Calibrate the microphone</h2>
+      <p class="muted" style="margin:0 0 8px">Tune your instrument first. The app then listens to the room for a few seconds and to each open string, and adjusts to this microphone, room and instrument. Calibrate again if you change device, microphone or room.</p>
+      <p id="calStatus" style="margin:0 0 8px"></p>
+      <div class="row">
+        <button class="btn primary" id="calStart" type="button">Calibrate microphone</button>
+        <button class="btn" id="calSkip" type="button" hidden>Skip this string</button>
+        <button class="btn" id="calCancel" type="button" hidden>Cancel</button>
+        <button class="btn" id="calClear" type="button" hidden>Remove calibration</button>
+      </div>
+      <div class="notice" id="calStep" hidden aria-live="polite"></div>
+      <ul class="cal-advice" id="calAdvice"></ul>
     </div>
   </section>
 

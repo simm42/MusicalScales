@@ -61,6 +61,7 @@ export class Segmenter {
    * @param {object} o
    * @param {number} o.a4
    * @param {number} o.noiseFloor RMS of background noise
+   * @param {number} [o.clarityMin] / [o.clarityWeak] / [o.maxGate] overrides from microphone calibration
    * @param {boolean} o.vibrato
    * @param {number} o.minFreq @param {number} o.maxFreq
    * @param {boolean} [o.pitchless] segment by level only (double stops played together)
@@ -79,7 +80,9 @@ export class Segmenter {
     this.notes = [];
     this.lastT = 0;
     this.noiseFloor = o.noiseFloor || SEG.defaultNoiseFloor;
-    this.gate = Math.max(SEG.absMinRms, this.noiseFloor * SEG.gateOverFloor);
+    this.clarityMin = o.clarityMin ?? SEG.clarityMin;
+    this.clarityWeak = Math.min(this.clarityMin, o.clarityWeak ?? SEG.clarityWeak);
+    this.updateGate();
     this.noiseHist = [];
     this.changeSemis = o.vibrato ? SEG.changeSemisVibrato : SEG.changeSemis;
     this.stable = (o.vibrato ? SEG.stableMsVibrato : SEG.stableMs) / 1000;
@@ -100,8 +103,8 @@ export class Segmenter {
       return false;
     }
     if (this.o.pitchless) return true;
-    if (!(f.freq > 0) || f.freq < this.o.minFreq || f.freq > this.o.maxFreq || f.clarity < SEG.clarityWeak) { this.recent = []; return false; }
-    if (f.clarity >= SEG.clarityMin) { this.recent = []; return true; }
+    if (!(f.freq > 0) || f.freq < this.o.minFreq || f.freq > this.o.maxFreq || f.clarity < this.clarityWeak) { this.recent = []; return false; }
+    if (f.clarity >= this.clarityMin) { this.recent = []; return true; }
     const m = freqToMidi(f.freq, this.o.a4);
     // continues the sounding note, or the new pitch it is changing to
     if (this.cur) {
@@ -116,6 +119,12 @@ export class Segmenter {
     return steady;
   }
 
+  updateGate() {
+    let g = Math.max(SEG.absMinRms, this.noiseFloor * SEG.gateOverFloor);
+    if (this.o.maxGate) g = Math.min(g, Math.max(SEG.absMinRms, this.o.maxGate)); // never above the instrument's own level
+    this.gate = g;
+  }
+
   /**
    * Keep measuring the background noise whenever nothing is being played, so a
    * student can start in their own time and the estimate only gets better.
@@ -126,7 +135,7 @@ export class Segmenter {
     if (this.noiseHist.length > SEG.noiseWindowFrames) this.noiseHist.shift();
     if (this.noiseHist.length >= 20 && this.noiseHist.length % 10 === 0) {
       this.noiseFloor = Math.min(SEG.maxNoiseFloor, Math.max(0.0002, quantile(this.noiseHist, 0.2)));
-      this.gate = Math.max(SEG.absMinRms, this.noiseFloor * SEG.gateOverFloor);
+      this.updateGate();
     }
   }
 

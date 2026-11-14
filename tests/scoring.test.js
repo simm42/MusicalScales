@@ -145,3 +145,45 @@ test('captured WAV round trip keeps samples and run details', () => {
     near(d.samples[123], x[123], 1e-4);
   });
 });
+
+import { measureNoise, measureString, summarise, applyCalibration } from '../js/calibration.js';
+import { tone } from '../js/audio/synth.js';
+import { instrumentInfo } from '../js/instruments.js';
+import { midiOf, midiToFreq } from '../js/theory.js';
+
+function calibrateSynthetic(instrument, shiftCents, { noise = 0.002 } = {}) {
+  const info = instrumentInfo(instrument);
+  const quiet = analyseSignal(Float32Array.from({ length: 48000 * 2 }, () => noise * (Math.random() * 2 - 1)), 48000, { minFreq: 40, maxFreq: 1500 });
+  const strings = info.stringNotes.map((n, i) => {
+    const f = midiToFreq(midiOf(n) + info.transpose + shiftCents / 100);
+    const sig = tone(f, 2, 48000, { noise });
+    return measureString(analyseSignal(sig, 48000, { minFreq: 25, maxFreq: 1500 }), instrument, i);
+  });
+  return summarise(instrument, measureNoise(quiet), strings);
+}
+
+test('calibration: tuned strings read in tune; a shifted microphone path is detected', () => {
+  const ok = calibrateSynthetic('violin', 0);
+  near(ok.meanCents, 0, 3);
+  eq(ok.correctCents, 0);
+  assert(ok.snrDb > 20, 'snr ' + ok.snrDb);
+  const shifted = calibrateSynthetic('cello', -345);
+  near(shifted.correctCents, -345, 4);
+  assert(shifted.advice.some((a) => !a.ok && /semitones lower/.test(a.text)));
+  const bass = calibrateSynthetic('bass', 12);
+  near(bass.correctCents, 12, 4);
+});
+
+test('calibration corrects a shifted recording so a perfect scale scores ~100', () => {
+  const settings = { instrument: 'cello', type: 'scale', key: 'C', range: '2' };
+  const seq = buildSequence(buildExercise(settings));
+  const shift = -345;
+  const perf = renderPerformance(seq, { bpm: 72, detune: () => 0, timbre: 'cello', a4: 440 * Math.pow(2, shift / 1200) });
+  const raw = analyseRecording({ samples: perf.signal, sampleRate: 48000, settings, a4: 440 });
+  assert(raw.result.total < 20, 'uncorrected should fail: ' + raw.result.total);
+  const cal = calibrateSynthetic('cello', shift);
+  const fixed = analyseRecording({ samples: perf.signal, sampleRate: 48000, settings, a4: 440, calibration: cal });
+  assert(fixed.result.total > 95, 'corrected total ' + fixed.result.total.toFixed(1));
+  const applied = applyCalibration(cal, 440);
+  near(1200 * Math.log2(applied.a4 / 440), shift, 4);
+});
