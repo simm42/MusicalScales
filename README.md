@@ -17,7 +17,7 @@ A free web page that helps students practise scales and arpeggios on the **violi
 - **Microphone calibration** (on the Tuner page): after tuning, stay quiet for a few seconds and then bow each open string. The app learns how loud and how clearly this microphone hears the instrument in this room, and adjusts its listening to match. It also checks that the microphone hears true pitch: if every string reads shifted (by the microphone, or by a recording played back at the wrong speed), it warns you and corrects for it. Calibrations are kept per instrument, in this browser only.
 - Light and dark modes.
 
-**Privacy:** everything runs in the browser. No sound, scores or settings are sent anywhere. Lists and scores are saved only in that browser on that device. Use *Export* / *Import* to move a list to another device.
+**Privacy:** everything runs in the browser. No sound, scores or settings are sent anywhere. If visit counting is switched on (see below), only anonymous page loads are counted, with no cookies. Lists and scores are saved only in that browser on that device. Use *Export* / *Import* to move a list to another device.
 
 ---
 
@@ -42,6 +42,17 @@ git push -u origin main
 Then turn on Pages as in step 3 above.
 
 To update the site later, change the files and push again, or upload them again on the website.
+
+## Counting visits (optional, free)
+
+The site can count anonymous page visits with **Cloudflare Web Analytics** (free, no cookies, no personal data, so no consent banner is needed):
+
+1. Create a free account at <https://dash.cloudflare.com>, then open **Analytics & Logs → Web Analytics → Add a site**.
+2. Enter the site's address without `https://`, for example `simm42.github.io`, and choose the JavaScript snippet option.
+3. Copy the `token` value from the snippet (the long code after `"token": `).
+4. Paste it between the quotes of `CLOUDFLARE_TOKEN` in `js/analytics.js` and publish.
+
+The counter only loads on the live `github.io` site, never on a local copy or the test pages. While the token is empty, nothing is loaded. The privacy line at the bottom of the page changes automatically to say that anonymous visits are counted.
 
 ## Trying it on your own computer
 
