@@ -87,7 +87,9 @@ test('double stops in sixths, broken and parallel', () => {
 test('bass broken and running thirds', () => {
   const b = buildExercise({ instrument: 'bass', type: 'brokenThirds', key: 'G', mode: 'major', range: '1' });
   eq(names(b).slice(0, 6), ['G2', 'B2', 'A2', 'C3', 'B2', 'D3']);
-  eq(names(b).at(-1), 'G2');
+  eq(names(b).length, 30);
+  eq(names(b).slice(12, 18), ['F#3', 'A3', 'G3', 'G3', 'E3', 'F#3']);
+  eq(names(b).slice(-3), ['A2', 'F#2', 'G2']);
   const r = buildExercise({ instrument: 'bass', type: 'runningThirds', key: 'G', mode: 'major', range: '1' });
   eq(names(r).slice(0, 6), ['G2', 'A2', 'B2', 'A2', 'B2', 'C3']);
   eq(names(r).at(-1), 'G2');
@@ -98,6 +100,18 @@ test('bass ranges to a 6th and 12th', () => {
   eq(names(s6), ['C3', 'D3', 'E3', 'F3', 'G3', 'A3', 'G3', 'F3', 'E3', 'D3', 'C3']);
   const a12 = buildExercise({ instrument: 'bass', type: 'arpeggio', key: 'F', mode: 'major', range: '12th' });
   eq(names(a12), ['F2', 'A2', 'C3', 'F3', 'A3', 'C4', 'A3', 'F3', 'C3', 'A2', 'F2']);
+});
+
+test('long tonic: ends always, top only when it is a key note', () => {
+  const s6 = buildSequence(buildExercise({ instrument: 'bass', type: 'scale', key: 'C', range: '6th', longEnds: true }));
+  eq(s6.glyphs.map((g) => g.dur).join(''), 'h' + 'q'.repeat(9) + 'h'); // 11 notes, 3/4 example
+  const s12 = buildSequence(buildExercise({ instrument: 'bass', type: 'scale', key: 'Bb', range: '12th', longEnds: true }));
+  eq(s12.events.length, 23);
+  eq(s12.glyphs.filter((g) => g.dur === 'h').length, 2);
+  const oct = buildSequence(buildExercise({ instrument: 'violin', type: 'scale', key: 'G', range: '2', longEnds: true }));
+  eq(oct.glyphs.filter((g) => g.dur === 'h').length, 3);
+  const ds = buildExercise({ instrument: 'bass', type: 'dsBroken', key: 'Bb', mode: 'major', interval: '3rds', range: '1' });
+  assert(ds.ok, 'bass broken steps in thirds');
 });
 
 test('thumb position starts on D4', () => {

@@ -197,13 +197,15 @@ function dsBrokenSteps(tonic, mode, form, span, gap) {
   return ascDesc(asc, desc);
 }
 
+// 1 3 2 4 … 7 9 8 | 8 6 7 5 … 2 7̣ 1  (a third above the top and a step below the bottom)
 function brokenThirdsSteps(tonic, mode, form, span) {
   const t = tables(mode, form);
   const asc = [], desc = [];
-  for (let i = 0; i <= span - 2; i++) asc.push(step([degreeNote(tonic, i, t.up)], { tonic: i % 7 === 0 }), step([degreeNote(tonic, i + 2, t.up)], { tonic: (i + 2) % 7 === 0 }));
-  for (let i = span; i >= 2; i--) desc.push(step([degreeNote(tonic, i, t.down)], { tonic: i % 7 === 0 }), step([degreeNote(tonic, i - 2, t.down)], { tonic: (i - 2) % 7 === 0 }));
-  // the top note ends the ascent and begins the descent: play it once
-  desc.shift();
+  const at = (d, tb) => step([degreeNote(tonic, d, tb)], { tonic: d % 7 === 0 });
+  for (let i = 0; i < span; i++) asc.push(at(i, t.up), at(i + 2, t.up));
+  asc.push(at(span, t.up));
+  for (let i = span; i > 0; i--) desc.push(at(i, t.down), at(i - 2, t.down));
+  desc.push(at(0, t.down));
   return ascDesc(asc, desc);
 }
 

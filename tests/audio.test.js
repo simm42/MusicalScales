@@ -153,3 +153,17 @@ test('tuner targets: equal temperament and pure fifths/fourths', () => {
   near(pb[3], 97.9989, 0.01); // G string sounds G2
   near(1200 * Math.log2(pb[0] / 41.2034), 5.87, 0.05); // E string ~6 cents high
 });
+
+test('robustness: shallow (8 dB) bow-change dips, vibrato level swells, metronome click bleed', () => {
+  for (const inst of ['violin', 'viola', 'cello', 'bass']) {
+    const key = inst === 'bass' ? 'E' : 'C';
+    const { minFreq, maxFreq } = detectionRange(inst);
+    const seg = (seq, perfOpts, vibrato = false) => segmentFrames(analyseSignal(renderPerformance(seq, perfOpts).signal, 48000, { minFreq, maxFreq }), { a4: 440, minFreq, maxFreq, vibrato });
+    const q4 = buildSequence(buildExercise({ instrument: inst, type: 'scale', key, range: '1', rhythm: 'q4' }));
+    const n1 = seg(q4, { bpm: 72, dipFloor: 0.4, detune: () => 0 });
+    assert(Math.abs(n1.length - q4.events.length) <= 1, `${inst} repeated quavers at -8 dB: ${n1.length}/${q4.events.length}`);
+    const held = buildSequence(buildExercise({ instrument: inst, type: 'scale', key, range: '1', longEnds: true }));
+    eq(seg(held, { bpm: 50, vibratoCents: 25, vibratoAmDb: 3, detune: () => 0 }, true).length, held.events.length, `${inst} vibrato swell`);
+    eq(seg(held, { bpm: 60, detune: () => 0, clicks: { amp: 0.3, spb: 1 } }).length, held.events.length, `${inst} clicks`);
+  }
+});

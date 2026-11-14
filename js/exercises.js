@@ -15,7 +15,7 @@ export const EXERCISE_TYPES = {
   chromatic:    { label: 'Chromatic scale', instruments: ALL, keyKind: 'start', ranges: ['1', '2', '3'], slurs: [3, 4, 6, 12] },
   dom7:         { label: 'Dominant 7th', instruments: ALL, keyKind: 'majorKey', ranges: ['1', '2', '3'], slurs: [2, 4] },
   dim7:         { label: 'Diminished 7th', instruments: ALL, keyKind: 'start', ranges: ['1', '2', '3'], slurs: [2, 4] },
-  dsBroken:     { label: 'Double stops – broken steps', instruments: UPPER, keyKind: 'key', tonality: true, forms: true, intervals: true, ranges: ['1', '2'], slurs: [2] },
+  dsBroken:     { label: 'Double stops – broken steps', instruments: ALL, keyKind: 'key', tonality: true, forms: true, intervals: true, ranges: ['1', '2'], slurs: [2] },
   dsParallel:   { label: 'Double stops – together', instruments: UPPER, keyKind: 'key', tonality: true, forms: true, intervals: true, ranges: ['1', '2'], slurs: [], doubleStop: true },
   brokenThirds: { label: 'Scale in broken thirds', instruments: ['bass'], keyKind: 'key', tonality: true, forms: true, ranges: ['1', '2'], slurs: [2] },
   runningThirds:{ label: 'Scale in running thirds', instruments: ['bass'], keyKind: 'key', tonality: true, forms: true, ranges: ['1', '2'], slurs: [3] },

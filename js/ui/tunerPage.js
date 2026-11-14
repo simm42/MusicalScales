@@ -5,6 +5,7 @@ import { INSTRUMENTS, instrumentInfo, detectionRange } from '../instruments.js';
 import { midiOf, midiToFreq, freqToMidi, noteName } from '../theory.js';
 import { Meter, fmtCents } from './meter.js';
 import { MicError } from '../audio/mic.js';
+import { periodicWave } from '../audio/timbre.js';
 
 export const TUNER = { fullCents: 3, zeroCents: 25, holdSec: 1.0, smoothSec: 0.15, clarityMin: 0.88, gate: 0.003 };
 
@@ -119,17 +120,14 @@ export class TunerPage {
       btn.setAttribute('aria-pressed', 'false');
       return;
     }
-    // soft string-like tone: sawtooth through a low-pass filter
+    // the instrument's own tone colour (open string, so no vibrato)
     const osc = ctx.createOscillator();
-    osc.type = 'sawtooth';
+    osc.setPeriodicWave(periodicWave(ctx, this.getInstrument(), this.targets[i]));
     osc.frequency.value = this.targets[i];
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = Math.min(4000, this.targets[i] * 6);
     const g = ctx.createGain();
     g.gain.value = 0;
-    g.gain.setTargetAtTime(0.12, ctx.currentTime, 0.08);
-    osc.connect(lp).connect(g).connect(ctx.destination);
+    g.gain.setTargetAtTime(0.18, ctx.currentTime, 0.08);
+    osc.connect(g).connect(ctx.destination);
     osc.start();
     this.tones.set(i, { osc, g });
     btn.setAttribute('aria-pressed', 'true');

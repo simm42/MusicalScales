@@ -12,6 +12,7 @@ import { describeOptions, shortOptions } from './settingsText.js';
 import { precisionAt, linearScore, scoreClass } from './precision.js';
 import { AudioEngine, MicError } from './audio/mic.js';
 import { PracticeSession } from './practice.js';
+import { Player } from './playback.js';
 import { Meter, fmtCents } from './ui/meter.js';
 import { renderSummary } from './ui/summary.js';
 import { TunerPage } from './ui/tunerPage.js';
@@ -40,6 +41,7 @@ let lastResult = null;
 let arrowIndex = 0;
 
 const engine = new AudioEngine();
+const player = new Player(engine);
 const meter = new Meter($('liveTuner'));
 const DEBUG = new URLSearchParams(location.search).get('debug') === 'synth';
 
@@ -85,7 +87,6 @@ function syncForm() {
   sel('slur').disabled = slurOpts.length === 1;
   sel('display').value = s.display;
   sel('clefMode').value = s.clefMode;
-  $('f-bpm').hidden = !s.metronome;
   sel('bpm').value = s.bpm;
   sel('precision').value = s.precision;
   $('precisionName').textContent = prec().name;
@@ -124,6 +125,7 @@ function setSettings(next, { keepActive = false } = {}) {
 // ---------------------------------------------------------------- exercise display
 function updateExercise() {
   stopSession(true);
+  stopPlayback();
   exercise = buildExercise(settings);
   seq = buildSequence(exercise);
   $('exTitle').textContent = `${INSTRUMENTS[settings.instrument].name}: ${exercise.title}`;
@@ -131,6 +133,7 @@ function updateExercise() {
   $('exInvalid').hidden = exercise.ok;
   if (!exercise.ok) $('exInvalid').textContent = exercise.reason + ' Choose fewer octaves or a lower starting octave.';
   $('startBtn').disabled = !exercise.ok;
+  $('playBtn').disabled = !exercise.ok;
   lastResult = null;
   $('summary').innerHTML = '';
   meter.setCount(exercise.type.doubleStop ? 2 : 1);
@@ -164,11 +167,27 @@ function placeArrow(k) {
   a.style.top = `${t.y}px`;
 }
 
+// Redraw only when the width changes: phone address bars collapsing fire
+// height-only resizes, and a redraw would wipe the live note colours.
 let resizeTimer = null;
+let lastWidth = $('scoreWrap').clientWidth;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
-  resizeTimer = setTimeout(() => { if (settings.display === 'score') { drawScore(); if (session) placeArrow(arrowIndex); } }, 200);
+  resizeTimer = setTimeout(() => {
+    const w = $('scoreWrap').clientWidth;
+    if (w === lastWidth || settings.display !== 'score') return;
+    lastWidth = w;
+    redrawKeepingColours();
+  }, 200);
 });
+
+/** Redraw the score but keep live note colours and the arrow (theme change, resize). */
+function redrawKeepingColours() {
+  const coloured = rendered.arrowTargets.map((t) => (t && t.el ? [...t.el.classList].find((c) => c.startsWith('n-')) : null));
+  drawScore();
+  coloured.forEach((c, k) => { if (c) markNote(rendered.arrowTargets, k, c); });
+  if (session || player.playing) placeArrow(arrowIndex);
+}
 
 // ---------------------------------------------------------------- practice runs
 function setStatus(text, strong = false) {
@@ -223,6 +242,7 @@ function synthOptions() {
 
 async function startSession() {
   if (!exercise.ok) return;
+  stopPlayback();
   stopSession(true);
   $('micError').hidden = true;
   $('summary').innerHTML = '';
@@ -293,6 +313,43 @@ function stopSession(silent = false) {
   else s.stop();
 }
 
+// ---------------------------------------------------------------- play the exercise
+function stopPlayback() {
+  if (!player.playing) return;
+  player.stop();
+  $('playBtn').textContent = '▶ Play';
+  $('arrow').hidden = true;
+  meter.clear();
+  setStatus('Press Start, wait for “Play now”, then play.');
+}
+
+$('playBtn').addEventListener('click', async () => {
+  if (player.playing) { stopPlayback(); return; }
+  if (!exercise.ok) return;
+  stopSession(true);
+  $('playBtn').textContent = '■ Stop';
+  setStatus('Preparing the sound…');
+  await new Promise((r) => setTimeout(r, 30)); // let the message show before the sound is rendered
+  try {
+    const playing = player.play(seq, {
+      bpm: settings.bpm,
+      a4: a4(),
+      instrument: settings.instrument,
+      onEvent: (k) => {
+        placeArrow(k);
+        const ev = seq.events[k];
+        meter.setReadout(ev.notes.map((n) => noteName(n, { octave: true })).join(' + '), '', '');
+      },
+      onEnd: () => { $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
+    });
+    await playing;
+    if (player.playing) setStatus(`Playing the exercise at ♩ = ${settings.bpm} on the ${INSTRUMENTS[settings.instrument].name.toLowerCase()}…`);
+  } catch (e) {
+    $('playBtn').textContent = '▶ Play';
+    setStatus('Could not play: ' + (e && e.message));
+  }
+});
+
 $('startBtn').addEventListener('click', () => {
   if (session) { const s = session; s.stop(); }
   else startSession();
@@ -315,6 +372,7 @@ function autoName(s) {
 }
 
 function renderList() {
+  renderNav();
   const ul = $('listItems');
   ul.innerHTML = '';
   $('listEmpty').hidden = list.length > 0;
@@ -344,12 +402,27 @@ function renderList() {
   });
 }
 
-function selectItem(item) {
+function selectItem(item, scroll = true) {
   activeId = item.id;
   editingId = null;
   setSettings(expandSettings(item.settings), { keepActive: true });
-  $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (scroll) $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
+
+// Back / Next through the list (wraps around)
+function renderNav() {
+  $('listNav').hidden = list.length === 0;
+  const i = list.findIndex((x) => x.id === activeId);
+  $('navPos').textContent = i >= 0 ? `${i + 1} of ${list.length}` : `${list.length} saved`;
+}
+function stepList(dir) {
+  if (!list.length) return;
+  const i = list.findIndex((x) => x.id === activeId);
+  const j = i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length;
+  selectItem(list[j], false);
+}
+$('prevBtn').addEventListener('click', () => stepList(-1));
+$('nextBtn').addEventListener('click', () => stepList(1));
 
 function listAction(act, item, idx) {
   if (act === 'del') {
@@ -452,7 +525,7 @@ function checkShareLink() {
 function setView(v) {
   prefs.view = v; savePrefs();
   document.querySelectorAll('.seg [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
-  $('listView').hidden = v !== 'list';
+  $('listView').hidden = false; // the list is always visible; options open below it
   $('optionsView').hidden = v !== 'all';
   if (v === 'list' && editingId) { editingId = null; syncForm(); $('addMsg').textContent = ''; }
 }
@@ -466,6 +539,7 @@ function setTab(tab) {
   $('tab-tuner').hidden = tab !== 'tuner';
   if (tab === 'tuner') {
     stopSession(true);
+    stopPlayback();
     if (!tunerPage) {
       tunerPage = new TunerPage({
         engine,
@@ -492,7 +566,7 @@ function applyTheme(t) {
   $('themeBtn').setAttribute('aria-label', `Colour theme: ${t}. Click to change.`);
   meter.refreshPalette();
   if (tunerPage) tunerPage.meter.refreshPalette();
-  if (exercise) drawScore();
+  if (exercise) redrawKeepingColours();
 }
 let theme = (() => { try { return localStorage.getItem('scales.theme') || 'auto'; } catch { return 'auto'; } })();
 $('themeBtn').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; applyTheme(theme); });

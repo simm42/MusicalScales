@@ -15,10 +15,12 @@ export const SEG = {
   stableMs: 60,              // a new pitch must hold this long
   stableMsVibrato: 120,
   gapMs: 30,                 // this much silence ends a note
-  dipDb: 6,                  // level dip (below recent peak) that marks a bow change
-  dipRecoverDb: 4,
-  dipMaxMs: 260,
-  peakDecayDbPerS: 8,
+  // bow change = a quick level dip: falls by dipDb within dipWindowMs, then rises
+  // by dipRecoverDb within dipWindowMs. Vibrato swells are slower than this.
+  dipDb: 4.5,
+  dipDbVibrato: 6,
+  dipRecoverDb: 3,
+  dipWindowMs: 70,
   trim: 0.15,                // fraction trimmed from each end of a note before measuring pitch
   unsteadyCents: 20,
 };
@@ -53,6 +55,7 @@ export class Segmenter {
     this.gate = Math.max(SEG.absMinRms, (o.noiseFloor || 0) * SEG.gateOverFloor);
     this.changeSemis = o.vibrato ? SEG.changeSemisVibrato : SEG.changeSemis;
     this.stable = (o.vibrato ? SEG.stableMsVibrato : SEG.stableMs) / 1000;
+    this.dipDb = o.vibrato ? SEG.dipDbVibrato : SEG.dipDb;
   }
 
   isVoiced(f) {
@@ -62,7 +65,6 @@ export class Segmenter {
   }
 
   push(f) {
-    const dt = this.lastT ? Math.max(0.001, f.t - this.lastT) : 0.01;
     this.lastT = f.t;
     const voiced = this.isVoiced(f);
     const db = 20 * Math.log10((f.level ?? f.rms) + 1e-9);
@@ -70,7 +72,11 @@ export class Segmenter {
       if (this.cur) {
         if (this.silentSince == null) this.silentSince = f.t;
         if (f.t - this.silentSince >= SEG.gapMs / 1000) this.close(this.silentSince);
-        else this.trackDip(this.cur, f.t, db, dt); // a brief unvoiced moment is usually a bow change
+        else {
+          // a brief unvoiced moment is usually a bow change: remember a completed dip
+          const at = this.dipAt(this.cur, f.t, db);
+          if (at != null) this.cur.pendingSplit = at;
+        }
       }
       return;
     }
@@ -79,22 +85,16 @@ export class Segmenter {
     if (!this.cur) { this.open(f.t, [fr]); return; }
     const cur = this.cur;
 
-    // --- detector 2: re-articulation (level dip then recovery)
-    this.trackDip(cur, f.t, db, dt);
-    if (cur.dip) {
-      if (fr.db > cur.dip.minDb + SEG.dipRecoverDb) {
-        const quick = f.t - cur.dip.startT <= SEG.dipMaxMs / 1000;
-        const at = cur.dip.minT;
-        cur.dip = null;
-        if (quick && at - cur.onset >= SEG.minNoteMs / 1000) {
-          const after = cur.frames.filter((x) => x.t >= at);
-          cur.frames = cur.frames.filter((x) => x.t < at);
-          this.close(at);
-          this.open(at, [...after, fr]);
-          return;
-        }
-        cur.peakDb = fr.db;
-      }
+    // --- detector 2: re-articulation (quick level dip then recovery)
+    let at = this.dipAt(cur, f.t, db);
+    if (at == null && cur.pendingSplit != null) at = cur.pendingSplit;
+    cur.pendingSplit = null;
+    if (at != null && at - cur.onset >= SEG.minNoteMs / 1000) {
+      const after = cur.frames.filter((x) => x.t >= at);
+      cur.frames = cur.frames.filter((x) => x.t < at);
+      this.close(at);
+      this.open(at, [...after, fr]);
+      return;
     }
 
     if (this.o.pitchless) { cur.frames.push(fr); this.maybeConfirm(f.t); return; }
@@ -121,12 +121,22 @@ export class Segmenter {
     this.maybeConfirm(f.t);
   }
 
-  trackDip(cur, t, db, dt) {
-    // a level that drops and simply stays lower (diminuendo, after a loud attack or a click) is not a bow change
-    if (cur.dip && t - cur.dip.startT > SEG.dipMaxMs / 1000) { cur.dip = null; cur.peakDb = db; }
-    cur.peakDb = Math.max(cur.peakDb - SEG.peakDecayDbPerS * dt, cur.dip ? -Infinity : db);
-    if (!cur.dip && db < cur.peakDb - SEG.dipDb) cur.dip = { startT: t, minDb: db, minT: t };
-    if (cur.dip && db < cur.dip.minDb) { cur.dip.minDb = db; cur.dip.minT = t; }
+  /** Record the level; returns the time of a completed bow-change dip, or null. */
+  dipAt(cur, t, db) {
+    const W = SEG.dipWindowMs / 1000;
+    const h = cur.levels;
+    h.push({ t, db });
+    while (h.length && t - h[0].t > 2 * W + 0.02) h.shift();
+    // lowest point within the last window (not the newest frame)
+    let mi = -1;
+    for (let k = h.length - 2; k >= 0 && t - h[k].t <= W; k--) if (mi < 0 || h[k].db < h[mi].db) mi = k;
+    if (mi < 0 || db - h[mi].db < SEG.dipRecoverDb) return null;
+    let pre = -Infinity;
+    for (let k = mi - 1; k >= 0 && h[mi].t - h[k].t <= W; k--) pre = Math.max(pre, h[k].db);
+    if (pre - h[mi].db < this.dipDb) return null;
+    const minT = h[mi].t;
+    cur.levels = [{ t, db }];
+    return minT;
   }
 
   open(t, frames) {
@@ -134,8 +144,7 @@ export class Segmenter {
     this.cur = {
       onset: t,
       frames,
-      peakDb: Math.max(...frames.map((x) => x.db)),
-      dip: null,
+      levels: frames.map((x) => ({ t: x.t, db: x.db })),
       confirmed: false,
       nominal() {
         if (this._nom != null && this.frames.length >= 6) return this._nom;

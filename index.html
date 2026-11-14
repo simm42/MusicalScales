@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Scale Practice</title>
 <meta name="description" content="Practise scales and arpeggios on violin, viola, cello and double bass. The microphone listens and scores your intonation and timing – everything stays on your device.">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='11' cy='22' r='6' fill='%238a3b12'/%3E%3Crect x='15' y='4' width='3' height='18' fill='%238a3b12'/%3E%3C/svg%3E">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='11' cy='22' r='6' fill='%236b3fa0'/%3E%3Crect x='15' y='4' width='3' height='18' fill='%236b3fa0'/%3E%3C/svg%3E">
 <script>
   // apply saved theme before paint
   try { const t = localStorage.getItem('scales.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
@@ -52,6 +52,7 @@
 
         <!-- All options -->
         <form id="optionsView" hidden autocomplete="off" onsubmit="return false">
+          <hr class="sep">
           <fieldset>
             <legend>Exercise</legend>
             <div class="field"><label for="o-instrument">Instrument</label><select id="o-instrument" name="instrument"></select></div>
@@ -83,7 +84,7 @@
               <div><input type="range" id="o-precision" name="precision" min="0" max="4" step="0.25"><div class="range-label"><span>Beginner</span><span id="precisionName"></span><span>Expert</span></div></div></div>
             <label class="check"><input type="checkbox" id="o-vibrato" name="vibrato"> I’m using vibrato</label>
             <label class="check"><input type="checkbox" id="o-metronome" name="metronome"> Metronome with one-bar count-in</label>
-            <div class="field" id="f-bpm"><label for="o-bpm">Tempo ♩ =</label><input type="number" id="o-bpm" name="bpm" min="30" max="200" step="1"></div>
+            <div class="field" id="f-bpm"><label for="o-bpm" title="Used for the metronome and the Play button">Tempo ♩ =</label><input type="number" id="o-bpm" name="bpm" min="30" max="200" step="1"></div>
             <div class="field"><label for="o-a4">Tuning A =</label><input type="number" id="o-a4" min="415" max="446" step="1"></div>
           </fieldset>
           <div class="row">
@@ -95,6 +96,11 @@
       </aside>
 
       <section class="card stage" id="stage" aria-live="polite">
+        <nav class="list-nav" id="listNav" aria-label="My list" hidden>
+          <button class="btn" id="prevBtn" type="button" aria-label="Previous exercise in my list">◀ Back</button>
+          <span class="muted small" id="navPos"></span>
+          <button class="btn" id="nextBtn" type="button" aria-label="Next exercise in my list">Next ▶</button>
+        </nav>
         <h2 id="exTitle"></h2>
         <p class="opts" id="exOptions"></p>
         <div class="notice error" id="exInvalid" hidden></div>
@@ -104,6 +110,7 @@
         </div>
         <div class="controls">
           <button class="btn primary big" id="startBtn">Start</button>
+          <button class="btn big" id="playBtn" title="Hear the exercise played at the tempo set in the options">▶ Play</button>
           <span class="status" id="status">Press Start, wait for “Play now”, then play.</span>
         </div>
         <div class="notice error" id="micError" hidden></div>

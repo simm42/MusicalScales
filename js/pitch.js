@@ -208,8 +208,14 @@ export class FrameAnalyzer {
     this.frameBuf.set(this.buf.subarray(L - this.size));
     const r = this.mpm.detect(this.frameBuf, this.minFreq, this.maxFreq);
     // short-window level centred on the frame time: sharper for bow-change dips
-    // (at least one period of the lowest note long, so low notes don't ripple)
-    const len = Math.min(this.size, Math.max(this.hop, Math.ceil(this.sr / this.minFreq)));
+    // Pitch-synchronous: a whole number of periods (≥ ~5 ms) so the level does not
+    // ripple with the waveform; falls back to one period of the lowest note.
+    let len;
+    if (r.freq > 0 && r.clarity > 0.5) {
+      const period = this.sr / r.freq;
+      len = Math.round(period * Math.max(1, Math.ceil(256 / period)));
+    } else len = Math.max(this.hop, Math.ceil(this.sr / this.minFreq));
+    len = Math.min(this.size, len);
     let e = 0;
     const c0 = Math.floor(this.size / 2 - len / 2);
     for (let i = c0; i < c0 + len; i++) e += this.frameBuf[i] * this.frameBuf[i];

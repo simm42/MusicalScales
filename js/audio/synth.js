@@ -2,6 +2,7 @@
 // No DOM access.
 
 import { midiToFreq } from '../theory.js';
+import { harmonicAmps, waveTable, timbreInfo } from './timbre.js';
 
 function rng(seed) {
   let s = seed >>> 0 || 1;
@@ -37,6 +38,7 @@ export function renderPerformance(seq, o = {}) {
   const {
     sampleRate = 48000, bpm = 80, a4 = 440, detuneSd = 0, detune = null, jitter = 0, vibratoCents = 0,
     vibratoRate = 5.5, missing = [], extras = [], noise = 0.002, leadIn = 1.2, tail = 2.0, seed = 7, amp = 0.25,
+    dipFloor = 0.15, clicks = null, vibratoAmDb = 0, timbre = null,
   } = o;
   const r = rng(seed);
   const spb = 60 / bpm;
@@ -58,6 +60,10 @@ export function renderPerformance(seq, o = {}) {
   for (let i = 0; i < n; i++) out[i] = noise * gauss(nr);
 
   const phases = [0, 0];
+  const T = timbre ? timbreInfo(timbre) : null;
+  const TAB = 2048;
+  const nr2 = rng(seed + 2);
+  let hp = 0, lpn = 0; // simple filters for bow noise
   for (let k = 0; k < truth.length; k++) {
     const tr = truth[k];
     if (tr.missing) continue;
@@ -66,29 +72,62 @@ export function renderPerformance(seq, o = {}) {
     const start = Math.round(tr.onset * sampleRate);
     const soundEnd = legatoNext ? next.onset : tr.end;
     const end = Math.round(soundEnd * sampleRate);
+    const noteLen = (end - start) / sampleRate;
     const extra = extras.find((x) => x.after === tr.index);
     const extraFrom = extra ? Math.round((soundEnd - 0.2) * sampleRate) : Infinity;
+    const attack = T ? T.attack : 0.025;
+    const release = T ? 0.06 : 0.035;
     for (let v = 0; v < tr.midis.length; v++) {
       const baseF = midiToFreq(tr.midis[v] + tr.cents / 100, a4);
       const extraF = extra ? midiToFreq(extra.midi, a4) : 0;
+      const tab = T ? waveTable(harmonicAmps(timbre, baseF, sampleRate), TAB) : null;
       if (!tr.slurred) phases[v] = 0;
+      // instrument playback: gentle vibrato that starts after the note has settled
+      const vDepth = T ? (noteLen > 0.35 ? T.vibrato : 0) : vibratoCents;
       for (let i = start; i < end && i < n; i++) {
         const tt = (i - start) / sampleRate;
         const isExtra = i >= extraFrom;
         const f0 = isExtra ? extraF : baseF;
-        const f = f0 * Math.pow(2, (vibratoCents * Math.sin(2 * Math.PI * vibratoRate * (i / sampleRate))) / 1200);
+        const vib = Math.sin(2 * Math.PI * vibratoRate * (i / sampleRate));
+        const vAmt = T ? vDepth * Math.min(1, Math.max(0, (tt - 0.15) / 0.2)) : vDepth;
+        const f = f0 * Math.pow(2, (vAmt * vib) / 1200);
         phases[v] += (2 * Math.PI * f) / sampleRate;
-        // bow envelope: attack 25 ms unless slurred; release 35 ms before a bow change/rest
-        let env = 1;
-        if (!tr.slurred) env = Math.min(1, tt / 0.025);
+        // bow envelope: attack unless slurred; release before a bow change/rest
+        let env = vibratoAmDb ? Math.pow(10, (vibratoAmDb * vib) / 20) : 1; // vibrato also swells the level
+        if (!tr.slurred) env *= Math.min(1, dipFloor + tt / attack);
         const toEnd = (end - i) / sampleRate;
-        if (!legatoNext) env *= Math.min(1, 0.15 + toEnd / 0.035);
+        if (!legatoNext) env *= Math.min(1, dipFloor + toEnd / release);
         if (isExtra) { const te = (i - extraFrom) / sampleRate; env *= Math.min(1, 0.15 + te / 0.02); }
-        const nh = Math.max(1, Math.min(10, Math.floor((sampleRate * 0.45) / f)));
-        let s = 0;
-        for (let h = 1; h <= nh; h++) s += Math.sin(h * phases[v]) / h;
+        let s;
+        if (tab) {
+          let ph = phases[v] / (2 * Math.PI);
+          ph -= Math.floor(ph);
+          const x = ph * TAB;
+          const i0 = x | 0;
+          s = tab[i0] + (tab[i0 + 1] - tab[i0]) * (x - i0);
+          // bow noise: a little at the start of each bow stroke and a trace throughout
+          if (v === 0) {
+            const w = gauss(nr2);
+            hp = 0.95 * (hp + w - lpn); lpn = w;
+            const burst = tr.slurred ? 0 : Math.exp(-tt / 0.04);
+            s += hp * T.noise * (0.3 + 4 * burst);
+          }
+          s *= 1.3;
+        } else {
+          const nh = Math.max(1, Math.min(10, Math.floor((sampleRate * 0.45) / f)));
+          s = 0;
+          for (let h = 1; h <= nh; h++) s += Math.sin(h * phases[v]) / h;
+        }
         out[i] += amp * env * s * 0.5;
       }
+    }
+  }
+  // metronome clicks leaking into the microphone: short decaying tone bursts
+  if (clicks) {
+    const { start = leadIn, spb: cs = spb, amp: ca = 0.2, freq: cf = 1320 } = clicks;
+    for (let ct = start; ct < total; ct += cs) {
+      const i0 = Math.round(ct * sampleRate);
+      for (let i = 0; i < 0.03 * sampleRate && i0 + i < n; i++) out[i0 + i] += ca * Math.exp(-i / (0.006 * sampleRate)) * Math.sin((2 * Math.PI * cf * i) / sampleRate);
     }
   }
   return { signal: out, truth, leadIn, total };

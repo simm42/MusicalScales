@@ -30,8 +30,10 @@ export function buildSequence(exercise) {
   // mark long notes and repeated top note
   const list = [];
   steps.forEach((st, i) => {
-    const isEnd = i === 0 || i === last || i === top;
-    const long = (s.longEnds && isEnd) || (s.longMidTonics && st.tonic && !isEnd);
+    // "long tonic": first and last notes, and the top note when it is a key note
+    // (not the top of a scale to a 6th/12th, or the top of a dominant 7th)
+    const isEnd = i === 0 || i === last || (i === top && st.tonic);
+    const long = (s.longEnds && isEnd) || (s.longMidTonics && st.tonic && !isEnd && i !== top);
     list.push({ ...st, long, role: i === 0 ? 'bottom' : i === last ? 'end' : i === top ? 'top' : '' });
     if (i === top && s.repeatTop) list.push({ ...st, long: false, role: 'repeat' });
   });
