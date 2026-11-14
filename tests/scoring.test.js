@@ -203,3 +203,27 @@ test('a run played consistently off-pitch is recognised and explained', () => {
   // a student who is merely out of tune here and there is not flagged
   eq(detectGlobalOffset([60, 62.3, 64, 65, 67.4, 69, 71, 72].map((m, i) => ({ midi: m, onset: i, end: i + 0.5 })), [60, 62, 64, 65, 67, 69, 71, 72].map((m, i) => ({ midis: [m], onsetBeat: i }))), null);
 });
+
+test('a repeated top note with only a soft, slow re-articulation is still found', () => {
+  const settings = { instrument: 'cello', type: 'scale', key: 'C', range: '2', longEnds: true, repeatTop: true, vibrato: true };
+  const seq = buildSequence(buildExercise(settings));
+  // slow 200 ms bow change dipping only ~8 dB – too gentle for the live dip detector
+  const perf = renderPerformance(seq, { bpm: 60, detune: () => 0, timbre: 'cello', attackSec: 0.2, releaseSec: 0.2, dipFloor: 0.4, vibratoCents: 10 });
+  const r = analyseRecording({ samples: perf.signal, sampleRate: 48000, settings, a4: 440 });
+  eq(r.result.missing, 0, 'missing');
+  eq(r.result.extras.length, 0, 'extras');
+  const top = seq.events.findIndex((e) => e.role === 'repeat');
+  eq(r.result.perNote[top].status, 'ok');
+});
+
+test('short octave slips at note changes are not counted as extra notes', async () => {
+  const { dropOctaveBlips } = await import('../js/practice.js');
+  const notes = [
+    { onset: 0, end: 1, dur: 1, midi: 60 },
+    { onset: 1.0, end: 1.15, dur: 0.15, midi: 47 }, // B2 = octave below the next note
+    { onset: 1.15, end: 2, dur: 0.85, midi: 59 },
+    { onset: 2.0, end: 2.15, dur: 0.15, midi: 62 }, // a genuine short wrong note stays
+    { onset: 2.15, end: 3, dur: 0.85, midi: 57 },
+  ];
+  eq(dropOctaveBlips(notes).map((n) => n.midi), [60, 59, 62, 57]);
+});

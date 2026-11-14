@@ -38,7 +38,7 @@ export function renderPerformance(seq, o = {}) {
   const {
     sampleRate = 48000, bpm = 80, a4 = 440, detuneSd = 0, detune = null, jitter = 0, vibratoCents = 0,
     vibratoRate = 5.5, missing = [], extras = [], noise = 0.002, leadIn = 1.2, tail = 2.0, seed = 7, amp = 0.25,
-    dipFloor = 0.15, clicks = null, vibratoAmDb = 0, timbre = null,
+    dipFloor = 0.15, clicks = null, vibratoAmDb = 0, timbre = null, attackSec = null, releaseSec = null,
   } = o;
   const r = rng(seed);
   const spb = 60 / bpm;
@@ -75,8 +75,8 @@ export function renderPerformance(seq, o = {}) {
     const noteLen = (end - start) / sampleRate;
     const extra = extras.find((x) => x.after === tr.index);
     const extraFrom = extra ? Math.round((soundEnd - 0.2) * sampleRate) : Infinity;
-    const attack = T ? T.attack : 0.025;
-    const release = T ? 0.06 : 0.035;
+    const attack = attackSec ?? (T ? T.attack : 0.025);
+    const release = releaseSec ?? (T ? 0.06 : 0.035);
     for (let v = 0; v < tr.midis.length; v++) {
       const baseF = midiToFreq(tr.midis[v] + tr.cents / 100, a4);
       const extraF = extra ? midiToFreq(extra.midi, a4) : 0;

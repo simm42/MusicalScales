@@ -28,6 +28,83 @@ export function clickMask(t0, spb, windowSec = 0.085) {
   };
 }
 
+/** Pitches the exercise plays twice in a row (sounding MIDI). */
+export function repeatPitches(seq) {
+  return [...new Set(seq.events.filter((e) => e.sameAsPrev).map((e) => e.midis[0]))];
+}
+
+/**
+ * As one note hands over to the next, the detector can briefly hear a note an
+ * octave out (a weak fundamental). Drop short notes that sit exactly one or two
+ * octaves from a neighbouring note they touch.
+ */
+export function dropOctaveBlips(notes, { maxDur = 0.25, maxGap = 0.08 } = {}) {
+  return notes.filter((d, i) => {
+    if (d.midi == null || d.dur > maxDur) return true;
+    for (const j of [i - 1, i + 1]) {
+      const n = notes[j];
+      if (!n || n.midi == null || n.dur <= d.dur) continue;
+      const gap = j < i ? d.onset - n.end : n.onset - d.end;
+      if (gap > maxGap) continue;
+      for (const k of [12, -12, 24, -24]) if (Math.abs(d.midi + k - n.midi) <= 0.6) return false;
+    }
+    return true;
+  });
+}
+
+/**
+ * A repeated note played with a soft re-articulation (no sharp bow-change dip)
+ * is heard as one long note and its repeat as "missing". Where the music
+ * expects the same pitch twice and one is missing while its neighbour was heard
+ * as a single over-long note, split that note at the deepest level dip near the
+ * expected boundary. Without any dip the repeat stays missing.
+ * @returns new notes array, or null if nothing changed
+ */
+export function splitMergedRepeats(notes, events, alignment, { minDipDb = 4 } = {}) {
+  let changed = false;
+  const out = notes.slice();
+  const splitAt = new Map(); // note index -> { at, firstIsMatched }
+  alignment.pairs.forEach((p) => {
+    if (p.note != null) return;
+    const e = events[p.event];
+    const tryPartner = (k, partnerIsFirst) => {
+      if (k < 0 || k >= events.length) return false;
+      const partner = alignment.pairs[k];
+      if (partner.note == null || splitAt.has(partner.note)) return false;
+      const d = notes[partner.note];
+      if (d.midi == null || Math.abs(d.midi - e.midis[0]) > 0.5 || !d.levels || d.levels.length < 10) return false;
+      const first = partnerIsFirst ? events[k] : e;
+      const second = partnerIsFirst ? e : events[k];
+      const frac = first.beats / (first.beats + second.beats);
+      const expected = d.onset + frac * d.dur;
+      // search ±35 % of the shorter part around the expected boundary
+      const span = 0.35 * Math.min(frac, 1 - frac) * d.dur;
+      const inner = d.levels.filter(([t]) => t > d.onset + 0.1 * d.dur && t < d.end - 0.05 * d.dur);
+      const win = inner.filter(([t]) => Math.abs(t - expected) <= span);
+      if (win.length < 3) return false;
+      let min = win[0];
+      for (const x of win) if (x[1] < min[1]) min = x;
+      const sorted = inner.map((x) => x[1]).sort((a, b) => a - b);
+      const typical = sorted[Math.floor(sorted.length * 0.6)];
+      if (typical - min[1] < minDipDb) return false;
+      splitAt.set(partner.note, min[0]);
+      return true;
+    };
+    // the missing event's same-pitch neighbour: before it, or after it
+    if (e.sameAsPrev && tryPartner(p.event - 1, true)) changed = true;
+    else if (events[p.event + 1] && events[p.event + 1].sameAsPrev && tryPartner(p.event + 1, false)) changed = true;
+  });
+  if (!changed) return null;
+  const result = [];
+  out.forEach((d, i) => {
+    if (!splitAt.has(i)) { result.push(d); return; }
+    const at = splitAt.get(i);
+    result.push({ ...d, end: at, dur: at - d.onset, levels: d.levels.filter(([t]) => t < at), split: true });
+    result.push({ ...d, onset: at, dur: d.end - at, levels: d.levels.filter(([t]) => t >= at), split: true });
+  });
+  return result;
+}
+
 export const RUN = {
   calibrateSec: 0.8,
   endAfterLastSec: 1.5,
@@ -109,6 +186,7 @@ export class PracticeSession {
       ...this.segOpts,
       a4, noiseFloor: floor, vibrato: settings.vibrato, minFreq: this.minFreq, maxFreq: this.maxFreq, pitchless: this.doubleStop,
       repeats: this.o.seq.events.some((e) => e.sameAsPrev),
+      repeatPitches: repeatPitches(this.o.seq),
       onOnset: (n) => {
         this.anyNote = true;
         this.curMatch = this.follower.onset(n.nominal);
@@ -207,7 +285,12 @@ export class PracticeSession {
     const { seq, prec } = this.o;
     const a4 = this.a4;
     const cost = this.doubleStop ? doubleStopCost(a4) : undefined;
-    const alignment = align(notes, seq.events, cost);
+    if (!this.doubleStop) { const kept = dropOctaveBlips(notes); notes.splice(0, notes.length, ...kept); }
+    let alignment = align(notes, seq.events, cost);
+    if (!this.doubleStop) {
+      const fixed = splitMergedRepeats(notes, seq.events, alignment);
+      if (fixed) { notes.splice(0, notes.length, ...fixed); alignment = align(notes, seq.events, cost); }
+    }
     const result = scoreRun({
       expected: seq.events, detected: notes, alignment, prec,
       metronome: this.t0 != null ? { t0: this.t0, spb: 60 / this.o.settings.bpm } : null,
@@ -246,12 +329,17 @@ export function analyseRecording(o) {
   const t0 = frames.length ? frames[0].t : startTime;
   const measured = estimateNoiseFloor(frames.filter((f) => f.t - t0 < RUN.calibrateSec));
   const noiseFloor = applied.segmenter.noiseFloor ? Math.min(applied.segmenter.noiseFloor, measured) : measured;
-  const segmenter = new Segmenter({ ...applied.segmenter, a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop, repeats: seq.events.some((e) => e.sameAsPrev),
+  const segmenter = new Segmenter({ ...applied.segmenter, a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop, repeats: seq.events.some((e) => e.sameAsPrev), repeatPitches: repeatPitches(seq),
     clickMask: metronomeT0 != null ? clickMask(metronomeT0, 60 / s.bpm, windowSizeFor(sampleRate, minFreq) / sampleRate) : undefined });
   for (const f of frames) segmenter.push(f); // same as live: calibration frames are analysed too
   segmenter.flush();
   const notes = segmenter.notes;
-  const alignment = align(notes, seq.events, doubleStop ? doubleStopCost(a4) : undefined);
+  if (!doubleStop) { const kept = dropOctaveBlips(notes); notes.splice(0, notes.length, ...kept); }
+  let alignment = align(notes, seq.events, doubleStop ? doubleStopCost(a4) : undefined);
+  if (!doubleStop) {
+    const fixed = splitMergedRepeats(notes, seq.events, alignment);
+    if (fixed) { notes.splice(0, notes.length, ...fixed); alignment = align(notes, seq.events); }
+  }
   const prec = precisionAt(s.precision);
   const result = scoreRun({
     expected: seq.events, detected: notes, alignment, prec,

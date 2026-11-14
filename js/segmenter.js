@@ -67,6 +67,8 @@ export class Segmenter {
    * @param {boolean} [o.pitchless] segment by level only (double stops played together)
    * @param {(t:number)=>boolean} [o.clickMask] true while a metronome click may be in the analysis
    *   window: such frames cannot start a note or a pitch change
+   * @param {number[]} [o.repeatPitches] sounding MIDI pitches that are played twice in a row in this
+   *   exercise; a loudness dip only splits a note at one of these pitches (when given)
    * @param {boolean} [o.repeats=true] the music has the same pitch twice in a row, so a bow-change
    *   dip must split a note. When false, level dips are ignored (room echo makes the level wobble).
    * @param {(note)=>void} [o.onOnset] called once a new note is confirmed
@@ -88,6 +90,7 @@ export class Segmenter {
     this.stable = (o.vibrato ? SEG.stableMsVibrato : SEG.stableMs) / 1000;
     this.dipDb = o.vibrato ? SEG.dipDbVibrato : SEG.dipDb;
     this.useDips = o.pitchless || o.repeats !== false;
+    this.repeatPitches = !o.pitchless && o.repeatPitches ? new Set(o.repeatPitches) : null;
     this.dipDbRough = o.vibrato ? SEG.dipDbRoughVibrato : SEG.dipDbRough;
     this.recent = [];
     this.backdate = null;
@@ -176,6 +179,8 @@ export class Segmenter {
     if (at == null && cur.pendingSplit != null) at = cur.pendingSplit;
     cur.pendingSplit = null;
     if (!this.useDips) at = null;
+    // only where the music really repeats a pitch (room echo makes the level wobble elsewhere)
+    if (at != null && this.repeatPitches && !this.repeatPitches.has(cur.nominal())) at = null;
     if (at != null && at - cur.onset >= SEG.minNoteMs / 1000) {
       const after = cur.frames.filter((x) => x.t >= at);
       cur.frames = cur.frames.filter((x) => x.t < at);
@@ -271,6 +276,8 @@ export class Segmenter {
     let mid = cur.frames.filter((x) => x.t >= lo && x.t <= hi);
     if (mid.length < 2) mid = cur.frames;
     const note = { onset: cur.onset, end, dur, frames: cur.frames.length, confirmed: cur.confirmed };
+    // level trace, used later to find a soft re-articulation inside a merged repeated note
+    if (!this.o.pitchless) note.levels = cur.frames.map((x) => [x.t, x.db]);
     if (!this.o.pitchless) {
       const ms = mid.map((x) => x.midi);
       // vibrato: mean over the middle (whole cycles on average); otherwise the median
