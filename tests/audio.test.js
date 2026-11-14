@@ -106,6 +106,7 @@ test('frequency helpers', () => {
 import { evaluateDoubleStop, doubleStopCost } from '../js/doublestop.js';
 import { align } from '../js/align.js';
 import { stringTargets } from '../js/ui/tunerPage.js';
+import { clickMask } from '../js/practice.js';
 
 function dsRun(settings, perfOpts) {
   const ex = buildExercise(settings);
@@ -164,6 +165,8 @@ test('robustness: shallow (8 dB) bow-change dips, vibrato level swells, metronom
     assert(Math.abs(n1.length - q4.events.length) <= 1, `${inst} repeated quavers at -8 dB: ${n1.length}/${q4.events.length}`);
     const held = buildSequence(buildExercise({ instrument: inst, type: 'scale', key, range: '1', longEnds: true }));
     eq(seg(held, { bpm: 50, vibratoCents: 25, vibratoAmDb: 3, detune: () => 0 }, true).length, held.events.length, `${inst} vibrato swell`);
-    eq(seg(held, { bpm: 60, detune: () => 0, clicks: { amp: 0.3, spb: 1 } }).length, held.events.length, `${inst} clicks`);
+    const clicked = renderPerformance(held, { bpm: 60, detune: () => 0, clicks: { amp: 0.3, spb: 1 } });
+    const n3 = segmentFrames(analyseSignal(clicked.signal, 48000, { minFreq, maxFreq }), { a4: 440, minFreq, maxFreq, clickMask: clickMask(clicked.leadIn, 1, 4096 / 48000) });
+    eq(n3.length, held.events.length, `${inst} clicks`);
   }
 });

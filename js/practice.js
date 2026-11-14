@@ -10,10 +10,22 @@ import { detectionRange } from './instruments.js';
 import { freqToMidi } from './theory.js';
 import { evaluateDoubleStop, liveDoubleStop, doubleStopCost } from './doublestop.js';
 import { renderPerformance, toAudioBuffer } from './audio/synth.js';
-import { analyseSignal } from './pitch.js';
+import { analyseSignal, windowSizeFor } from './pitch.js';
 import { buildExercise } from './exercises.js';
 import { buildSequence } from './sequence.js';
 import { precisionAt } from './precision.js';
+
+/**
+ * Frames whose analysis window may contain a metronome click (clicks fall on
+ * every beat from the count-in onwards).
+ */
+export function clickMask(t0, spb, windowSec = 0.085) {
+  const margin = (windowSec || 0.085) / 2 + 0.03;
+  return (t) => {
+    const d = (((t - t0) % spb) + spb) % spb;
+    return d <= margin || spb - d <= margin;
+  };
+}
 
 export const RUN = {
   calibrateSec: 0.8,
@@ -75,6 +87,7 @@ export class PracticeSession {
     this.noiseFloor = floor;
     this.segmenter = new Segmenter({
       a4, noiseFloor: floor, vibrato: settings.vibrato, minFreq: this.minFreq, maxFreq: this.maxFreq, pitchless: this.doubleStop,
+      repeats: this.o.seq.events.some((e) => e.sameAsPrev),
       onOnset: (n) => {
         this.anyNote = true;
         this.curMatch = this.follower.onset(n.nominal);
@@ -100,6 +113,7 @@ export class PracticeSession {
     if (settings.metronome && this.o.engine.ctx) {
       this.metronome = new Metronome(this.o.engine.ctx);
       this.t0 = this.metronome.start(settings.bpm, { onCountIn: (b) => this.on.state('countin', b) });
+      this.segmenter.o.clickMask = clickMask(this.t0, 60 / settings.bpm, this.o.engine.windowSize / this.o.engine.ctx.sampleRate);
       setTimeout(() => { if (!this.stopped) this.on.state('listening'); }, Math.max(0, (this.t0 - this.o.engine.now()) * 1000));
     } else {
       this.on.state('listening');
@@ -128,14 +142,14 @@ export class PracticeSession {
 
   live(f) {
     const { a4, settings } = this.o;
-    const gate = Math.max(SEG.absMinRms, this.noiseFloor * SEG.gateOverFloor);
+    const gate = this.segmenter.gate; // follows the running background-noise estimate
     if (this.doubleStop) {
       const ev = this.o.seq.events[this.follower.arrow];
       const pair = f.rms >= gate ? liveDoubleStop(f.peaks, ev, a4) : null;
       this.on.pitch(pair ? { pair, event: ev } : null);
       return;
     }
-    const voiced = f.rms >= gate && f.freq > 0 && f.clarity >= SEG.clarityMin && f.freq >= this.minFreq && f.freq <= this.maxFreq;
+    const voiced = f.rms >= gate && f.freq > 0 && f.clarity >= 0.6 && f.freq >= this.minFreq && f.freq <= this.maxFreq;
     if (!voiced) { this.smooth = []; this.on.pitch(null); return; }
     let m = freqToMidi(f.freq, a4);
     // fold an octave error towards the expected note for display only
@@ -199,7 +213,8 @@ export function analyseRecording(o) {
   const t0 = frames.length ? frames[0].t : startTime;
   const calibration = frames.filter((f) => f.t - t0 < RUN.calibrateSec);
   const noiseFloor = estimateNoiseFloor(calibration);
-  const segmenter = new Segmenter({ a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop });
+  const segmenter = new Segmenter({ a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop, repeats: seq.events.some((e) => e.sameAsPrev),
+    clickMask: metronomeT0 != null ? clickMask(metronomeT0, 60 / s.bpm, windowSizeFor(sampleRate, minFreq) / sampleRate) : undefined });
   for (const f of frames) segmenter.push(f); // same as live: calibration frames are analysed too
   segmenter.flush();
   const notes = segmenter.notes;
@@ -210,6 +225,6 @@ export function analyseRecording(o) {
     metronome: metronomeT0 != null ? { t0: metronomeT0, spb: 60 / s.bpm } : null,
     doubleStopEval: doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
   });
-  const gate = Math.max(SEG.absMinRms, noiseFloor * SEG.gateOverFloor);
-  return { exercise, seq, frames, notes, alignment, result, noiseFloor, gate, prec, minFreq, maxFreq };
+  const gate = segmenter.gate;
+  return { exercise, seq, frames, notes, alignment, result, noiseFloor: segmenter.noiseFloor, gate, prec, minFreq, maxFreq };
 }

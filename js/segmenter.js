@@ -6,23 +6,35 @@
 import { freqToMidi } from './theory.js';
 
 export const SEG = {
-  clarityMin: 0.85,
-  gateOverFloor: 2.5,        // frame must be this many times louder (RMS) than the measured noise floor (~ +8 dB)
+  clarityMin: 0.85,          // clearly pitched frame
+  // Less clear frames (weak fundamentals through small speakers/mics, room echo)
+  // still count when their pitch is steady over a few frames or continues the note.
+  clarityWeak: 0.45,
+  weakRun: 6,
+  weakSpread: 0.35,          // semitones
+  gateOverFloor: 2,          // frame must be this many times louder (RMS) than the measured noise floor (+6 dB)
   absMinRms: 0.0012,
   noiseMaxClarity: 0.6,      // frames clearer than this are music, not background noise
   defaultNoiseFloor: 0.0005,
   maxNoiseFloor: 0.008,
+  startupSkipSec: 0.5,       // microphones click or thump as they switch on
+  noiseWindowFrames: 300,    // ~3 s of background noise kept for the running estimate
   minNoteMs: 70,
   changeSemis: 0.6,          // distance from current note that counts as a new pitch
   changeSemisVibrato: 0.7,
   stableMs: 60,              // a new pitch must hold this long
   stableMsVibrato: 120,
   gapMs: 30,                 // this much silence ends a note
+  holdDropDb: 6,             // unclear frames within this much of the note's level keep it going…
+  holdMaxMs: 400,            // …for at most this long
   // bow change = a quick level dip: falls by dipDb within dipWindowMs, then rises
   // by dipRecoverDb within dipWindowMs. Vibrato swells are slower than this.
   dipDb: 4.5,
   dipDbVibrato: 6,
   dipRecoverDb: 3,
+  dipDbRough: 3,             // …or this much when the pitch clarity drops at the same moment
+  dipDbRoughVibrato: 5,
+  dipRoughness: 0.08,        // clarity drop that counts as "rough"
   dipWindowMs: 70,
   trim: 0.15,                // fraction trimmed from each end of a note before measuring pitch
   unsteadyCents: 20,
@@ -37,9 +49,11 @@ const quantile = (a, q) => { const s = a.slice().sort((x, y) => x - y); return s
  * running – is not mistaken for background noise.
  */
 export function estimateNoiseFloor(frames) {
-  const noisy = frames.filter((f) => f.rms > 0 && !(f.clarity >= SEG.noiseMaxClarity && f.freq > 0)).map((f) => f.rms);
+  // skip the first moment: microphones often click or thump as they switch on
+  const t0 = frames.length ? frames[0].t : 0;
+  const noisy = frames.filter((f) => f.t - t0 >= SEG.startupSkipSec && f.rms > 0 && !(f.clarity >= SEG.noiseMaxClarity && f.freq > 0)).map((f) => f.rms);
   if (noisy.length < 3) return SEG.defaultNoiseFloor;
-  return Math.min(SEG.maxNoiseFloor, Math.max(0.0002, quantile(noisy, 0.3)));
+  return Math.min(SEG.maxNoiseFloor, Math.max(0.0002, quantile(noisy, 0.2)));
 }
 
 export class Segmenter {
@@ -50,6 +64,10 @@ export class Segmenter {
    * @param {boolean} o.vibrato
    * @param {number} o.minFreq @param {number} o.maxFreq
    * @param {boolean} [o.pitchless] segment by level only (double stops played together)
+   * @param {(t:number)=>boolean} [o.clickMask] true while a metronome click may be in the analysis
+   *   window: such frames cannot start a note or a pitch change
+   * @param {boolean} [o.repeats=true] the music has the same pitch twice in a row, so a bow-change
+   *   dip must split a note. When false, level dips are ignored (room echo makes the level wobble).
    * @param {(note)=>void} [o.onOnset] called once a new note is confirmed
    * @param {(note)=>void} [o.onNote] called when a note is complete
    */
@@ -60,43 +78,95 @@ export class Segmenter {
     this.silentSince = null;
     this.notes = [];
     this.lastT = 0;
-    this.gate = Math.max(SEG.absMinRms, (o.noiseFloor || 0) * SEG.gateOverFloor);
+    this.noiseFloor = o.noiseFloor || SEG.defaultNoiseFloor;
+    this.gate = Math.max(SEG.absMinRms, this.noiseFloor * SEG.gateOverFloor);
+    this.noiseHist = [];
     this.changeSemis = o.vibrato ? SEG.changeSemisVibrato : SEG.changeSemis;
     this.stable = (o.vibrato ? SEG.stableMsVibrato : SEG.stableMs) / 1000;
     this.dipDb = o.vibrato ? SEG.dipDbVibrato : SEG.dipDb;
+    this.useDips = o.pitchless || o.repeats !== false;
+    this.dipDbRough = o.vibrato ? SEG.dipDbRoughVibrato : SEG.dipDbRough;
+    this.recent = [];
+    this.backdate = null;
   }
 
   isVoiced(f) {
-    if (f.rms < this.gate) return false;
+    this.backdate = null;
+    this.masked = false;
+    if (f.rms < this.gate) { this.recent = []; return false; }
+    if (this.o.clickMask && this.o.clickMask(f.t)) {
+      this.recent = [];
+      this.masked = true; // a click: neither starts a note nor ends one
+      return false;
+    }
     if (this.o.pitchless) return true;
-    return f.freq > 0 && f.clarity >= SEG.clarityMin && f.freq >= this.o.minFreq && f.freq <= this.o.maxFreq;
+    if (!(f.freq > 0) || f.freq < this.o.minFreq || f.freq > this.o.maxFreq || f.clarity < SEG.clarityWeak) { this.recent = []; return false; }
+    if (f.clarity >= SEG.clarityMin) { this.recent = []; return true; }
+    const m = freqToMidi(f.freq, this.o.a4);
+    // continues the sounding note, or the new pitch it is changing to
+    if (this.cur) {
+      if (Math.abs(m - this.cur.nominal()) <= this.changeSemis) return true;
+      if (this.cand && Math.abs(m - this.cand.semi) <= 0.5) return true;
+    }
+    // a steady pitch over several frames is music, even if not very clear
+    this.recent.push({ t: f.t, m });
+    if (this.recent.length > SEG.weakRun) this.recent.shift();
+    const steady = this.recent.length >= SEG.weakRun && this.recent.every((x) => Math.abs(x.m - m) <= SEG.weakSpread);
+    if (steady) this.backdate = this.recent[0].t;
+    return steady;
+  }
+
+  /**
+   * Keep measuring the background noise whenever nothing is being played, so a
+   * student can start in their own time and the estimate only gets better.
+   */
+  trackNoise(f) {
+    if (this.cur || (f.freq > 0 && f.clarity >= SEG.noiseMaxClarity) || !(f.rms > 0)) return;
+    this.noiseHist.push(f.rms);
+    if (this.noiseHist.length > SEG.noiseWindowFrames) this.noiseHist.shift();
+    if (this.noiseHist.length >= 20 && this.noiseHist.length % 10 === 0) {
+      this.noiseFloor = Math.min(SEG.maxNoiseFloor, Math.max(0.0002, quantile(this.noiseHist, 0.2)));
+      this.gate = Math.max(SEG.absMinRms, this.noiseFloor * SEG.gateOverFloor);
+    }
   }
 
   push(f) {
     this.lastT = f.t;
+    this.trackNoise(f);
     const voiced = this.isVoiced(f);
     const db = 20 * Math.log10((f.level ?? f.rms) + 1e-9);
     if (!voiced) {
+      if (this.masked) return;
       if (this.cur) {
+        // pitch briefly unclear but the sound carries on at much the same level
+        // (room echo, distance, a weak fundamental): the note is still sounding
+        const recent = this.cur.levels.slice(-10).reduce((a, x) => Math.max(a, x.db), -Infinity);
+        if (f.rms >= this.gate && db > recent - SEG.holdDropDb && f.t - (this.cur.lastVoiced ?? f.t) < SEG.holdMaxMs / 1000) {
+          const at = this.dipAt(this.cur, f.t, db, f.clarity);
+          if (at != null) this.cur.pendingSplit = at;
+          return;
+        }
         if (this.silentSince == null) this.silentSince = f.t;
         if (f.t - this.silentSince >= SEG.gapMs / 1000) this.close(this.silentSince);
         else {
           // a brief unvoiced moment is usually a bow change: remember a completed dip
-          const at = this.dipAt(this.cur, f.t, db);
+          const at = this.dipAt(this.cur, f.t, db, f.clarity);
           if (at != null) this.cur.pendingSplit = at;
         }
       }
       return;
     }
     this.silentSince = null;
+    if (this.cur) this.cur.lastVoiced = f.t;
     const fr = { t: f.t, midi: this.o.pitchless ? null : freqToMidi(f.freq, this.o.a4), db, peaks: f.peaks };
-    if (!this.cur) { this.open(f.t, [fr]); return; }
+    if (!this.cur) { this.open(this.backdate ?? f.t, [fr]); return; }
     const cur = this.cur;
 
     // --- detector 2: re-articulation (quick level dip then recovery)
-    let at = this.dipAt(cur, f.t, db);
+    let at = this.dipAt(cur, f.t, db, f.clarity);
     if (at == null && cur.pendingSplit != null) at = cur.pendingSplit;
     cur.pendingSplit = null;
+    if (!this.useDips) at = null;
     if (at != null && at - cur.onset >= SEG.minNoteMs / 1000) {
       const after = cur.frames.filter((x) => x.t >= at);
       cur.frames = cur.frames.filter((x) => x.t < at);
@@ -130,20 +200,27 @@ export class Segmenter {
   }
 
   /** Record the level; returns the time of a completed bow-change dip, or null. */
-  dipAt(cur, t, db) {
+  dipAt(cur, t, db, c = 1) {
     const W = SEG.dipWindowMs / 1000;
     const h = cur.levels;
-    h.push({ t, db });
+    h.push({ t, db, c });
     while (h.length && t - h[0].t > 2 * W + 0.02) h.shift();
     // lowest point within the last window (not the newest frame)
     let mi = -1;
     for (let k = h.length - 2; k >= 0 && t - h[k].t <= W; k--) if (mi < 0 || h[k].db < h[mi].db) mi = k;
     if (mi < 0 || db - h[mi].db < SEG.dipRecoverDb) return null;
-    let pre = -Infinity;
-    for (let k = mi - 1; k >= 0 && h[mi].t - h[k].t <= W; k--) pre = Math.max(pre, h[k].db);
-    if (pre - h[mi].db < this.dipDb) return null;
+    let pre = -Infinity, preC = 0;
+    for (let k = mi - 1; k >= 0 && h[mi].t - h[k].t <= W; k--) { pre = Math.max(pre, h[k].db); preC = Math.max(preC, h[k].c ?? 1); }
+    // a bow change also roughens the tone briefly: with a clarity drop, a shallower dip is enough
+    let dipC = 1;
+    for (let k = Math.max(0, mi - 2); k <= Math.min(h.length - 1, mi + 2); k++) dipC = Math.min(dipC, h[k].c ?? 1);
+    // …but not after a short loud spike (a metronome click), which also lowers clarity
+    const typical = median(h.map((x) => x.db));
+    const spike = pre - typical > 2;
+    const need = !spike && preC - dipC >= SEG.dipRoughness ? Math.min(this.dipDb, this.dipDbRough) : this.dipDb;
+    if (pre - h[mi].db < need) return null;
     const minT = h[mi].t;
-    cur.levels = [{ t, db }];
+    cur.levels = [{ t, db, c }];
     return minT;
   }
 
@@ -152,7 +229,7 @@ export class Segmenter {
     this.cur = {
       onset: t,
       frames,
-      levels: frames.map((x) => ({ t: x.t, db: x.db })),
+      levels: frames.map((x) => ({ t: x.t, db: x.db, c: 1 })),
       confirmed: false,
       nominal() {
         if (this._nom != null && this.frames.length >= 6) return this._nom;
@@ -188,7 +265,11 @@ export class Segmenter {
     if (!this.o.pitchless) {
       const ms = mid.map((x) => x.midi);
       // vibrato: mean over the middle (whole cycles on average); otherwise the median
-      note.midi = this.o.vibrato ? ms.reduce((a, b) => a + b, 0) / ms.length : median(ms);
+      // vibrato: mean over the middle (whole cycles on average), ignoring stray frames
+      // far from the note's centre; otherwise the median
+      const med = median(ms);
+      const core = ms.filter((x) => Math.abs(x - med) <= 0.8);
+      note.midi = this.o.vibrato && core.length ? core.reduce((a, b) => a + b, 0) / core.length : med;
       note.nominal = Math.round(note.midi);
       const spread = (quantile(ms, 0.9) - quantile(ms, 0.1)) * 50; // half the 10–90 % range, in cents
       note.wobble = spread;
