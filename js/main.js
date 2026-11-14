@@ -167,6 +167,8 @@ function updateExercise() {
   seq = buildSequence(exercise);
   $('exTitle').textContent = `${INSTRUMENTS[settings.instrument].name}: ${exercise.title}`;
   $('exOptions').textContent = describeOptions(settings);
+  // the full score already shows the rhythm, long notes and slurs
+  $('exOptions').hidden = settings.display === 'score';
   $('exInvalid').hidden = exercise.ok;
   if (!exercise.ok) $('exInvalid').textContent = exercise.reason + ' Choose fewer octaves or a lower starting octave.';
   $('startBtn').disabled = !exercise.ok;
