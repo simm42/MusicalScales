@@ -300,11 +300,14 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   .control-row .btn, .list-nav .btn { padding: 3px 12px; font-size: 14px; }
   .control-row .status { font-size: 13px; }
   .practice-main { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
-  .gauge-col { top: 40px; gap: 6px; }
-  .tuner.stack .meter { height: calc(100dvh - 185px - var(--safe-b)); min-height: 70px; width: 40px; }
+  .gauge-col { top: 6px; gap: 6px; }
+  .tuner.stack .meter { height: calc(100dvh - 150px - var(--safe-b)); min-height: 70px; width: 40px; }
   .tuner.stack .readout .note { font-size: 22px; }
   .tuner.stack .readout .cents { font-size: 12px; margin-top: 2px; }
-  .score-wrap { max-height: calc(100dvh - 158px - var(--safe-b)); min-height: 100px; }
+  /* the tab bar scrolls away (see hideTabBar in main.js): the practice box gets the full height */
+  .app-header { position: static; }
+  .pc-layout { min-height: 100dvh; }
+  .score-wrap { max-height: calc(100dvh - 112px - var(--safe-b)); min-height: 100px; }
   .footer-note { display: none; }
 }
 .res-block svg { width: 100%; height: auto; display: block; }

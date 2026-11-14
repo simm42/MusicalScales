@@ -184,7 +184,7 @@ function drawScore() {
   rendered = { arrowTargets: [] };
   if (!window.Vex) { scoreEl.textContent = ''; return; }
   try {
-    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode });
+    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape() });
     else if (settings.display === 'keysig') rendered = renderKeySignature(scoreEl, exercise);
     else scoreEl.innerHTML = '';
   } catch (err) {
@@ -408,6 +408,7 @@ $('playBtn').addEventListener('click', async () => {
   if (!exercise.ok) return;
   stopSession(true);
   player.prime(); // must happen inside the tap (iOS)
+  hideTabBar();
   $('playBtn').textContent = '■ Stop';
   setStatus('Preparing the sound…');
   await new Promise((r) => setTimeout(r, 30)); // let the message show before the sound is rendered
@@ -433,7 +434,7 @@ $('playBtn').addEventListener('click', async () => {
 
 $('startBtn').addEventListener('click', () => {
   if (session) { const s = session; s.stop(); }
-  else { engine.unlock(DEBUG && $('d-use') && $('d-use').checked ? 'playback' : 'play-and-record'); startSession(); }
+  else { engine.unlock(DEBUG && $('d-use') && $('d-use').checked ? 'playback' : 'play-and-record'); startSession(); hideTabBar(); }
 });
 
 // ---------------------------------------------------------------- practice list
@@ -661,6 +662,21 @@ function renderRhythmBar() {
     : settings.slurred ? `Slurred, ${per} notes to a bow – tap for separate bows` : 'Separate bows – tap to slur';
 }
 
+// ---------------------------------------------------------------- landscape phones: let the tab bar scroll away
+const phoneLandscapeQuery = window.matchMedia('(orientation: landscape) and (max-height: 500px)');
+function isPhoneLandscape() { return phoneLandscapeQuery.matches; }
+/** Scroll so the practice box starts at the top of the screen (the tab bar goes out of view). */
+function hideTabBar() {
+  if (!isPhoneLandscape() || $('tab-practice').hidden) return;
+  const top = $('tab-practice').getBoundingClientRect().top + window.scrollY - 4;
+  if (Math.abs(window.scrollY - top) > 2) window.scrollTo({ top, behavior: 'smooth' });
+  setTimeout(() => { if (isPhoneLandscape() && Math.abs(window.scrollY - top) > 2) window.scrollTo(0, top); }, 450);
+}
+phoneLandscapeQuery.addEventListener('change', () => {
+  if (settings.display === 'score') redrawKeepingColours();
+  setTimeout(hideTabBar, 300);
+});
+
 // ---------------------------------------------------------------- tabs (Practice | Config | Results | Tuner)
 const wideQuery = window.matchMedia('(min-width: 1600px)');
 const isWide = () => wideQuery.matches;
@@ -684,6 +700,7 @@ function setTab(tab) {
   $('tab-results').hidden = tab !== 'results';
   $('tab-tuner').hidden = tab !== 'tuner';
   if (tab !== 'practice') { stopSession(true); stopPlayback(); }
+  else setTimeout(hideTabBar, 50);
   if (tab === 'results') {
     if (!resultsPage) {
       resultsPage = new ResultsPage({

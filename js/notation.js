@@ -44,7 +44,7 @@ export function renderKeySignature(container, exercise) {
  * Full score. Returns positions for the follow arrow and an element per event
  * for colouring notes after scoring.
  */
-export function renderScore(container, exercise, seq, { clefMode = 'change' } = {}) {
+export function renderScore(container, exercise, seq, { clefMode = 'change', compact = false } = {}) {
   container.innerHTML = '';
   const V = VF();
   const width = Math.max(200, Math.floor(container.clientWidth || 800));
@@ -76,8 +76,9 @@ export function renderScore(container, exercise, seq, { clefMode = 'change' } = 
   }
   if (cur.length) { lines.push(cur); lineUsed.push(used); }
 
-  const lineH = clefMode === 'change' ? 130 : 170;
-  const topPad = clefMode === 'change' ? 40 : 70;
+  // compact: tighter line spacing for short (landscape phone) screens
+  const lineH = clefMode === 'change' ? (compact ? 108 : 130) : (compact ? 140 : 170);
+  const topPad = clefMode === 'change' ? (compact ? 34 : 40) : (compact ? 56 : 70);
   const ctx = newRenderer(container, width, lines.length * lineH + 30);
 
   const noteObjs = new Array(glyphs.length);
