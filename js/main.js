@@ -225,17 +225,20 @@ function followScroll(t) {
 
 // Redraw only when the width changes: phone address bars collapsing fire
 // height-only resizes, and a redraw would wipe the live note colours.
+// Watching the score box itself also catches rotation and iPhone safe-area changes.
 let resizeTimer = null;
 let lastWidth = $('scoreWrap').clientWidth;
-window.addEventListener('resize', () => {
+const onScoreBoxResize = () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     const w = $('scoreWrap').clientWidth;
-    if (w === lastWidth || settings.display !== 'score') return;
+    if (!w || w === lastWidth || settings.display !== 'score') return;
     lastWidth = w;
     redrawKeepingColours();
   }, 200);
-});
+};
+if (window.ResizeObserver) new ResizeObserver(onScoreBoxResize).observe($('scoreWrap'));
+else window.addEventListener('resize', onScoreBoxResize);
 
 /** Redraw the score but keep live note colours and the arrow (theme change, resize). */
 function redrawKeepingColours() {

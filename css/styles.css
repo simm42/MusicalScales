@@ -1,5 +1,10 @@
 /* ---------- theme tokens ---------- */
 :root {
+  /* iPhone safe areas (rounded corners, notch / Dynamic Island, home bar); 0 elsewhere */
+  --safe-t: env(safe-area-inset-top, 0px);
+  --safe-r: env(safe-area-inset-right, 0px);
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --safe-l: env(safe-area-inset-left, 0px);
   color-scheme: light;
   --bg: #f6f5f9;
   --surface: #ffffff;
@@ -54,7 +59,8 @@ button { cursor: pointer; }
 /* ---------- header ---------- */
 .app-header {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
-  padding: 10px 16px; background: var(--surface); border-bottom: 1px solid var(--border);
+  padding: max(10px, var(--safe-t)) max(16px, var(--safe-r)) 10px max(16px, var(--safe-l));
+  background: var(--surface); border-bottom: 1px solid var(--border);
   position: sticky; top: 0; z-index: 10;
 }
 .app-header h1 { font-size: 18px; margin: 0 8px 0 0; letter-spacing: .2px; }
@@ -68,7 +74,7 @@ button { cursor: pointer; }
 .icon-btn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 12px; }
 
 /* ---------- layout ---------- */
-main { max-width: 1200px; margin: 0 auto; padding: 16px; }
+main { max-width: 1200px; margin: 0 auto; padding: 16px max(16px, var(--safe-r)) max(16px, var(--safe-b)) max(16px, var(--safe-l)); }
 /* Practice and Config are separate tabs, except on very wide screens */
 .pc-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
 .tabs [data-tab="config"].wide-hidden { display: none; }
@@ -266,25 +272,39 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 }
 /* landscape phones: everything on one screen without page scrolling */
 @media (orientation: landscape) and (max-height: 500px) {
-  .app-header { padding: 4px 10px; gap: 8px; }
+  .app-header { padding: 4px max(10px, var(--safe-r)) 4px max(10px, var(--safe-l)); gap: 8px; }
   .app-header h1 { font-size: 14px; }
   .tabs button { padding: 3px 10px; font-size: 13px; }
   .icon-btn { padding: 3px 9px; font-size: 13px; }
-  main { padding: 6px 10px; }
+  main { padding: 6px max(10px, var(--safe-r)) max(6px, var(--safe-b)) max(10px, var(--safe-l)); }
   .practice { padding: 8px 10px; }
+  /* top box in two columns: rhythms + Start/Play on the left, scale name and description on the right */
+  .practice-top {
+    display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 27%); column-gap: 12px;
+    border-bottom: 1px solid var(--border); margin-bottom: 6px; padding-bottom: 4px;
+  }
+  .practice-top .rhythm-bar { grid-column: 1; grid-row: 1; }
+  .practice-top .control-row { grid-column: 1; grid-row: 2; border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
+  .practice-top .title-row {
+    grid-column: 2; grid-row: 1 / span 2; align-self: center;
+    flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; margin: 0; min-width: 0;
+  }
+  .practice-top .title-row h2 { font-size: 15px; line-height: 1.25; }
+  .practice-top .title-row .opts { font-size: 12px; line-height: 1.3; }
   .rhythm-bar { padding-bottom: 4px; margin-bottom: 4px; }
-  .chip { padding: 3px 10px; font-size: 13px; }
+  .chip { padding: 3px 8px; font-size: 13px; }
+  .rhythm-bar { gap: 4px; }
+  .chip .note-icon { height: 18px; }
+  .chip.toggle { margin-left: 4px; }
   .control-row { margin-bottom: 4px; padding-bottom: 4px; gap: 6px; }
   .control-row .btn, .list-nav .btn { padding: 3px 12px; font-size: 14px; }
   .control-row .status { font-size: 13px; }
-  .title-row h2 { font-size: 16px; }
-  .title-row { margin-bottom: 2px; }
   .practice-main { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
   .gauge-col { top: 40px; gap: 6px; }
-  .tuner.stack .meter { height: calc(100dvh - 215px); min-height: 70px; width: 40px; }
+  .tuner.stack .meter { height: calc(100dvh - 185px - var(--safe-b)); min-height: 70px; width: 40px; }
   .tuner.stack .readout .note { font-size: 22px; }
   .tuner.stack .readout .cents { font-size: 12px; margin-top: 2px; }
-  .score-wrap { max-height: calc(100dvh - 172px); min-height: 100px; }
+  .score-wrap { max-height: calc(100dvh - 158px - var(--safe-b)); min-height: 100px; }
   .footer-note { display: none; }
 }
 .res-block svg { width: 100%; height: auto; display: block; }
@@ -301,7 +321,7 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 
 /* narrow phones: one-line header */
 @media (max-width: 520px) {
-  .app-header { padding: 6px 10px; gap: 6px; flex-wrap: nowrap; }
+  .app-header { padding: max(6px, var(--safe-t)) max(10px, var(--safe-r)) 6px max(10px, var(--safe-l)); gap: 6px; flex-wrap: nowrap; }
   .app-header h1 { display: none; }
   .tabs button { padding: 5px 9px; font-size: 14px; }
   .theme-label { display: none; }
