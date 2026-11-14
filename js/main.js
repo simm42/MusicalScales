@@ -14,6 +14,9 @@ import { AudioEngine, MicError } from './audio/mic.js';
 import { PracticeSession } from './practice.js';
 import { Player } from './playback.js';
 import { encodeWav } from './audio/wav.js';
+import { APP_VERSION } from './version.js';
+import { SEG } from './segmenter.js';
+import { RUN } from './practice.js';
 import { Meter, fmtCents } from './ui/meter.js';
 import { renderSummary } from './ui/summary.js';
 import { TunerPage } from './ui/tunerPage.js';
@@ -611,34 +614,66 @@ $('themeBtn').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(t
 window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (theme === 'auto') applyTheme('auto'); });
 
 // ---------------------------------------------------------------- debug: capture what the microphone hears
-let captureUrl = null;
+let pendingCapture = null;
+const r3 = (x, d = 3) => (x == null || !isFinite(x) ? null : +x.toFixed(d));
+
+function captureMeta(sess, result, cap) {
+  const ex = exercise;
+  const segm = sess && sess.segmenter;
+  return {
+    app: 'scale-practice', kind: 'capture', version: 2, appVersion: APP_VERSION, created: new Date().toISOString(),
+    settings: compactSettings(settings), title: ex ? ex.title : null, a4: a4(), a4Effective: sess ? sess.a4 : a4(),
+    sampleRate: cap.sampleRate, startTime: cap.startTime,
+    metronomeT0: sess && sess.t0 != null ? sess.t0 : null,
+    synthetic: !!(sess && sess.o.synth),
+    noiseFloor: sess ? sess.noiseFloor : null,
+    calibration: sess ? sess.o.calibration || null : null,
+    audio: engine.describe(),
+    analysis: sess ? { minFreq: sess.minFreq, maxFreq: sess.maxFreq, seg: { ...SEG }, run: { ...RUN }, finalNoiseFloor: segm ? segm.noiseFloor : null, finalGate: segm ? segm.gate : null } : null,
+    log: sess ? sess.log : null,
+    expected: seq ? seq.events.map((e) => ({ midis: e.midis, onsetBeat: e.onsetBeat, beats: e.beats })) : null,
+    live: result ? {
+      total: result.total, intonation: result.intonation, timing: result.timing, missing: result.missing, wrong: result.wrong, extras: result.extras.length, bpm: result.bpm,
+      notes: (segm ? segm.notes : []).map((n) => ({ onset: r3(n.onset), end: r3(n.end), midi: n.midi != null ? r3(n.midi) : null, wobble: r3(n.wobble, 1) })),
+      perNote: result.perNote.map((p) => ({ e: p.event, n: p.note, s: p.status, c: p.cents ? p.cents.map((c) => r3(c, 1)) : null, i: r3(p.intonation, 1), td: r3(p.timingDev), ts: r3(p.timing, 1) })),
+    } : null,
+    // compact live pitch track: [time, freq, clarity, rms, level]
+    liveFrames: sess ? sess.frames.map((f) => [r3(f.t), r3(f.freq, 2), r3(f.clarity), +(f.rms || 0).toPrecision(3), +(f.level || 0).toPrecision(3)]) : null,
+    screen: { width: innerWidth, height: innerHeight, dpr: devicePixelRatio },
+    userAgent: navigator.userAgent,
+  };
+}
+
 function offerCapture(sess, result) {
   const box = $('d-captureOut');
   if (!box) return;
   const cap = engine.takeCapture();
   if (!cap) return;
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
-  const meta = {
-    app: 'scale-practice', kind: 'capture', version: 1, created: new Date().toISOString(),
-    settings: compactSettings(settings), a4: a4(), sampleRate: cap.sampleRate, startTime: cap.startTime,
-    metronomeT0: sess && sess.t0 != null ? sess.t0 : null,
-    synthetic: !!(sess && sess.o.synth),
-    noiseFloor: sess ? sess.noiseFloor : null,
-    calibration: sess ? sess.o.calibration || null : null,
-    live: result ? {
-      total: result.total, intonation: result.intonation, timing: result.timing, missing: result.missing, wrong: result.wrong, extras: result.extras.length,
-      notes: (sess && sess.segmenter ? sess.segmenter.notes : []).map((n) => ({ onset: +n.onset.toFixed(3), end: +n.end.toFixed(3), midi: n.midi != null ? +n.midi.toFixed(3) : null })),
-    } : null,
-    userAgent: navigator.userAgent,
-  };
-  const { blob, clipped } = encodeWav(cap.samples, cap.sampleRate, meta);
-  if (captureUrl) URL.revokeObjectURL(captureUrl);
-  captureUrl = URL.createObjectURL(blob);
-  const name = `scale-capture-${settings.instrument}-${settings.type}-${(settings.type === 'chromatic' || settings.type === 'dim7' ? settings.start : settings.key).replace('#', 's')}-${stamp}.wav`;
+  pendingCapture = { cap, meta: captureMeta(sess, result, cap) };
   let peak = 0;
   for (let i = 0; i < cap.samples.length; i++) peak = Math.max(peak, Math.abs(cap.samples[i]));
-  box.innerHTML = `<p><a class="btn primary" href="${captureUrl}" download="${name}">⬇ Download recording (${(blob.size / 1048576).toFixed(1)} MB)</a></p>
-    <p class="small muted">${(cap.samples.length / cap.sampleRate).toFixed(1)} s at ${cap.sampleRate} Hz · loudest sample ${(20 * Math.log10(peak + 1e-9)).toFixed(1)} dBFS${clipped ? ` · ⚠ ${clipped} samples clipped – move the speaker or instrument a little further away` : ''}. The file contains only this recording and the exercise settings.</p>`;
+  const clipped = cap.samples.reduce((n, v) => n + (Math.abs(v) >= 0.999 ? 1 : 0), 0);
+  const tr = pendingCapture.meta.audio && pendingCapture.meta.audio.track;
+  const st = tr && tr.settings;
+  const processing = st ? ['echoCancellation', 'noiseSuppression', 'autoGainControl'].filter((k) => st[k] === true) : [];
+  box.innerHTML = `<div class="field"><label for="d-notes">What did you do? (optional)</label><textarea id="d-notes" rows="2" style="width:100%" placeholder="e.g. iPhone playing the recording 1 m from the webcam, calibrated first"></textarea></div>
+    <p><button type="button" class="btn primary" id="d-download">⬇ Download recording</button></p>
+    <p class="small muted">${(cap.samples.length / cap.sampleRate).toFixed(1)} s at ${cap.sampleRate} Hz · loudest sample ${(20 * Math.log10(peak + 1e-9)).toFixed(1)} dBFS${clipped ? ` · ⚠ ${clipped} samples clipped – move a little further from the microphone` : ''}${tr ? ` · microphone: ${esc(tr.label || 'unnamed')}` : ''}${processing.length ? ` · ⚠ the browser left ${processing.join(', ')} switched on` : ''}.
+    The file contains this recording, the exercise settings, the score and the app's listening details – nothing else.</p>`;
+  $('d-download').addEventListener('click', () => {
+    const { cap: c, meta } = pendingCapture;
+    meta.userNotes = $('d-notes').value.trim();
+    const { blob } = encodeWav(c.samples, c.sampleRate, meta);
+    const stamp = meta.created.replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
+    const s = settings;
+    const name = `scale-capture-${s.instrument}-${s.type}-${(s.type === 'chromatic' || s.type === 'dim7' ? s.start : s.key).replace('#', 's')}-${stamp}.wav`;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+  });
 }
 
 // ---------------------------------------------------------------- debug (synthetic performance)

@@ -100,6 +100,15 @@ export class AudioEngine {
         throw new MicError('other', 'Could not start the microphone: ' + (e && e.message));
       }
       this.source = ctx.createMediaStreamSource(this.stream);
+      // what the browser really gave us (webcam mics sometimes ignore "auto-gain off" etc.)
+      try {
+        const track = this.stream.getAudioTracks()[0];
+        this.trackInfo = {
+          label: track.label,
+          settings: track.getSettings ? track.getSettings() : null,
+          capabilities: track.getCapabilities ? track.getCapabilities() : null,
+        };
+      } catch { this.trackInfo = null; }
     } else {
       const src = ctx.createBufferSource();
       src.buffer = o.buffer;
@@ -142,6 +151,18 @@ export class AudioEngine {
     if (o.source !== 'mic') this.source.start(ctx.currentTime + 0.05);
     this.running = true;
     return ctx;
+  }
+
+  /** Details of the audio set-up, for fault-finding. */
+  describe() {
+    const c = this.ctx;
+    return {
+      context: c ? { sampleRate: c.sampleRate, baseLatency: c.baseLatency ?? null, outputLatency: c.outputLatency ?? null, state: c.state } : null,
+      track: this.trackInfo || null,
+      windowSize: this.windowSize || null,
+      hop: HOP,
+      audioSession: navigator.audioSession ? navigator.audioSession.type : null,
+    };
   }
 
   /** Everything captured since start(): { samples, sampleRate, startTime } or null. */

@@ -64,13 +64,24 @@ export class PracticeSession {
     this.curMatch = -1;
     this.smooth = [];
     this.stopped = false;
+    // fault-finding log (included in test-mode downloads)
+    this.log = { states: [], onsets: [], gates: [], endReason: null, clock: [] };
+  }
+
+  state(name, extra) {
+    this.log.states.push({ t: +(this.o.engine.now() || 0).toFixed(3), s: name, extra: extra ?? null });
+    this.on.state(name, extra);
+  }
+
+  clockMark(label) {
+    this.log.clock.push({ label, audio: this.o.engine.now(), wall: performance.now() });
   }
 
   async start() {
     const { engine, settings } = this.o;
     const { minFreq, maxFreq } = detectionRange(settings.instrument, this.a4);
     this.minFreq = minFreq; this.maxFreq = maxFreq;
-    this.on.state('starting');
+    this.state('starting');
     let buffer = null;
     if (this.o.synth) {
       const ctx = await engine.ensureContext();
@@ -82,7 +93,8 @@ export class PracticeSession {
       source: buffer ? 'buffer' : 'mic', buffer, monitor: !!buffer && this.o.synth.monitor !== false, minFreq, maxFreq, peaks: this.doubleStop, capture: !!this.o.capture,
       onFrames: (frames) => frames.forEach((f) => this.frame(f)),
     });
-    this.on.state('calibrating');
+    this.state('calibrating');
+    this.clockMark('start');
     this.on.arrow(0);
   }
 
@@ -100,6 +112,7 @@ export class PracticeSession {
       onOnset: (n) => {
         this.anyNote = true;
         this.curMatch = this.follower.onset(n.nominal);
+        this.log.onsets.push({ t: +n.onset.toFixed(3), heard: n.nominal, matched: this.curMatch });
         this.on.arrow(this.follower.arrow);
       },
       onNote: (n) => {
@@ -121,11 +134,11 @@ export class PracticeSession {
     for (const f of this.calFrames) this.segmenter.push(f);
     if (settings.metronome && this.o.engine.ctx) {
       this.metronome = new Metronome(this.o.engine.ctx);
-      this.t0 = this.metronome.start(settings.bpm, { onCountIn: (b) => this.on.state('countin', b) });
+      this.t0 = this.metronome.start(settings.bpm, { onCountIn: (b) => this.state('countin', b) });
       this.segmenter.o.clickMask = clickMask(this.t0, 60 / settings.bpm, this.o.engine.windowSize / this.o.engine.ctx.sampleRate);
-      setTimeout(() => { if (!this.stopped) this.on.state('listening'); }, Math.max(0, (this.t0 - this.o.engine.now()) * 1000));
+      setTimeout(() => { if (!this.stopped) this.state('listening'); }, Math.max(0, (this.t0 - this.o.engine.now()) * 1000));
     } else {
-      this.on.state('listening');
+      this.state('listening');
     }
   }
 
@@ -140,12 +153,16 @@ export class PracticeSession {
     }
     this.segmenter.push(f);
     this.live(f);
+    if (!this.lastGateLog || f.t - this.lastGateLog >= 0.5) {
+      this.lastGateLog = f.t;
+      this.log.gates.push({ t: +f.t.toFixed(2), floor: +this.segmenter.noiseFloor.toPrecision(3), gate: +this.segmenter.gate.toPrecision(3) });
+    }
     // automatic end
     if (this.segmenter.sounding) this.lastVoiced = f.t;
     const quietFor = this.lastVoiced != null ? f.t - this.lastVoiced : 0;
     if (this.anyNote && !this.segmenter.sounding) {
-      if (this.follower.finished && quietFor >= RUN.endAfterLastSec) this.finish();
-      else if (quietFor >= RUN.endAfterSilenceSec) this.finish();
+      if (this.follower.finished && quietFor >= RUN.endAfterLastSec) this.finish('finished: last note played, then quiet');
+      else if (quietFor >= RUN.endAfterSilenceSec) this.finish(`ended after ${RUN.endAfterSilenceSec} s of silence`);
     }
   }
 
@@ -177,9 +194,11 @@ export class PracticeSession {
     this.on.pitch({ midi: avg });
   }
 
-  finish() {
+  finish(reason = 'Stop pressed') {
     if (this.stopped) return;
     this.stopped = true;
+    this.log.endReason = reason;
+    this.clockMark('end');
     if (this.metronome) this.metronome.stop();
     this.o.engine.stop();
     if (!this.segmenter) { this.on.done(null); return; }
