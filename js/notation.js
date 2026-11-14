@@ -47,19 +47,20 @@ export function renderKeySignature(container, exercise) {
 export function renderScore(container, exercise, seq, { clefMode = 'change' } = {}) {
   container.innerHTML = '';
   const V = VF();
-  const width = Math.max(300, Math.floor(container.clientWidth || 800));
+  const width = Math.max(260, Math.floor(container.clientWidth || 800));
   const glyphs = seq.glyphs;
 
-  // clef for each glyph (rests take the previous note's clef)
-  const midis = glyphs.map((g) => (g.kind === 'note' ? midiOf(g.notes[0]) : null));
-  let last = midis.find((m) => m != null);
-  const filled = midis.map((m) => (m == null ? last : (last = m)));
-  const clefs = assignClefs(exercise.info.id, filled, clefMode);
+  // clef per step (a step's repeated quavers/rests share its clef)
+  const stepIds = [...new Set(glyphs.map((g) => g.stepIndex))];
+  const stepMidi = stepIds.map((si) => midiOf(glyphs.find((g) => g.stepIndex === si).notes[0]));
+  const stepClef = new Map(assignClefs(exercise.info.id, stepMidi, clefMode).map((c, k) => [stepIds[k], c]));
+  const clefs = glyphs.map((g) => stepClef.get(g.stepIndex));
 
   // line breaking at step boundaries
   const keyW = 11 * Math.abs(exercise.fifths);
   const startW = 50 + keyW + 10;
   const lines = [];
+  const lineUsed = [];
   let cur = [];
   let used = startW;
   let i = 0;
@@ -68,12 +69,12 @@ export function renderScore(container, exercise, seq, { clefMode = 'change' } = 
     while (j + 1 < glyphs.length && glyphs[j + 1].stepIndex === glyphs[i].stepIndex) j++;
     const chunk = glyphs.slice(i, j + 1).map((g, k) => i + k);
     const w = chunk.reduce((a, gi) => a + GLYPH_W[glyphs[gi].dur] + (glyphs[gi].notes.some((n) => n.a) ? 8 : 0), 0);
-    if (cur.length && used + w > width - 20) { lines.push(cur); cur = []; used = startW; }
+    if (cur.length && used + w > width - 20) { lines.push(cur); lineUsed.push(used); cur = []; used = startW; }
     cur.push(...chunk);
     used += w;
     i = j + 1;
   }
-  if (cur.length) lines.push(cur);
+  if (cur.length) { lines.push(cur); lineUsed.push(used); }
 
   const lineH = clefMode === 'change' ? 130 : 170;
   const topPad = clefMode === 'change' ? 40 : 70;
@@ -84,7 +85,10 @@ export function renderScore(container, exercise, seq, { clefMode = 'change' } = 
 
   lines.forEach((line, li) => {
     const y = topPad + li * lineH - 20;
-    const stave = new V.Stave(5, y, width - 12);
+    const isLast = li === lines.length - 1;
+    // a short final line keeps natural spacing instead of stretching across the page
+    const staveW = isLast && lines.length > 1 ? Math.min(width - 12, Math.max(lineUsed[li] * 1.1 + 20, 200)) : width - 12;
+    const stave = new V.Stave(5, y, staveW);
     const lineClef = clefs[line[0]];
     stave.addClef(lineClef);
     if (exercise.fifths) stave.addKeySignature(vexKeySpec(exercise.fifths));
@@ -133,7 +137,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change' } = 
     }
     flush();
 
-    new V.Formatter().joinVoices([voice]).format([voice], width - stave.getNoteStartX() - 30);
+    new V.Formatter().joinVoices([voice]).format([voice], staveW + 5 - stave.getNoteStartX() - 25);
     voice.draw(ctx, stave);
     beams.forEach((b) => b.setContext(ctx).draw());
   });

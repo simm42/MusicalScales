@@ -23,7 +23,7 @@ export const INSTRUMENTS = {
     highest: 'A6',
     transpose: 0,
     // [clef, go up into it at or above, drop back out below]
-    clefChanges: [['treble', 'D5', 'A4']],
+    clefChanges: [['treble', 'G5', 'D5']],
     tuningSystem: 'fifths',
   },
   cello: {
@@ -34,7 +34,7 @@ export const INSTRUMENTS = {
     highest: 'C6',
     transpose: 0,
     thumbStart: 'D4',
-    clefChanges: [['tenor', 'E4', 'C4'], ['treble', 'C5', 'G4']],
+    clefChanges: [['tenor', 'E4', 'C4'], ['treble', 'F5', 'C5']],
     tuningSystem: 'fifths',
   },
   bass: {
@@ -45,7 +45,7 @@ export const INSTRUMENTS = {
     highest: 'G5',
     transpose: -12,
     thumbStart: 'D4',
-    clefChanges: [['tenor', 'E4', 'C4'], ['treble', 'C5', 'G4']],
+    clefChanges: [['tenor', 'E4', 'C4'], ['treble', 'F5', 'C5']],
     tuningSystem: 'fourths',
   },
 };

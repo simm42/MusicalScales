@@ -1,0 +1,530 @@
+// Page wiring: settings form, exercise display, practice runs, list, tuner tab, theme.
+
+import { INSTRUMENTS } from './instruments.js';
+import {
+  EXERCISE_TYPES, DEFAULT_SETTINGS, RANGE_LABELS, normalise, buildExercise, isPlayable,
+  typesForInstrument, rangesFor, keyListFor,
+} from './exercises.js';
+import { buildSequence, RHYTHMS } from './sequence.js';
+import { pcName, parsePc, noteName, spellMidi } from './theory.js';
+import { renderScore, renderKeySignature, markNote } from './notation.js';
+import { describeOptions, shortOptions } from './settingsText.js';
+import { precisionAt, linearScore, scoreClass } from './precision.js';
+import { AudioEngine, MicError } from './audio/mic.js';
+import { PracticeSession } from './practice.js';
+import { Meter, fmtCents } from './ui/meter.js';
+import { renderSummary } from './ui/summary.js';
+import { TunerPage } from './ui/tunerPage.js';
+import {
+  loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings, recordResult,
+  encodeShare, decodeShare, exportJson, importJson,
+} from './practiceList.js';
+
+const $ = (id) => document.getElementById(id);
+const PREFS_KEY = 'scales.prefs.v1';
+
+// ---------------------------------------------------------------- state
+function loadPrefs() { try { return JSON.parse(localStorage.getItem(PREFS_KEY)) || {}; } catch { return {}; } }
+const prefs = { a4: 440, view: null, tab: 'practice', ...loadPrefs() };
+function savePrefs() { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* private mode */ } }
+
+let settings = normalise(prefs.settings || DEFAULT_SETTINGS);
+let list = loadList();
+let activeId = prefs.activeId && list.some((x) => x.id === prefs.activeId) ? prefs.activeId : null;
+let editingId = null;
+let exercise = null;
+let seq = null;
+let rendered = { arrowTargets: [] };
+let session = null;
+let lastResult = null;
+let arrowIndex = 0;
+
+const engine = new AudioEngine();
+const meter = new Meter($('liveTuner'));
+const DEBUG = new URLSearchParams(location.search).get('debug') === 'synth';
+
+const a4 = () => Math.min(446, Math.max(415, Number(prefs.a4) || 440));
+const prec = () => precisionAt(settings.precision);
+
+// ---------------------------------------------------------------- form
+const form = $('optionsView');
+const sel = (id) => $('o-' + id);
+
+function fillSelect(el, options, value) {
+  el.innerHTML = '';
+  for (const o of options) {
+    const opt = new Option(o.label, o.value);
+    if (o.disabled) opt.disabled = true;
+    el.add(opt);
+  }
+  el.value = String(value);
+}
+
+function syncForm() {
+  const s = settings;
+  const t = EXERCISE_TYPES[s.type];
+  fillSelect(sel('instrument'), Object.entries(INSTRUMENTS).map(([v, i]) => ({ value: v, label: i.name })), s.instrument);
+  fillSelect(sel('type'), typesForInstrument(s.instrument).map((v) => ({ value: v, label: EXERCISE_TYPES[v].label })), s.type);
+  $('f-mode').hidden = !t.tonality;
+  sel('mode').value = s.mode;
+  $('l-key').textContent = t.keyKind === 'start' ? 'Starting on' : t.keyKind === 'majorKey' ? 'In the key of' : 'Key';
+  const keyField = t.keyKind === 'start' ? 'start' : 'key';
+  fillSelect(sel('key'), keyListFor(s).map((k) => ({ value: k, label: pcName(parsePc(k)) })), s[keyField]);
+  $('f-form').hidden = !(t.forms && s.mode === 'minor');
+  sel('form').value = s.form;
+  $('f-interval').hidden = !t.intervals;
+  sel('interval').value = s.interval;
+  fillSelect(sel('range'), rangesFor(s.instrument, s.type).map((r) => ({ value: r, label: RANGE_LABELS[r] + (isPlayable(s, { range: r }) ? '' : ' (too high)'), disabled: !isPlayable(s, { range: r }) && r !== s.range })), s.range);
+  sel('octaveUp').checked = s.octaveUp;
+  sel('octaveUp').disabled = !s.octaveUp && !isPlayable(s, { octaveUp: true });
+  fillSelect(sel('rhythm'), Object.entries(RHYTHMS).map(([v, r]) => ({ value: v, label: r.label })), s.rhythm);
+  for (const k of ['longEnds', 'longMidTonics', 'repeatTop', 'hint', 'vibrato', 'metronome']) sel(k).checked = !!s[k];
+  const slurOpts = [{ value: 0, label: t.doubleStop ? 'Separate bows (together)' : 'Separate bows' }];
+  if (s.rhythm === 'crotchet') for (const n of t.slurs) slurOpts.push({ value: n, label: `Slurred, ${n} notes to a bow` });
+  fillSelect(sel('slur'), slurOpts, s.slur);
+  sel('slur').disabled = slurOpts.length === 1;
+  sel('display').value = s.display;
+  sel('clefMode').value = s.clefMode;
+  $('f-bpm').hidden = !s.metronome;
+  sel('bpm').value = s.bpm;
+  sel('precision').value = s.precision;
+  $('precisionName').textContent = prec().name;
+  sel('a4').value = a4();
+  $('saveItemBtn').hidden = !editingId;
+  $('addBtn').textContent = editingId ? 'Add as new' : 'Add to my list';
+}
+
+form.addEventListener('change', (e) => {
+  const el = e.target;
+  if (!el.name && el.id !== 'o-a4') return;
+  if (el.id === 'o-a4') { prefs.a4 = Math.min(446, Math.max(415, Number(el.value) || 440)); savePrefs(); syncForm(); return; }
+  let v = el.type === 'checkbox' ? el.checked : el.value;
+  if (['slur', 'bpm', 'precision'].includes(el.name)) v = Number(v);
+  const next = { ...settings };
+  if (el.name === 'key') next[EXERCISE_TYPES[settings.type].keyKind === 'start' ? 'start' : 'key'] = v;
+  else next[el.name] = v;
+  setSettings(next);
+});
+sel('precision').addEventListener('input', () => { $('precisionName').textContent = precisionAt(sel('precision').value).name; });
+
+function setSettings(next, { keepActive = false } = {}) {
+  settings = normalise(next);
+  if (!keepActive && activeId) {
+    const item = list.find((x) => x.id === activeId);
+    if (!item || !sameSettings(expandSettings(item.settings), settings)) { if (!editingId) activeId = null; }
+  }
+  prefs.settings = compactSettings(settings);
+  prefs.activeId = activeId;
+  savePrefs();
+  syncForm();
+  updateExercise();
+  renderList();
+}
+
+// ---------------------------------------------------------------- exercise display
+function updateExercise() {
+  stopSession(true);
+  exercise = buildExercise(settings);
+  seq = buildSequence(exercise);
+  $('exTitle').textContent = `${INSTRUMENTS[settings.instrument].name}: ${exercise.title}`;
+  $('exOptions').textContent = describeOptions(settings);
+  $('exInvalid').hidden = exercise.ok;
+  if (!exercise.ok) $('exInvalid').textContent = exercise.reason + ' Choose fewer octaves or a lower starting octave.';
+  $('startBtn').disabled = !exercise.ok;
+  lastResult = null;
+  $('summary').innerHTML = '';
+  meter.setCount(exercise.type.doubleStop ? 2 : 1);
+  meter.clear();
+  drawScore();
+}
+
+function drawScore() {
+  const scoreEl = $('score');
+  $('arrow').hidden = true;
+  rendered = { arrowTargets: [] };
+  if (!window.Vex) { scoreEl.textContent = ''; return; }
+  try {
+    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode });
+    else if (settings.display === 'keysig') rendered = renderKeySignature(scoreEl, exercise);
+    else scoreEl.innerHTML = '';
+  } catch (err) {
+    console.error(err);
+    scoreEl.innerHTML = '<p class="notice error">Sorry – the score could not be drawn for this exercise.</p>';
+  }
+  if (lastResult) colourAll(lastResult);
+}
+
+function placeArrow(k) {
+  arrowIndex = k;
+  const a = $('arrow');
+  const t = rendered.arrowTargets && rendered.arrowTargets[k];
+  if (!t || settings.display !== 'score') { a.hidden = true; return; }
+  a.hidden = false;
+  a.style.left = `${t.x}px`;
+  a.style.top = `${t.y}px`;
+}
+
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (settings.display === 'score') { drawScore(); if (session) placeArrow(arrowIndex); } }, 200);
+});
+
+// ---------------------------------------------------------------- practice runs
+function setStatus(text, strong = false) {
+  const st = $('status');
+  st.textContent = text;
+  st.style.fontWeight = strong ? '700' : '';
+  st.style.color = strong ? 'var(--accent)' : '';
+}
+
+function liveNoteName(midiSounding) {
+  const written = Math.round(midiSounding) - exercise.info.transpose;
+  const ev = seq.events[arrowIndex];
+  if (ev) {
+    const k = ev.writtenMidis.indexOf(written);
+    if (k >= 0) return noteName(ev.notes[k], { octave: true });
+  }
+  return noteName(spellMidi(written, exercise.fifths < 0 ? 'flat' : 'sharp'), { octave: true });
+}
+
+function hintText() {
+  if (!settings.hint || settings.display === 'score') return '';
+  const ev = seq.events[arrowIndex];
+  return ev ? `Next: ${ev.notes.map((n) => noteName(n)).join(' + ')}` : '';
+}
+
+function colourNote(k, cents) {
+  const p = prec();
+  const score = cents.some((c) => c == null) ? 0 : Math.min(...cents.map((c) => linearScore(c, p.fullCents, p.zeroCents)));
+  markNote(rendered.arrowTargets, k, scoreClass(score));
+}
+
+function colourAll(result) {
+  for (const r of result.perNote) markNote(rendered.arrowTargets, r.event, r.status === 'missing' ? 'n-missing' : scoreClass(r.intonation));
+}
+
+function synthOptions() {
+  const v = (id) => $(id) && $(id).value;
+  const list2 = (s) => String(s || '').split(',').map((x) => parseInt(x, 10)).filter((x) => !isNaN(x));
+  const extraAfter = list2(v('d-extra'));
+  const sd = Number(v('d-detune')) || 0;
+  return {
+    bpm: Number(v('d-bpm')) || 72,
+    detuneSd: sd,
+    jitter: (Number(v('d-jitter')) || 0) / 100,
+    vibratoCents: Number(v('d-vibrato')) || 0,
+    missing: list2(v('d-missing')),
+    extras: extraAfter.map((i) => ({ after: i, midi: (seq.events[i] ? seq.events[i].midis[0] : 60) + 1 })),
+    seed: Math.floor(Math.random() * 1e6),
+    monitor: !!($('d-monitor') && $('d-monitor').checked),
+  };
+}
+
+async function startSession() {
+  if (!exercise.ok) return;
+  stopSession(true);
+  $('micError').hidden = true;
+  $('summary').innerHTML = '';
+  lastResult = null;
+  rendered.arrowTargets.forEach((_, k) => markNote(rendered.arrowTargets, k, null));
+  const useSynth = DEBUG && $('d-use') && $('d-use').checked;
+  const p = prec();
+  const s = new PracticeSession({
+    engine, exercise, seq, settings, a4: a4(), prec: p,
+    synth: useSynth ? synthOptions() : null,
+    on: {
+      state: (st, extra) => {
+        if (st === 'starting') setStatus('Starting the microphone…');
+        if (st === 'calibrating') setStatus('Listening to the room – stay quiet for a moment…');
+        if (st === 'countin') setStatus(`Count-in… ${extra}`, true);
+        if (st === 'listening') setStatus('Play now', true);
+      },
+      pitch: (pv) => {
+        if (!pv) { meter.clear(hintText()); return; }
+        if (pv.pair) {
+          pv.pair.forEach((c, i) => meter.setBar(i, c, p));
+          meter.setReadout(pv.event.notes.map((n) => noteName(n)).join(' + '), pv.pair.map((c) => (c == null ? '–' : fmtCents(c).replace(' cents', ''))).join(' / ') + ' cents', hintText());
+          return;
+        }
+        const cents = (pv.midi - Math.round(pv.midi)) * 100;
+        meter.setBar(0, cents, p);
+        meter.setReadout(liveNoteName(pv.midi), fmtCents(cents), hintText());
+      },
+      arrow: (k) => placeArrow(k),
+      noteDone: (k, cents) => colourNote(k, cents),
+      done: (result) => finishSession(result),
+    },
+  });
+  session = s;
+  $('startBtn').textContent = 'Stop';
+  try {
+    await s.start();
+  } catch (e) {
+    session = null;
+    $('startBtn').textContent = 'Start';
+    setStatus('');
+    $('micError').textContent = e instanceof MicError ? e.message : 'Could not start listening: ' + (e && e.message);
+    $('micError').hidden = false;
+  }
+}
+
+function finishSession(result) {
+  session = null;
+  $('startBtn').textContent = 'Start';
+  $('arrow').hidden = true;
+  meter.clear();
+  if (!result) { setStatus('Stopped.'); return; }
+  const played = result.perNote.some((r) => r.status !== 'missing');
+  if (!played) { setStatus('No notes were heard. Check the microphone and play a little louder, or move closer.'); return; }
+  setStatus(`Finished – score ${Math.round(result.total)} / 100.`);
+  lastResult = result;
+  renderSummary($('summary'), { result, seq, prec: prec(), settings });
+  colourAll(result);
+  const item = activeId && list.find((x) => x.id === activeId);
+  if (item && sameSettings(expandSettings(item.settings), settings)) { recordResult(item, result); saveList(list); renderList(); }
+}
+
+function stopSession(silent = false) {
+  if (!session) return;
+  const s = session;
+  session = null;
+  if (silent) { s.abort(); $('startBtn').textContent = 'Start'; setStatus('Press Start, wait for “Play now”, then play.'); meter.clear(); }
+  else s.stop();
+}
+
+$('startBtn').addEventListener('click', () => {
+  if (session) { const s = session; s.stop(); }
+  else startSession();
+});
+
+// ---------------------------------------------------------------- practice list
+function sparkline(hist) {
+  if (!hist || hist.length < 2) return '';
+  const w = 60, h = 16;
+  const pts = hist.map((x, i) => `${(i / (hist.length - 1)) * w},${h - (x.t / 100) * h}`).join(' ');
+  return `<svg class="spark" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="1.5"/></svg>`;
+}
+
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function autoName(s) {
+  const ex = buildExercise(s);
+  const extra = shortOptions(s);
+  return `${INSTRUMENTS[s.instrument].name}: ${ex.title}${extra ? ' – ' + extra : ''}`;
+}
+
+function renderList() {
+  const ul = $('listItems');
+  ul.innerHTML = '';
+  $('listEmpty').hidden = list.length > 0;
+  list.forEach((item, idx) => {
+    const li = document.createElement('li');
+    li.className = 'item' + (item.id === activeId ? ' active' : '');
+    li.tabIndex = 0;
+    const h = item.history || [];
+    const last = h.length ? h[h.length - 1].t : null;
+    const best = h.length ? Math.max(...h.map((x) => x.t)) : null;
+    li.innerHTML = `<div class="name">${esc(item.name)}</div>
+      <div class="actions">
+        <button data-act="edit" title="Change options" aria-label="Change options">⚙</button>
+        <button data-act="rename" title="Rename" aria-label="Rename">✎</button>
+        <button data-act="up" title="Move up" aria-label="Move up" ${idx === 0 ? 'disabled' : ''}>↑</button>
+        <button data-act="down" title="Move down" aria-label="Move down" ${idx === list.length - 1 ? 'disabled' : ''}>↓</button>
+        <button data-act="del" title="Remove" aria-label="Remove">✕</button>
+      </div>
+      <div class="meta">${last == null ? 'Not played yet' : `Last ${last} · Best ${best} · ${h.length} run${h.length === 1 ? '' : 's'}`} ${sparkline(h)}</div>`;
+    li.addEventListener('click', (e) => {
+      const act = e.target.closest('button') && e.target.closest('button').dataset.act;
+      if (act) { listAction(act, item, idx); return; }
+      selectItem(item);
+    });
+    li.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target === li) selectItem(item); });
+    ul.appendChild(li);
+  });
+}
+
+function selectItem(item) {
+  activeId = item.id;
+  editingId = null;
+  setSettings(expandSettings(item.settings), { keepActive: true });
+  $('stage').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function listAction(act, item, idx) {
+  if (act === 'del') {
+    if (!confirm(`Remove “${item.name}” from your list?`)) return;
+    list.splice(idx, 1);
+    if (activeId === item.id) activeId = null;
+    if (editingId === item.id) editingId = null;
+  } else if (act === 'up' && idx > 0) { [list[idx - 1], list[idx]] = [list[idx], list[idx - 1]]; }
+  else if (act === 'down' && idx < list.length - 1) { [list[idx + 1], list[idx]] = [list[idx], list[idx + 1]]; }
+  else if (act === 'rename') {
+    const n = prompt('Name for this exercise:', item.name);
+    if (n && n.trim()) { item.name = n.trim().slice(0, 120); item.autoName = false; }
+  } else if (act === 'edit') {
+    activeId = item.id;
+    editingId = item.id;
+    setSettings(expandSettings(item.settings), { keepActive: true });
+    setView('all');
+    $('addMsg').textContent = `Editing “${item.name}”. Change options, then press Save changes.`;
+  }
+  saveList(list);
+  renderList();
+}
+
+$('addBtn').addEventListener('click', () => {
+  const item = makeItem(settings, autoName(settings));
+  list.push(item);
+  activeId = item.id;
+  editingId = null;
+  saveList(list);
+  prefs.activeId = activeId; savePrefs();
+  syncForm();
+  renderList();
+  $('addMsg').textContent = `Added “${item.name}”. Your list has ${list.length} exercise${list.length === 1 ? '' : 's'}.`;
+});
+
+$('saveItemBtn').addEventListener('click', () => {
+  const item = list.find((x) => x.id === editingId);
+  if (!item) return;
+  item.settings = compactSettings(settings);
+  if (item.autoName) item.name = autoName(settings);
+  editingId = null;
+  activeId = item.id;
+  saveList(list);
+  syncForm();
+  renderList();
+  $('addMsg').textContent = `Saved “${item.name}”.`;
+});
+
+$('shareBtn').addEventListener('click', async () => {
+  if (!list.length) { $('shareMsg').textContent = 'Add some exercises first.'; return; }
+  const url = `${location.origin}${location.pathname}#list=${encodeShare(list)}`;
+  let copied = false;
+  try { await navigator.clipboard.writeText(url); copied = true; } catch { /* not allowed */ }
+  $('shareMsg').innerHTML = `${copied ? 'Link copied. ' : ''}Send this link to share your list (scores are not included):<br><input type="text" readonly style="width:100%" value="${esc(url)}" onclick="this.select()">`;
+});
+
+$('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([exportJson(list)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'scale-practice-list.json';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+});
+
+$('importBtn').addEventListener('click', () => $('importFile').click());
+$('importFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    const items = importJson(await file.text());
+    addImported(items, 'file');
+  } catch (err) {
+    $('shareMsg').textContent = 'That file is not a practice list.';
+  }
+});
+
+function addImported(items, source) {
+  if (!items.length) { $('shareMsg').textContent = 'There were no exercises to import.'; return; }
+  const ok = confirm(`Add ${items.length} exercise${items.length === 1 ? '' : 's'} from the ${source} to your list?`);
+  if (!ok) return;
+  list.push(...items);
+  saveList(list);
+  renderList();
+  setView('list');
+  $('shareMsg').textContent = `Added ${items.length} exercise${items.length === 1 ? '' : 's'}.`;
+}
+
+function checkShareLink() {
+  const m = /[#&]list=([A-Za-z0-9_-]+)/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  try { addImported(decodeShare(m[1]), 'shared link'); }
+  catch { $('shareMsg').textContent = 'The shared link could not be read.'; }
+}
+
+// ---------------------------------------------------------------- views, tabs, theme
+function setView(v) {
+  prefs.view = v; savePrefs();
+  document.querySelectorAll('.seg [data-view]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.view === v)));
+  $('listView').hidden = v !== 'list';
+  $('optionsView').hidden = v !== 'all';
+  if (v === 'list' && editingId) { editingId = null; syncForm(); $('addMsg').textContent = ''; }
+}
+document.querySelectorAll('.seg [data-view]').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+
+let tunerPage = null;
+function setTab(tab) {
+  prefs.tab = tab; savePrefs();
+  document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  $('tab-practice').hidden = tab !== 'practice';
+  $('tab-tuner').hidden = tab !== 'tuner';
+  if (tab === 'tuner') {
+    stopSession(true);
+    if (!tunerPage) {
+      tunerPage = new TunerPage({
+        engine,
+        getA4: a4,
+        setA4: (v) => { prefs.a4 = Math.min(446, Math.max(415, Number(v) || 440)); savePrefs(); },
+        getInstrument: () => settings.instrument,
+        setInstrument: (inst) => setSettings({ ...settings, instrument: inst }),
+      });
+    } else tunerPage.refresh(true);
+  } else {
+    if (tunerPage) tunerPage.deactivate();
+    syncForm();
+    drawScore();
+  }
+}
+document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+
+const THEMES = ['auto', 'light', 'dark'];
+function applyTheme(t) {
+  if (t === 'auto') delete document.documentElement.dataset.theme;
+  else document.documentElement.dataset.theme = t;
+  try { localStorage.setItem('scales.theme', t); } catch { /* ignore */ }
+  $('themeBtn').textContent = { auto: '◐ Auto', light: '☀ Light', dark: '☾ Dark' }[t];
+  $('themeBtn').setAttribute('aria-label', `Colour theme: ${t}. Click to change.`);
+  meter.refreshPalette();
+  if (tunerPage) tunerPage.meter.refreshPalette();
+  if (exercise) drawScore();
+}
+let theme = (() => { try { return localStorage.getItem('scales.theme') || 'auto'; } catch { return 'auto'; } })();
+$('themeBtn').addEventListener('click', () => { theme = THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length]; applyTheme(theme); });
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => { if (theme === 'auto') applyTheme('auto'); });
+
+// ---------------------------------------------------------------- debug (synthetic performance)
+function setupDebug() {
+  if (!DEBUG) return;
+  const p = $('debugPanel');
+  p.hidden = false;
+  p.innerHTML = `<b>Test mode – synthetic performance</b>
+    <label class="check"><input type="checkbox" id="d-use" checked> Use a synthetic performance instead of the microphone</label>
+    <label class="check"><input type="checkbox" id="d-monitor" checked> Play it through the speakers</label>
+    <div class="field"><label for="d-bpm">Tempo ♩ =</label><input type="number" id="d-bpm" value="80"></div>
+    <div class="field"><label for="d-detune">Random detune (cents SD)</label><input type="number" id="d-detune" value="8"></div>
+    <div class="field"><label for="d-jitter">Timing jitter %</label><input type="number" id="d-jitter" value="4"></div>
+    <div class="field"><label for="d-vibrato">Vibrato ± cents</label><input type="number" id="d-vibrato" value="0"></div>
+    <div class="field"><label for="d-missing">Missing notes (#, comma)</label><input type="text" id="d-missing" value=""></div>
+    <div class="field"><label for="d-extra">Extra note after (#, comma)</label><input type="text" id="d-extra" value=""></div>`;
+}
+
+// ---------------------------------------------------------------- start up
+function init() {
+  setupDebug();
+  applyTheme(theme);
+  syncForm();
+  updateExercise();
+  renderList();
+  setView(prefs.view || (list.length ? 'list' : 'all'));
+  setTab(prefs.tab === 'tuner' ? 'tuner' : 'practice');
+  checkShareLink();
+}
+
+if (window.Vex) init();
+else window.addEventListener('load', init);

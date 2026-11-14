@@ -169,8 +169,10 @@ test('clef changes for cello 3 octaves', () => {
   const midis = ex.gen.steps.map((s) => midiOf(s.notes[0]));
   const clefs = assignClefs('cello', midis, 'change');
   eq(clefs[0], 'bass');
-  eq(clefs[21], 'treble');
-  assert(clefs.includes('tenor'));
+  eq(clefs[21], 'tenor'); // C5 stays in tenor
   eq(clefs.at(-1), 'bass');
   eq(new Set(assignClefs('cello', midis, 'home')).size, 1);
+  const a = buildExercise({ instrument: 'cello', type: 'scale', key: 'A', range: '3' });
+  const am = a.gen.steps.map((s) => midiOf(s.notes[0]));
+  eq(assignClefs('cello', am, 'change')[21], 'treble'); // A5
 });

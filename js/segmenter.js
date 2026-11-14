@@ -122,6 +122,8 @@ export class Segmenter {
   }
 
   trackDip(cur, t, db, dt) {
+    // a level that drops and simply stays lower (diminuendo, after a loud attack or a click) is not a bow change
+    if (cur.dip && t - cur.dip.startT > SEG.dipMaxMs / 1000) { cur.dip = null; cur.peakDb = db; }
     cur.peakDb = Math.max(cur.peakDb - SEG.peakDecayDbPerS * dt, cur.dip ? -Infinity : db);
     if (!cur.dip && db < cur.peakDb - SEG.dipDb) cur.dip = { startT: t, minDb: db, minT: t };
     if (cur.dip && db < cur.dip.minDb) { cur.dip.minDb = db; cur.dip.minT = t; }

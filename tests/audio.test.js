@@ -102,3 +102,54 @@ test('frequency helpers', () => {
   near(midiToFreq(69), 440, 1e-9);
   near(freqToMidi(442, 442), 69, 1e-9);
 });
+
+import { evaluateDoubleStop, doubleStopCost } from '../js/doublestop.js';
+import { align } from '../js/align.js';
+import { stringTargets } from '../js/ui/tunerPage.js';
+
+function dsRun(settings, perfOpts) {
+  const ex = buildExercise(settings);
+  const seq = buildSequence(ex);
+  const perf = renderPerformance(seq, { bpm: 60, ...perfOpts });
+  const { minFreq, maxFreq } = detectionRange(settings.instrument);
+  const frames = analyseSignal(perf.signal, 48000, { minFreq, maxFreq, peaks: true });
+  const notes = segmentFrames(frames, { a4: 440, minFreq, maxFreq, pitchless: true });
+  return { seq, notes };
+}
+
+test('parallel double stops in sixths: each note measured', () => {
+  const det = (i) => (i % 2 ? 15 : -10);
+  const { seq, notes } = dsRun({ instrument: 'violin', type: 'dsParallel', key: 'Eb', mode: 'major', interval: '6ths', range: '1' }, { detune: det });
+  eq(notes.length, seq.events.length, 'segments');
+  notes.forEach((n, i) => {
+    const r = evaluateDoubleStop(n, seq.events[i]);
+    near(r.cents[0], det(i), 4, `lower ${i}`);
+    near(r.cents[1], det(i), 4, `upper ${i}`);
+    assert(!r.approx);
+  });
+});
+
+test('parallel octaves are flagged approximate; missing upper note detected', () => {
+  const { seq, notes } = dsRun({ instrument: 'violin', type: 'dsParallel', key: 'D', mode: 'major', interval: '8ves', range: '1' }, { detune: () => 0 });
+  const r = evaluateDoubleStop(notes[2], seq.events[2]);
+  assert(r.approx);
+  near(r.cents[0], 0, 4);
+  // a wrong pair: evaluate the note against an event a third higher
+  const wrong = { midis: seq.events[2].midis.map((m) => m + 4) };
+  const r2 = evaluateDoubleStop(notes[2], wrong);
+  assert(r2.cents.every((c) => c == null), 'should not find notes a third away');
+  const a = align(notes, seq.events, doubleStopCost(440));
+  eq(a.pairs.filter((p) => p.note != null).length, seq.events.length);
+});
+
+test('tuner targets: equal temperament and pure fifths/fourths', () => {
+  const et = stringTargets('violin', 'equal', 440);
+  near(et[2], 440, 1e-6);
+  near(et[0], 195.998, 0.01);
+  const pf = stringTargets('cello', 'fifths', 440);
+  near(1200 * Math.log2(pf[0] / 65.4064), -5.87, 0.05); // C string ~6 cents low
+  near(pf[3], 220, 1e-6);
+  const pb = stringTargets('bass', 'fourths', 440);
+  near(pb[3], 97.9989, 0.01); // G string sounds G2
+  near(1200 * Math.log2(pb[0] / 41.2034), 5.87, 0.05); // E string ~6 cents high
+});

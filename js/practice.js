@@ -1,0 +1,177 @@
+// A single practice run: microphone → frames → notes → live follower,
+// then alignment + scoring at the end.
+
+import { Segmenter, estimateNoiseFloor, SEG } from './segmenter.js';
+import { Follower } from './follower.js';
+import { align } from './align.js';
+import { scoreRun } from './scoring.js';
+import { Metronome } from './metronome.js';
+import { detectionRange } from './instruments.js';
+import { freqToMidi } from './theory.js';
+import { evaluateDoubleStop, liveDoubleStop, doubleStopCost } from './doublestop.js';
+import { renderPerformance, toAudioBuffer } from './audio/synth.js';
+
+export const RUN = {
+  calibrateSec: 0.8,
+  endAfterLastSec: 1.5,
+  endAfterSilenceSec: 4,
+};
+
+export class PracticeSession {
+  /**
+   * @param {object} o
+   * @param {import('./audio/mic.js').AudioEngine} o.engine
+   * @param {object} o.exercise  @param {object} o.seq  @param {object} o.settings
+   * @param {number} o.a4 @param {object} o.prec
+   * @param {object|null} o.synth synthetic performance options (debug), or null for the microphone
+   * @param {object} o.on callbacks: state, pitch, arrow, noteDone, done, error
+   */
+  constructor(o) {
+    this.o = o;
+    this.on = o.on;
+    this.doubleStop = !!o.exercise.type.doubleStop;
+    this.frames = [];
+    this.calibration = [];
+    this.segmenter = null;
+    this.follower = new Follower(o.seq.events, { pitchless: this.doubleStop });
+    this.metronome = null;
+    this.t0 = null;
+    this.startT = null;
+    this.lastVoiced = null;
+    this.lastNoteEnd = null;
+    this.anyNote = false;
+    this.curMatch = -1;
+    this.smooth = [];
+    this.stopped = false;
+  }
+
+  async start() {
+    const { engine, settings, a4 } = this.o;
+    const { minFreq, maxFreq } = detectionRange(settings.instrument, a4);
+    this.minFreq = minFreq; this.maxFreq = maxFreq;
+    this.on.state('starting');
+    let buffer = null;
+    if (this.o.synth) {
+      const ctx = await engine.ensureContext();
+      const perf = renderPerformance(this.o.seq, { sampleRate: ctx.sampleRate, a4, ...this.o.synth });
+      buffer = toAudioBuffer(ctx, perf.signal, ctx.sampleRate);
+      this.truth = perf.truth;
+    }
+    await engine.start({
+      source: buffer ? 'buffer' : 'mic', buffer, monitor: !!buffer && this.o.synth.monitor !== false, minFreq, maxFreq, peaks: this.doubleStop,
+      onFrames: (frames) => frames.forEach((f) => this.frame(f)),
+    });
+    this.on.state('calibrating');
+    this.on.arrow(0);
+  }
+
+  beginListening() {
+    const { settings, a4 } = this.o;
+    const floor = estimateNoiseFloor(this.calibration);
+    this.noiseFloor = floor;
+    this.segmenter = new Segmenter({
+      a4, noiseFloor: floor, vibrato: settings.vibrato, minFreq: this.minFreq, maxFreq: this.maxFreq, pitchless: this.doubleStop,
+      onOnset: (n) => {
+        this.anyNote = true;
+        this.curMatch = this.follower.onset(n.nominal);
+        this.on.arrow(this.follower.arrow);
+      },
+      onNote: (n) => {
+        this.lastNoteEnd = n.end;
+        const k = this.curMatch;
+        this.curMatch = -1;
+        this.follower.release();
+        this.on.arrow(this.follower.arrow);
+        if (k >= 0) {
+          const e = this.o.seq.events[k];
+          let cents;
+          if (this.doubleStop) cents = evaluateDoubleStop(n, e, a4).cents;
+          else cents = [(n.midi - e.midis[0]) * 100];
+          this.on.noteDone(k, cents);
+        }
+      },
+    });
+    if (settings.metronome && this.o.engine.ctx) {
+      this.metronome = new Metronome(this.o.engine.ctx);
+      this.t0 = this.metronome.start(settings.bpm, { onCountIn: (b) => this.on.state('countin', b) });
+      setTimeout(() => { if (!this.stopped) this.on.state('listening'); }, Math.max(0, (this.t0 - this.o.engine.now()) * 1000));
+    } else {
+      this.on.state('listening');
+    }
+  }
+
+  frame(f) {
+    if (this.stopped) return;
+    if (this.startT == null) this.startT = f.t;
+    this.frames.push(f);
+    if (!this.segmenter) {
+      this.calibration.push(f);
+      if (f.t - this.startT >= RUN.calibrateSec) this.beginListening();
+      return;
+    }
+    this.segmenter.push(f);
+    this.live(f);
+    // automatic end
+    if (this.segmenter.sounding) this.lastVoiced = f.t;
+    const quietFor = this.lastVoiced != null ? f.t - this.lastVoiced : 0;
+    if (this.anyNote && !this.segmenter.sounding) {
+      if (this.follower.finished && quietFor >= RUN.endAfterLastSec) this.finish();
+      else if (quietFor >= RUN.endAfterSilenceSec) this.finish();
+    }
+  }
+
+  live(f) {
+    const { a4, settings } = this.o;
+    const gate = Math.max(SEG.absMinRms, this.noiseFloor * SEG.gateOverFloor);
+    if (this.doubleStop) {
+      const ev = this.o.seq.events[this.follower.arrow];
+      const pair = f.rms >= gate ? liveDoubleStop(f.peaks, ev, a4) : null;
+      this.on.pitch(pair ? { pair, event: ev } : null);
+      return;
+    }
+    const voiced = f.rms >= gate && f.freq > 0 && f.clarity >= SEG.clarityMin && f.freq >= this.minFreq && f.freq <= this.maxFreq;
+    if (!voiced) { this.smooth = []; this.on.pitch(null); return; }
+    let m = freqToMidi(f.freq, a4);
+    // fold an octave error towards the expected note for display only
+    const ev = this.o.seq.events[this.follower.arrow];
+    if (ev) {
+      const exp = ev.midis[0];
+      const r = Math.round(m);
+      if (Math.abs(r - exp) === 12) m += exp - r;
+    }
+    // smoothing: ~1 vibrato cycle with vibrato, a few frames without
+    const span = settings.vibrato ? 0.2 : 0.035;
+    this.smooth.push({ t: f.t, m });
+    while (this.smooth.length && f.t - this.smooth[0].t > span) this.smooth.shift();
+    const avg = this.smooth.reduce((a, x) => a + x.m, 0) / this.smooth.length;
+    this.on.pitch({ midi: avg });
+  }
+
+  finish() {
+    if (this.stopped) return;
+    this.stopped = true;
+    if (this.metronome) this.metronome.stop();
+    this.o.engine.stop();
+    if (!this.segmenter) { this.on.done(null); return; }
+    this.segmenter.flush();
+    const notes = this.segmenter.notes;
+    const { seq, prec, a4 } = this.o;
+    const cost = this.doubleStop ? doubleStopCost(a4) : undefined;
+    const alignment = align(notes, seq.events, cost);
+    const result = scoreRun({
+      expected: seq.events, detected: notes, alignment, prec,
+      metronome: this.t0 != null ? { t0: this.t0, spb: 60 / this.o.settings.bpm } : null,
+      doubleStopEval: this.doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
+    });
+    result.noiseFloor = this.noiseFloor;
+    this.on.done(result);
+  }
+
+  stop() { this.finish(); }
+
+  abort() {
+    this.stopped = true;
+    if (this.metronome) this.metronome.stop();
+    this.o.engine.stop();
+  }
+}
