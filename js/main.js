@@ -3,9 +3,9 @@
 import { INSTRUMENTS, instrumentInfo, VOICE_TYPES, voiceSetup, classifyVoice, isBowed } from './instruments.js';
 import {
   EXERCISE_TYPES, DEFAULT_SETTINGS, RANGE_LABELS, EXERCISE_FIELDS, GLOBAL_FIELDS, normalise, buildExercise, isPlayable,
-  typesForInstrument, rangesFor, keyListFor, pickFields, slurGroup, SOLFEGE_SYSTEMS,
+  typesForInstrument, rangesFor, keyListFor, pickFields, slurGroup, SOLFEGE_SYSTEMS, typeLabel,
 } from './exercises.js';
-import { getProfile, setProfile, getProfiles } from './profiles.js';
+import { getProfile, setProfile, getProfiles, OTHER_LIMITS } from './profiles.js';
 import { syllablesFor } from './solfege.js';
 import { buildSequence, RHYTHMS, isCrotchetRhythm } from './sequence.js';
 import { loadResults, saveResults, recordRun, makeRun, migrateHistory, cardStats, compactAll } from './results.js';
@@ -50,7 +50,14 @@ if (!prefs.global) {
   if ((prefs.settings || {}).slur > 1) prefs.global.slurred = true; // earlier versions: slurring was part of the exercise
 }
 let settings = normalise({ ...DEFAULT_SETTINGS, ...(prefs.settings || {}), ...prefs.global });
+// the other instrument as set for the current exercise
+if (settings.instrument === 'other') setProfile('other', settings.otherSetup);
 let list = loadList();
+// syllabus items for the other instrument made before its setup was kept in the item: take this device's
+if (list.some((x) => x.settings.instrument === 'other' && !x.settings.otherSetup)) {
+  list.forEach((x) => { if (x.settings.instrument === 'other') x.settings = compactSettings(expandSettings(x.settings)); });
+  saveList(list);
+}
 let results = compactAll(loadResults());
 // scores kept inside items by earlier versions move to the results store
 if (list.some((x) => migrateHistory(results, x))) { saveList(list); saveResults(results); }
@@ -96,7 +103,7 @@ function syncForm() {
   const t = EXERCISE_TYPES[s.type];
   fillSelect(sel('instrument'), Object.keys(INSTRUMENTS).map((v) => ({ value: v, label: instName(v) })), s.instrument);
   syncInstrumentFields();
-  fillSelect(sel('type'), typesForInstrument(s.instrument).map((v) => ({ value: v, label: EXERCISE_TYPES[v].label })), s.type);
+  fillSelect(sel('type'), typesForInstrument(s.instrument).map((v) => ({ value: v, label: typeLabel(v, s.instrument) })), s.type);
   $('f-mode').hidden = !t.tonality;
   sel('mode').value = s.mode;
   $('l-key').textContent = t.keyKind === 'start' ? 'Starting on' : t.keyKind === 'majorKey' ? 'In the key of' : 'Key';
@@ -222,8 +229,9 @@ function syncInstrumentFields() {
   if (inst === 'other') {
     const p = getProfile('other');
     if (document.activeElement !== $('o-otherName')) $('o-otherName').value = p.name || '';
-    fillSelect($('o-otherLow'), NOTE_OPTIONS, p.low);
-    fillSelect($('o-otherHigh'), NOTE_OPTIONS, p.high);
+    // the highest note is always at least an octave above the lowest
+    fillSelect($('o-otherLow'), NOTE_OPTIONS.filter((o) => o.value <= OTHER_LIMITS.highest - OTHER_LIMITS.minSpan), p.low);
+    fillSelect($('o-otherHigh'), NOTE_OPTIONS.filter((o) => o.value >= p.low + OTHER_LIMITS.minSpan), p.high);
     fillSelect($('o-otherTranspose'), TRANSPOSE_OPTIONS, p.transpose);
     const autoClef = instrumentInfo('other').clef;
     fillSelect($('o-otherClef'), [
@@ -235,7 +243,11 @@ function syncInstrumentFields() {
 
 /** A device profile changed: everything that depends on the instrument's range is rebuilt. */
 function profileChanged() {
-  setSettings({ ...settings, ...playableRange(settings) }, { keepActive: true });
+  // the other instrument's setup is part of the exercise: a syllabus item made for
+  // a different setup is no longer the one being practised (its results stay apart)
+  const other = settings.instrument === 'other';
+  const next = other ? { ...settings, otherSetup: getProfile('other') } : settings;
+  setSettings({ ...next, ...playableRange(next) }, { keepActive: !other });
   if (tunerPage) tunerPage.refresh(true);
   if (calWizard) calWizard.refresh();
   if (resultsPage) resultsPage.invalidate();
@@ -245,19 +257,14 @@ $('o-voiceType').addEventListener('change', () => { setProfile('voice', { overri
 $('measureVoiceBtn').addEventListener('click', () => { setTab('tuner'); $('calCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
 $('o-otherName').addEventListener('change', () => { setProfile('other', { name: $('o-otherName').value.trim().slice(0, 40) }); profileChanged(); });
 $('o-otherLow').addEventListener('change', () => {
-  const low = Number($('o-otherLow').value);
-  const p = getProfile('other');
-  const high = Math.max(p.high, Math.min(108, low + 12));
-  $('otherMsg').textContent = high !== p.high ? 'The highest note was raised to keep at least an octave.' : '';
-  setProfile('other', { low, high });
+  const before = getProfile('other').high;
+  const p = setProfile('other', { low: Number($('o-otherLow').value) }); // raises the highest note if needed
+  $('otherMsg').textContent = p.high !== before ? 'The highest note was raised to keep it at least an octave above the lowest.' : '';
   profileChanged();
 });
 $('o-otherHigh').addEventListener('change', () => {
-  const high = Number($('o-otherHigh').value);
-  const p = getProfile('other');
-  const low = Math.min(p.low, Math.max(21, high - 12));
-  $('otherMsg').textContent = low !== p.low ? 'The lowest note was lowered to keep at least an octave.' : '';
-  setProfile('other', { low, high });
+  $('otherMsg').textContent = '';
+  setProfile('other', { high: Number($('o-otherHigh').value) });
   profileChanged();
 });
 $('o-otherTranspose').addEventListener('change', () => { setProfile('other', { transpose: Number($('o-otherTranspose').value) }); profileChanged(); });
@@ -273,6 +280,8 @@ function setGlobal(patch) {
 
 function setSettings(next, { keepActive = false } = {}) {
   settings = normalise(next);
+  // everything that reads the device's other instrument follows the exercise's setup
+  if (settings.instrument === 'other') setProfile('other', settings.otherSetup);
   prefs.global = pickFields(settings, GLOBAL_FIELDS);
   if (!keepActive && activeId) {
     const item = list.find((x) => x.id === activeId);
@@ -602,7 +611,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 function autoName(s) {
   const ex = buildExercise(s);
   const extra = shortOptions(s);
-  return `${instName(s.instrument)}: ${ex.title}${extra ? ' – ' + extra : ''}`;
+  return `${ex.info.name}: ${ex.title}${extra ? ' – ' + extra : ''}`;
 }
 
 function renderList() {

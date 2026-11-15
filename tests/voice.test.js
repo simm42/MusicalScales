@@ -1,10 +1,11 @@
 // Voice (sol-fa, range finder, sung performances) and the "other" instrument.
 import { test, eq, assert, near } from './harness.js';
 import { parseNote, midiOf, noteName, midiToFreq } from '../js/theory.js';
-import { buildExercise, typesForInstrument, rangesFor, isPlayable } from '../js/exercises.js';
+import { buildExercise, typesForInstrument, rangesFor, isPlayable, normalise, typeLabel } from '../js/exercises.js';
+import { compactSettings, expandSettings, encodeShare, decodeShare, sameSettings } from '../js/practiceList.js';
 import { buildSequence } from '../js/sequence.js';
 import { instrumentInfo, classifyVoice, detectionRange, assignClefs } from '../js/instruments.js';
-import { useProfiles } from '../js/profiles.js';
+import { useProfiles, cleanOther, setProfile, getProfile } from '../js/profiles.js';
 import { movableSyllable, fixedSyllable, syllablesFor } from '../js/solfege.js';
 import { precisionAt } from '../js/precision.js';
 import { HoldTracker, judgeHold, summariseVoice, measureNoise, measureString, summarise, VOICE_CAL } from '../js/calibration.js';
@@ -138,6 +139,45 @@ test('other instrument: calibration spots a wrong transposition', () => withProf
   eq(cal.correctCents, 0);
   assert(cal.advice.some((a) => !a.ok && /transposition/.test(a.text)), JSON.stringify(cal.advice));
 }));
+
+test('other instrument: the highest note is always at least an octave above the lowest', () => {
+  eq([cleanOther({ low: 60, high: 65 }).low, cleanOther({ low: 60, high: 65 }).high], [60, 72]);
+  eq(cleanOther({ low: 70, high: 50 }).high, 82);
+  eq([cleanOther({ low: 105, high: 108 }).low, cleanOther({ low: 105, high: 108 }).high], [96, 108]); // the lowest is capped so an octave still fits
+  eq(cleanOther({ low: 60, high: 84, transpose: -40 }).transpose, -24);
+  return withProfiles({}, () => {
+    eq(setProfile('other', { low: 64, high: 70 }).high, 76);
+    eq(getProfile('other').high, 76);
+  });
+});
+
+test('other instrument: the setup travels with the syllabus item and share link', () => withProfiles({ other: { name: 'Flute', low: 60, high: 96, transpose: 0 } }, () => {
+  const clarinet = { name: 'Clarinet in B♭', low: midiOf(N('E3')), high: midiOf(N('C7')), transpose: -2, clef: 'auto' };
+  const s = normalise({ instrument: 'other', type: 'scale', key: 'G', range: '2', otherSetup: clarinet });
+  const item = compactSettings(s);
+  eq(item.otherSetup.name, 'Clarinet in B♭');
+  // a share link keeps it, even on a device set up for a flute
+  const back = decodeShare(encodeShare([{ name: 'x', autoName: true, settings: item }]))[0];
+  eq(back.settings.otherSetup, item.otherSetup);
+  // and the exercise is built for the item's instrument, not this device's
+  const ex = buildExercise(expandSettings(back.settings));
+  eq([ex.info.name, ex.info.transpose, names(ex)[0]], ['Clarinet in B♭', -2, 'G3']);
+  // without a setup the device's instrument is used
+  eq(buildExercise({ instrument: 'other', type: 'scale', key: 'G', range: '1' }).info.name, 'Flute');
+  // a different setup is a different exercise (its results are kept apart)
+  assert(!sameSettings(s, { ...s, otherSetup: { ...clarinet, transpose: -3 } }));
+  // other instruments carry no setup
+  assert(!('otherSetup' in compactSettings({ instrument: 'violin' })));
+}));
+
+test('broken double stops are "broken intervals" off the strings', () => {
+  eq(typeLabel('dsBroken', 'violin'), 'Double stops – broken steps');
+  eq(typeLabel('dsBroken', 'other'), 'Broken intervals');
+  return withProfiles({}, () => {
+    const t = buildExercise({ instrument: 'other', type: 'dsBroken', key: 'C', range: '1' }).title;
+    assert(/broken intervals/.test(t) && !/double/i.test(t), t);
+  });
+});
 
 // ---------------------------------------------------------------- range finder
 function heldFrames(midi, { sec = 2.2, vibrato = 0, driftCents = 0, clarity = 0.95, start = 0 } = {}) {

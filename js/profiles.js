@@ -13,6 +13,32 @@ export const DEFAULT_PROFILES = {
   other: { name: '', low: 60, high: 84, transpose: 0, clef: 'auto' },
 };
 
+export const OTHER_LIMITS = { lowest: 21, highest: 108, minSpan: 12 }; // A0–C8, at least an octave
+
+const intIn = (x, lo, hi, def) => {
+  if (x == null || x === '') return def;
+  const n = Math.round(Number(x));
+  return Number.isFinite(n) ? Math.min(hi, Math.max(lo, n)) : def;
+};
+
+/**
+ * A valid "other instrument" setup: the highest note is always at least an
+ * octave above the lowest (raised if needed), transposition +12 to −24.
+ */
+export function cleanOther(p = {}) {
+  const d = DEFAULT_PROFILES.other;
+  const { lowest, highest, minSpan } = OTHER_LIMITS;
+  const low = intIn(p.low, lowest, highest - minSpan, d.low);
+  const high = Math.max(low + minSpan, intIn(p.high, lowest, highest, d.high));
+  return {
+    name: String(p.name ?? '').trim().slice(0, 40),
+    low,
+    high,
+    transpose: intIn(p.transpose, -24, 12, 0),
+    clef: ['auto', 'treble', 'alto', 'tenor', 'bass'].includes(p.clef) ? p.clef : 'auto',
+  };
+}
+
 let cache = null;
 let temporary = false;
 
@@ -22,7 +48,7 @@ function load() {
   try { stored = JSON.parse(localStorage.getItem(KEY)) || {}; } catch { stored = {}; }
   cache = {
     voice: { ...DEFAULT_PROFILES.voice, ...(stored.voice || {}) },
-    other: { ...DEFAULT_PROFILES.other, ...(stored.other || {}) },
+    other: cleanOther({ ...DEFAULT_PROFILES.other, ...(stored.other || {}) }),
   };
   return cache;
 }
@@ -33,6 +59,7 @@ export function getProfiles() { return JSON.parse(JSON.stringify(load())); }
 export function setProfile(id, patch) {
   const all = load();
   all[id] = { ...(all[id] || DEFAULT_PROFILES[id]), ...patch };
+  if (id === 'other') all[id] = cleanOther(all[id]);
   if (!temporary) { try { localStorage.setItem(KEY, JSON.stringify(all)); } catch { /* private mode */ } }
   return all[id];
 }
@@ -46,6 +73,6 @@ export function useProfiles(profiles) {
   temporary = true;
   cache = {
     voice: { ...DEFAULT_PROFILES.voice, ...(profiles.voice || {}) },
-    other: { ...DEFAULT_PROFILES.other, ...(profiles.other || {}) },
+    other: cleanOther({ ...DEFAULT_PROFILES.other, ...(profiles.other || {}) }),
   };
 }

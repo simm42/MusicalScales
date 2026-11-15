@@ -4,7 +4,8 @@ import {
   MAJOR_KEYS, MINOR_KEYS, START_NOTES, parsePc, pcName, generateSteps, shiftSteps,
   stepsMidiRange, keyFifths, transpose, noteName, midiOf,
 } from './theory.js';
-import { instrumentInfo } from './instruments.js';
+import { instrumentInfo, isBowed } from './instruments.js';
+import { getProfile, cleanOther } from './profiles.js';
 import { RHYTHMS, isCrotchetRhythm } from './sequence.js';
 
 const ALL = ['violin', 'viola', 'cello', 'bass', 'voice', 'other'];
@@ -58,7 +59,15 @@ export const DEFAULT_SETTINGS = {
 export const SOLFEGE_SYSTEMS = { movable: 'Movable Do (minor keys on Do)', movableLa: 'Movable Do (minor keys on La)', fixed: 'Fixed Do (C is Do)' };
 
 // What belongs to a syllabus item (and share links) …
-export const EXERCISE_FIELDS = ['instrument', 'type', 'mode', 'key', 'start', 'form', 'interval', 'range', 'octaveUp', 'slur', 'repeatTop'];
+// otherSetup: the other instrument's name, range, transposition and clef, so a
+// syllabus item (or share link) keeps the instrument it was made for
+export const EXERCISE_FIELDS = ['instrument', 'type', 'mode', 'key', 'start', 'form', 'interval', 'range', 'octaveUp', 'slur', 'repeatTop', 'otherSetup'];
+
+/** Type name as shown for an instrument: "double stops" is a string player's word. */
+export function typeLabel(type, instrument) {
+  if (type === 'dsBroken' && !isBowed(instrument)) return 'Broken intervals';
+  return EXERCISE_TYPES[type].label;
+}
 // … and what is a global practice/display/listening preference.
 export const GLOBAL_FIELDS = ['rhythm', 'slurred', 'display', 'clefMode', 'hint', 'precision', 'vibrato', 'metronome', 'bpm', 'solfege', 'solfegeLetters'];
 
@@ -96,6 +105,9 @@ export function keyListFor(s) {
 /** Normalise settings so that every field is valid for the chosen instrument/type. */
 export function normalise(input) {
   const s = { ...DEFAULT_SETTINGS, ...input };
+  // the other instrument's setup travels with the exercise (this device's, if none given)
+  if (s.instrument === 'other') s.otherSetup = cleanOther(s.otherSetup || getProfile('other'));
+  else delete s.otherSetup;
   // older versions stored long notes as separate switches
   if (s.rhythm === 'crotchet' && s.longEnds) s.rhythm = s.longMidTonics ? 'crotchetLongMid' : 'crotchetLong';
   delete s.longEnds;
@@ -133,7 +145,7 @@ function rootPc(s) {
  */
 export function buildExercise(input) {
   const s = normalise(input);
-  const info = instrumentInfo(s.instrument);
+  const info = instrumentInfo(s.instrument, s.otherSetup);
   const t = EXERCISE_TYPES[s.type];
   const pc = rootPc(s);
   const root = { ...pc, o: 0 };
@@ -188,7 +200,7 @@ export function makeTitle(s, gen) {
       return `Dominant 7th in the key of ${K} (starting on ${noteName(first)}), ${range}`;
     }
     case 'dim7': return `Diminished 7th starting on ${K}, ${range}`;
-    case 'dsBroken': return `${K} ${modeTxt} in ${INTERVAL_LABELS[s.interval]}, broken steps, ${range}`;
+    case 'dsBroken': return `${K} ${modeTxt} in ${INTERVAL_LABELS[s.interval]}, ${isBowed(s.instrument) ? 'broken steps' : 'broken intervals'}, ${range}`;
     case 'dsParallel': return `${K} ${modeTxt} in ${INTERVAL_LABELS[s.interval]}, double stops, ${range}`;
     case 'brokenThirds': return `${K} ${modeTxt} scale in broken thirds, ${range}`;
     case 'runningThirds': return `${K} ${modeTxt} scale in running thirds, ${range}`;

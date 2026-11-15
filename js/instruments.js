@@ -5,7 +5,7 @@
 // (profiles.js): the singer's measured range, or the notes chosen in Config.
 
 import { parseNote, midiOf, spellMidi, noteName } from './theory.js';
-import { getProfile } from './profiles.js';
+import { getProfile, cleanOther } from './profiles.js';
 
 export const INSTRUMENTS = {
   violin: {
@@ -122,7 +122,7 @@ function naturalNear(m, dir) {
   return spellMidi(m, 'sharp');
 }
 
-function dynamicInstrument(id) {
+function dynamicInstrument(id, setup) {
   if (id === 'voice') {
     const v = voiceSetup();
     const t = v.type;
@@ -132,8 +132,8 @@ function dynamicInstrument(id) {
       lowestMidi: v.low - t.transpose, highestMidi: v.high - t.transpose, calNotes: [],
     };
   }
-  const p = getProfile('other');
-  const low = Math.min(p.low, p.high), high = Math.max(p.low, p.high);
+  const p = setup ? cleanOther(setup) : getProfile('other');
+  const low = p.low, high = p.high;
   const clef = ['treble', 'alto', 'tenor', 'bass'].includes(p.clef) ? p.clef : autoClef(low, high);
   // two comfortable reference notes for the microphone calibration, a little inside the range
   const a = naturalNear(Math.min(low + 5, high), 1), b = naturalNear(Math.max(high - 5, low), -1);
@@ -145,11 +145,15 @@ function dynamicInstrument(id) {
   };
 }
 
-export function instrumentInfo(id) {
+/**
+ * @param {string} id
+ * @param {object} [setup] the other instrument's setup (from a syllabus item); else this device's
+ */
+export function instrumentInfo(id, setup = null) {
   const inst = INSTRUMENTS[id];
   if (!inst) throw new Error('Unknown instrument ' + id);
   if (inst.dynamic) {
-    const d = dynamicInstrument(id);
+    const d = dynamicInstrument(id, setup);
     return {
       ...d, id, dynamic: true,
       lowest: nameOf(d.lowestMidi), highest: nameOf(d.highestMidi),
