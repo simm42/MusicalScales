@@ -21,6 +21,8 @@ A free web page that helps students practise scales and arpeggios on the **violi
 - **Microphone calibration** (on the Tuner page): after tuning, stay quiet for a few seconds and then bow each open string. The app learns how loud and how clearly this microphone hears the instrument in this room, and adjusts its listening to match. It also checks that the microphone hears true pitch: if every string reads shifted (by the microphone, or by a recording played back at the wrong speed), it warns you and corrects for it. Calibrations are kept per instrument, in this browser only.
 - Light and dark modes.
 
+**Microphone:** by default the app opens the microphone when it starts, so the browser asks for permission once and **Start** begins straight away. The phone's microphone indicator stays on while the app is open. Sound is only analysed during a run, the tuner or calibration, and it is never recorded or sent anywhere. This can be switched off in Config → Listening; the microphone is then opened at each Start and closed afterwards. To stop the question appearing each time on iPhone in Safari, tap **aA** → **Website Settings** → **Microphone** → **Allow**. An app added to the iPhone home screen may still ask again after it has been closed.
+
 **Privacy:** everything runs in the browser. No sound, scores or settings are sent anywhere. If visit counting is switched on (see below), only anonymous page loads are counted, with no cookies. Lists and scores are saved only in that browser on that device. Use *Export everything* / *Import everything* in Config to move to another device.
 
 ---

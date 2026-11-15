@@ -1136,9 +1136,30 @@ function setupDebug() {
 }
 
 // ---------------------------------------------------------------- start up
+// ---------------------------------------------------------------- microphone held open while the app is open
+const keepMic = () => prefs.keepMic !== false; // on unless switched off
+function warmMic() {
+  if (!keepMic() || document.hidden) return;
+  engine.warmUp().then((err) => {
+    // blocked: say so now, rather than when Start is pressed
+    if (err && err.kind === 'denied') { $('micError').textContent = err.message; $('micError').hidden = false; }
+  });
+}
+engine.setKeepMic(keepMic());
+$('o-keepMic').checked = keepMic();
+$('o-keepMic').addEventListener('change', () => {
+  prefs.keepMic = $('o-keepMic').checked;
+  savePrefs();
+  engine.setKeepMic(prefs.keepMic);
+  warmMic();
+});
+// back in view: open it again if the system closed it (a call, another app)
+document.addEventListener('visibilitychange', () => { if (!document.hidden) warmMic(); });
+
 function init() {
   startAnalytics();
   setupPwa();
+  warmMic();
   if (ANALYTICS_ON) $('privacyNote').textContent = 'Your sound, scores and settings never leave your device. Anonymous page visits are counted (no cookies, no personal data) to see how the site is used.';
   setupDebug();
   applyTheme(theme);

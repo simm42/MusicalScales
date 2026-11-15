@@ -7,6 +7,17 @@ export class MicError extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
 }
 
+const MIC_CONSTRAINTS = {
+  audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
+  video: false,
+};
+
+function micError(e) {
+  if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) return new MicError('denied', 'Microphone access was blocked. Allow the microphone for this site in your browser settings and try again.');
+  if (e && e.name === 'NotFoundError') return new MicError('nodevice', 'No microphone was found on this device.');
+  return new MicError('other', 'Could not start the microphone: ' + (e && e.message));
+}
+
 export function micSupportProblem() {
   if (!window.isSecureContext) return 'insecure';
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return 'unsupported';
@@ -22,6 +33,52 @@ export class AudioEngine {
     this.stream = null;
     this.onFrames = null;
     this.running = false;
+    // keepMic: hold one microphone stream open while the app is open, so the
+    // browser asks for permission once and Start begins at once
+    this.keepMic = false;
+    this.held = null;
+    this.releaseWhenStopped = false;
+  }
+
+  /** The held microphone stream, if it is still live. */
+  heldStream() {
+    const s = this.held;
+    return s && s.getAudioTracks().some((t) => t.readyState === 'live') ? s : null;
+  }
+
+  /** A live microphone stream: the held one, or a new one (asks permission the first time). */
+  async openMic() {
+    const live = this.heldStream();
+    if (live) return live;
+    let stream;
+    try { stream = await navigator.mediaDevices.getUserMedia(MIC_CONSTRAINTS); } catch (e) { throw micError(e); }
+    if (this.keepMic) {
+      this.held = stream;
+      // the system can end it (a phone call, another app taking the microphone): open again when needed
+      stream.getAudioTracks().forEach((t) => t.addEventListener('ended', () => { if (this.held === stream) this.held = null; }));
+    }
+    return stream;
+  }
+
+  /**
+   * Open the microphone now (when the app opens, or comes back into view), so
+   * that Start needs no permission question. Errors are returned, not thrown.
+   */
+  async warmUp() {
+    if (!this.keepMic || micSupportProblem()) return null;
+    try { await this.openMic(); return null; } catch (e) { return e; }
+  }
+
+  /** Close the held microphone (the keep-open option was switched off). */
+  releaseMic() {
+    if (this.running && this.stream === this.held) { this.releaseWhenStopped = true; return; }
+    if (this.held) this.held.getTracks().forEach((t) => t.stop());
+    this.held = null;
+  }
+
+  setKeepMic(on) {
+    this.keepMic = !!on;
+    if (!this.keepMic) this.releaseMic();
   }
 
   /** Must be called from a user gesture (tap/click) the first time – iOS requirement. */
@@ -92,6 +149,9 @@ export class AudioEngine {
    * microphone is on. Other browsers ignore this.
    */
   setSessionType(type) {
+    // while the microphone is held open, stay in play-and-record: switching to
+    // playback would interrupt it (and play-and-record ignores the silent switch too)
+    if (type === 'playback' && this.heldStream()) type = 'play-and-record';
     try { if (navigator.audioSession && navigator.audioSession.type !== type) navigator.audioSession.type = type; } catch { /* unsupported */ }
   }
 
@@ -118,16 +178,7 @@ export class AudioEngine {
       const problem = micSupportProblem();
       if (problem === 'insecure') throw new MicError('insecure', 'The microphone only works when this page is opened over https:// (or from localhost).');
       if (problem) throw new MicError('unsupported', 'This browser does not support microphone input.');
-      try {
-        this.stream = await navigator.mediaDevices.getUserMedia({
-          audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 },
-          video: false,
-        });
-      } catch (e) {
-        if (e && (e.name === 'NotAllowedError' || e.name === 'SecurityError')) throw new MicError('denied', 'Microphone access was blocked. Allow the microphone for this site in your browser settings and try again.');
-        if (e && e.name === 'NotFoundError') throw new MicError('nodevice', 'No microphone was found on this device.');
-        throw new MicError('other', 'Could not start the microphone: ' + (e && e.message));
-      }
+      this.stream = await this.openMic();
       this.source = ctx.createMediaStreamSource(this.stream);
       // what the browser really gave us (webcam mics sometimes ignore "auto-gain off" etc.)
       try {
@@ -212,7 +263,12 @@ export class AudioEngine {
     this.running = false;
     try { if (this.source && this.source.stop) this.source.stop(); } catch { /* not started */ }
     for (const n of [this.source, this.node, this.sink]) { try { if (n) n.disconnect(); } catch { /* ignore */ } }
-    if (this.stream) this.stream.getTracks().forEach((t) => t.stop());
+    // the held microphone stays open (unless keeping it open was just switched off)
+    if (this.stream && (this.stream !== this.held || this.releaseWhenStopped)) {
+      this.stream.getTracks().forEach((t) => t.stop());
+      if (this.stream === this.held) this.held = null;
+    }
+    this.releaseWhenStopped = false;
     if (this.worker) this.worker.terminate();
     this.source = this.node = this.sink = this.stream = this.worker = null;
   }
