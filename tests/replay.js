@@ -5,6 +5,8 @@ import { DEFAULT_SETTINGS } from '../js/exercises.js';
 import { noteName, freqToMidi } from '../js/theory.js';
 import { SEG } from '../js/segmenter.js';
 import { useProfiles } from '../js/profiles.js';
+import { RHYTHMS, buildSequence } from '../js/sequence.js';
+import { buildExercise } from '../js/exercises.js';
 
 const out = document.getElementById('out');
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -113,6 +115,15 @@ async function analyseBuffer(name, buf) {
   const settings = { ...DEFAULT_SETTINGS, ...(m.settings || {}) };
   // the voice range / other instrument as set on the device that made the recording
   useProfiles(m.profiles || null);
+  // recordings from before the practice settings were saved with them: find the rhythm
+  // from the expected notes, and the precision from the score
+  if (!(m.settings || {}).rhythm && Array.isArray(m.expected)) {
+    for (const id of Object.keys(RHYTHMS)) {
+      const ev = buildSequence(buildExercise({ ...settings, rhythm: id })).events;
+      if (ev.length === m.expected.length && ev.every((e, k) => e.beats === m.expected[k].beats)) { settings.rhythm = id; break; }
+    }
+  }
+  if ((m.settings || {}).precision == null && m.result && m.result.precision && m.result.precision.level != null) settings.precision = m.result.precision.level;
   const r = analyseRecording({ samples, sampleRate, settings, a4: m.a4 || 440, startTime: m.startTime || 0, metronomeT0: m.metronomeT0 ?? null, calibration: m.calibration || null });
   render(name, m, r);
 }

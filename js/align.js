@@ -16,6 +16,26 @@ export function pitchCost(d, e) {
 }
 
 /**
+ * Single-note cost that knows the exercise: a "wrong" note whose pitch is that
+ * of a nearby note of the exercise is almost always the alignment being one
+ * place out (a repeat that was merged or missed), not the player playing a
+ * wrong note. Pairing it here is made dearer than a missing note plus an extra
+ * one, so it is matched where it belongs.
+ */
+export function scaleCost(expected, base = pitchCost, reach = 3) {
+  return (d, e, i, j) => {
+    const c = base(d, e);
+    if (d.midi == null || c < ALIGN.wrongCost - 1e-9 || j == null) return c;
+    for (let k = Math.max(0, j - reach); k <= Math.min(expected.length - 1, j + reach); k++) {
+      if (k !== j && Math.abs(d.midi - expected[k].midis[0]) <= 0.5 && Math.abs(expected[k].midis[0] - e.midis[0]) > 0.5) {
+        return ALIGN.missingCost + ALIGN.extraCost + 0.1;
+      }
+    }
+    return c;
+  };
+}
+
+/**
  * @param {object[]} detected notes
  * @param {object[]} expected events
  * @param {(d,e)=>number} [cost]
@@ -30,7 +50,7 @@ export function align(detected, expected, cost = pitchCost) {
   for (let j = 1; j <= m; j++) { D[j] = j * ALIGN.missingCost; B[j] = 3; }
   for (let i = 1; i <= n; i++) {
     for (let j = 1; j <= m; j++) {
-      const diag = D[(i - 1) * W + j - 1] + cost(detected[i - 1], expected[j - 1]);
+      const diag = D[(i - 1) * W + j - 1] + cost(detected[i - 1], expected[j - 1], i - 1, j - 1);
       const up = D[(i - 1) * W + j] + ALIGN.extraCost;
       const left = D[i * W + j - 1] + ALIGN.missingCost;
       let best = diag, b = 1;

@@ -3,7 +3,7 @@
 
 import { Segmenter, estimateNoiseFloor, SEG } from './segmenter.js';
 import { Follower } from './follower.js';
-import { align, detectGlobalOffset } from './align.js';
+import { align, detectGlobalOffset, scaleCost } from './align.js';
 import { scoreRun } from './scoring.js';
 import { Metronome } from './metronome.js';
 import { detectionRange } from './instruments.js';
@@ -56,6 +56,141 @@ export function dropOctaveBlips(notes, { maxDur = 0.25, maxGap = 0.08 } = {}) {
     }
     return true;
   });
+}
+
+/**
+ * Scrapes and clicks at bow changes: notes much shorter than this player's
+ * typical note that touch a longer note. "Short" is judged against the run
+ * itself, so fast playing keeps its short notes.
+ */
+export function dropShortBlips(notes, { frac = 0.3, cap = 0.2, maxGap = 0.1 } = {}) {
+  const durs = notes.filter((d) => d.dur >= 0.15).map((d) => d.dur).sort((a, b) => a - b);
+  if (durs.length < 4) return notes;
+  const maxDur = Math.min(cap, frac * durs[Math.floor(durs.length / 2)]);
+  return notes.filter((d, i) => {
+    if (d.dur >= maxDur) return true;
+    for (const j of [i - 1, i + 1]) {
+      const n = notes[j];
+      if (!n || n.dur <= d.dur) continue;
+      const gap = j < i ? d.onset - n.end : n.onset - d.end;
+      if (gap <= maxGap) return false;
+    }
+    return true;
+  });
+}
+
+/** Does the exercise itself step an octave from one note to the next (broken octaves)? */
+export function hasOctaveSteps(events) {
+  return events.some((e, k) => k > 0 && e.midis.length === 1 && events[k - 1].midis.length === 1
+    && Math.abs(e.midis[0] - events[k - 1].midis[0]) % 12 === 0 && e.midis[0] !== events[k - 1].midis[0]);
+}
+
+const median = (a) => { const s = a.slice().sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : NaN; };
+
+/**
+ * Repeated notes on an open string (or with a smooth bow change) can run into
+ * one: no dip in level to split on. Where the exercise plays one pitch several
+ * times in a row but fewer notes were heard, use the rhythm: at the player's
+ * own tempo, find which heard note covers which repeats from their lengths,
+ * and split it at the quietest moment near each expected boundary.
+ * @returns new notes array, or null if nothing changed
+ */
+export function splitByRhythm(notes, events, alignment, { tol = 0.35 } = {}) {
+  const noteOf = alignment.pairs.map((p) => p.note);
+  const ok = (j) => { const n = noteOf[j]; return n != null && notes[n].midi != null && Math.abs(notes[n].midi - events[j].midis[0]) <= 0.5; };
+  // the player's tempo: seconds per beat between neighbouring well-matched notes
+  const rates = [];
+  for (let j = 0; j + 1 < events.length; j++) {
+    if (!ok(j) || !ok(j + 1)) continue;
+    const beats = events[j + 1].onsetBeat - events[j].onsetBeat;
+    const dt = notes[noteOf[j + 1]].onset - notes[noteOf[j]].onset;
+    if (beats > 0 && dt > 0) rates.push(dt / beats);
+  }
+  if (rates.length < 4) return null;
+  const spb = median(rates);
+  const lenOf = (j) => ((events[j + 1] ? events[j + 1].onsetBeat - events[j].onsetBeat : events[j].beats) || events[j].beats) * spb;
+
+  const splits = new Map(); // note index -> lengths (seconds, as expected) of its parts
+  for (let s = 0; s < events.length;) {
+    let t = s;
+    while (t + 1 < events.length && events[t + 1].midis.length === 1 && events[s].midis.length === 1 && events[t + 1].midis[0] === events[s].midis[0]) t++;
+    const run = []; for (let j = s; j <= t; j++) run.push(j);
+    s = t + 1;
+    if (run.length < 2) continue;
+    // a note far from the run's pitch that was paired into it is a stray sound, not one of the
+    // repeats (it becomes an extra once the repeats are split); a near miss may be a real wrong note
+    const far = (j) => noteOf[j] != null && !ok(j) && notes[noteOf[j]].midi != null && Math.abs(notes[noteOf[j]].midi - events[j].midis[0]) > 2.5;
+    if (run.some((j) => noteOf[j] != null && !ok(j) && !far(j))) continue;
+    const heard = [...new Set(run.filter((j) => ok(j)).map((j) => noteOf[j]))].sort((a, b) => a - b);
+    if (!heard.length || heard.length >= run.length) continue;
+    // every way of giving the run's events, in order, to the heard notes
+    let best = null;
+    const walk = (from, k, groups) => {
+      if (k === heard.length - 1) { groups.push(run.length - from); score(groups); groups.pop(); return; }
+      for (let size = 1; from + size <= run.length - (heard.length - k - 1); size++) { groups.push(size); walk(from + size, k + 1, groups); groups.pop(); }
+    };
+    const score = (groups) => {
+      let at = 0, worst = 0;
+      const parts = groups.map((g) => { const p = run.slice(at, at + g).map(lenOf); at += g; return p; });
+      for (let k = 0; k < parts.length; k++) {
+        const want = parts[k].reduce((a, b) => a + b, 0);
+        worst = Math.max(worst, Math.abs(notes[heard[k]].dur - want) / want);
+      }
+      if (!best || worst < best.worst) best = { worst, parts };
+    };
+    walk(0, 0, []);
+    if (!best || best.worst > tol) continue;
+    best.parts.forEach((p, k) => { if (p.length > 1) splits.set(heard[k], p); });
+  }
+  if (!splits.size) return null;
+
+  const out = [];
+  notes.forEach((d, i) => {
+    const parts = splits.get(i);
+    if (!parts) { out.push(d); return; }
+    const total = parts.reduce((a, b) => a + b, 0);
+    const levels = d.levels || [];
+    const cuts = [];
+    let cum = 0;
+    for (let k = 0; k < parts.length - 1; k++) {
+      cum += parts[k];
+      let at = d.onset + (d.dur * cum) / total;
+      // the quietest moment near the expected boundary (a slight bow change), if the level is known
+      const span = Math.min(0.12, 0.3 * Math.min(parts[k], parts[k + 1]) * (d.dur / total));
+      const near = levels.filter(([t]) => Math.abs(t - at) <= span);
+      if (near.length >= 3) at = near.reduce((m, x) => (x[1] < m[1] ? x : m))[0];
+      cuts.push(at);
+    }
+    let start = d.onset;
+    [...cuts, d.end].forEach((end) => {
+      out.push({ ...d, onset: start, end, dur: end - start, levels: levels.filter(([t]) => t >= start && t < end), split: true });
+      start = end;
+    });
+  });
+  return out;
+}
+
+/**
+ * From the segmenter's notes to the notes that are scored: drop octave slips
+ * and bow-change scrapes, align with the exercise, split repeats that ran
+ * together, align again. Used live and when re-analysing a recording.
+ */
+export function refineNotes(notes, seq, { doubleStop = false, cost } = {}) {
+  let out = notes;
+  if (!doubleStop) {
+    // longer octave slips can go too, unless the exercise really steps by octaves
+    out = dropOctaveBlips(out, { maxDur: hasOctaveSteps(seq.events) ? 0.25 : 0.45 });
+    out = dropShortBlips(out);
+  }
+  const c = doubleStop ? cost : scaleCost(seq.events);
+  let alignment = align(out, seq.events, c);
+  if (!doubleStop) {
+    const fixed = splitMergedRepeats(out, seq.events, alignment);
+    if (fixed) { out = fixed; alignment = align(out, seq.events, c); }
+    const byRhythm = splitByRhythm(out, seq.events, alignment);
+    if (byRhythm) { out = byRhythm; alignment = align(out, seq.events, c); }
+  }
+  return { notes: out, alignment };
 }
 
 /**
@@ -291,12 +426,9 @@ export class PracticeSession {
     const { seq, prec } = this.o;
     const a4 = this.a4;
     const cost = this.doubleStop ? doubleStopCost(a4) : undefined;
-    if (!this.doubleStop) { const kept = dropOctaveBlips(notes); notes.splice(0, notes.length, ...kept); }
-    let alignment = align(notes, seq.events, cost);
-    if (!this.doubleStop) {
-      const fixed = splitMergedRepeats(notes, seq.events, alignment);
-      if (fixed) { notes.splice(0, notes.length, ...fixed); alignment = align(notes, seq.events, cost); }
-    }
+    const refined = refineNotes(notes, seq, { doubleStop: this.doubleStop, cost });
+    notes.splice(0, notes.length, ...refined.notes); // in place: the capture refers to these notes by index
+    const alignment = refined.alignment;
     const result = scoreRun({
       expected: seq.events, detected: notes, alignment, prec,
       metronome: this.t0 != null ? { t0: this.t0, spb: 60 / this.o.settings.bpm } : null,
@@ -340,12 +472,9 @@ export function analyseRecording(o) {
   for (const f of frames) segmenter.push(f); // same as live: calibration frames are analysed too
   segmenter.flush();
   const notes = segmenter.notes;
-  if (!doubleStop) { const kept = dropOctaveBlips(notes); notes.splice(0, notes.length, ...kept); }
-  let alignment = align(notes, seq.events, doubleStop ? doubleStopCost(a4) : undefined);
-  if (!doubleStop) {
-    const fixed = splitMergedRepeats(notes, seq.events, alignment);
-    if (fixed) { notes.splice(0, notes.length, ...fixed); alignment = align(notes, seq.events); }
-  }
+  const refined = refineNotes(notes, seq, { doubleStop, cost: doubleStop ? doubleStopCost(a4) : undefined });
+  notes.splice(0, notes.length, ...refined.notes);
+  const alignment = refined.alignment;
   const prec = precisionAt(s.precision, s.instrument);
   const result = scoreRun({
     expected: seq.events, detected: notes, alignment, prec,

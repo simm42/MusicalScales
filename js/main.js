@@ -999,7 +999,7 @@ function captureMeta(sess, result, cap) {
   const segm = sess && sess.segmenter;
   return {
     app: 'scale-practice', kind: 'capture', version: 2, appVersion: APP_VERSION, created: new Date().toISOString(),
-    settings: compactSettings(settings), title: ex ? ex.title : null, a4: a4(), a4Effective: sess ? sess.a4 : a4(),
+    settings: { ...compactSettings(settings), ...pickFields(settings, GLOBAL_FIELDS) }, title: ex ? ex.title : null, a4: a4(), a4Effective: sess ? sess.a4 : a4(),
     sampleRate: cap.sampleRate, startTime: cap.startTime,
     metronomeT0: sess && sess.t0 != null ? sess.t0 : null,
     synthetic: !!(sess && sess.o.synth),
