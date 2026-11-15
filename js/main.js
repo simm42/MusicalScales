@@ -30,6 +30,7 @@ import { MetronomeCard } from './ui/metronomeCard.js';
 import { noteIcon, RHYTHM_ICONS } from './ui/noteIcons.js';
 import { startAnalytics, ANALYTICS_ON } from './analytics.js';
 import { setupPwa } from './pwa.js';
+import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
 import {
   loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings,
@@ -741,6 +742,52 @@ $('exportBtn').addEventListener('click', () => {
   document.body.appendChild(a);
   a.click();
   setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+});
+
+// ---------------------------------------------------------------- move to another device (everything in one file)
+/** Save a file: the share sheet on phones (Save to Files, AirDrop, email…), else a download. */
+async function saveFile(text, name, type) {
+  const file = typeof File === 'function' ? new File([text], name, { type }) : null;
+  const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  if (touch && file && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try { await navigator.share({ files: [file], title: name }); return 'shared'; }
+    catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; /* else fall back to a download */ }
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  return 'downloaded';
+}
+
+$('backupBtn').addEventListener('click', async () => {
+  const name = backupFilename(prefs.studentName);
+  const how = await saveFile(makeBackup(localStorage, { appVersion: APP_VERSION }), name, 'application/json');
+  $('backupMsg').textContent = how === 'cancelled' ? '' : how === 'shared'
+    ? `Backup ready: ${name}. Open it with Import everything on the new device.`
+    : `Saved ${name} (usually in Downloads). Open it with Import everything on the new device.`;
+});
+
+$('restoreBtn').addEventListener('click', () => $('restoreFile').click());
+$('restoreFile').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  let read;
+  try { read = readBackup(await file.text()); } catch (err) { $('backupMsg').textContent = err.message; return; }
+  const s = read.summary;
+  const when = s.exported && !isNaN(s.exported) ? s.exported.toLocaleString() : 'an unknown date';
+  const ok = confirm(`Replace everything on this device with the backup${s.student ? ` for ${s.student}` : ''} from ${when}?\n\n`
+    + `It has ${s.exercises} exercise${s.exercises === 1 ? '' : 's'} in the syllabus and ${s.runs} run${s.runs === 1 ? '' : 's'} of results.\n\n`
+    + 'The syllabus, results and settings on this device now will be replaced. This device\'s microphone calibrations are kept.');
+  if (!ok) return;
+  stopSession(true);
+  stopPlayback();
+  try { restoreBackup(read.backup, localStorage); } catch { $('backupMsg').textContent = 'Sorry – the backup could not be saved on this device (storage full or blocked).'; return; }
+  // start afresh from the restored data (without any #list= link, which would be imported again)
+  location.replace(location.pathname + location.search);
 });
 
 $('importBtn').addEventListener('click', () => $('importFile').click());

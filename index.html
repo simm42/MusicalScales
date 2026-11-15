@@ -113,6 +113,15 @@
           <p class="small muted" id="calInfo" style="margin:6px 0 0"></p>
         </fieldset>
       </form>
+      <hr class="sep">
+      <h2 class="sec-title">Move to another device</h2>
+      <p class="small muted" style="margin:0 0 8px">Everything in one file: syllabus, results, settings, student name, voice range and other instrument. On the new device (or in the installed app), use <b>Import everything</b>. Microphone calibrations stay with each device, so calibrate again on the new one.</p>
+      <div class="row small">
+        <button class="btn" type="button" id="backupBtn">⬇ Export everything</button>
+        <button class="btn" type="button" id="restoreBtn">⬆ Import everything</button>
+        <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+      </div>
+      <p class="muted small" id="backupMsg" role="status"></p>
     </section>
 
     <!-- ================= PRACTICE ================= -->
@@ -238,7 +247,7 @@
     <p>Open this page in <b>Chrome</b> or <b>Edge</b> (or Safari on iPhone and iPad) to install it. On Android, the browser menu <b>⋮</b> also has <b>Install app</b> or <b>Add to Home screen</b>.</p>
   </div>
   <div id="installDone" hidden><p>✓ You are using the installed app.</p></div>
-  <p class="small muted">Your syllabus, results and settings are kept on each device. On iPhone and iPad the installed app keeps its own copy, separate from Safari: use <b>Export</b> in Config in Safari and <b>Import</b> in the app to bring them across.</p>
+  <p class="small muted">Your syllabus, results and settings are kept on each device. On iPhone and iPad the installed app keeps its own copy, separate from Safari: use <b>Export everything</b> in Config in Safari and <b>Import everything</b> in the app to bring them across.</p>
   <p class="small">Link to these steps, to send to students: <span id="installLink" class="mono"></span>
     <button class="btn" type="button" id="installCopy">Copy link</button> <span id="installCopyMsg" class="muted small" role="status"></span></p>
   <div class="row"><button class="btn" type="button" id="installClose">Close</button></div>

@@ -76,9 +76,11 @@ export function exportJson(list, results = {}) {
  */
 export function importJson(text) {
   const data = JSON.parse(text);
-  const items = Array.isArray(data) ? data : data.items;
+  // a full backup (Move to another device): take its syllabus and results
+  const full = data && !Array.isArray(data) && data.kind === 'full-backup' && data.data ? data.data : null;
+  const items = full ? full.list || [] : Array.isArray(data) ? data : data.items;
   if (!Array.isArray(items)) throw new Error('Not a syllabus file');
-  const results = (!Array.isArray(data) && data.results) || {};
+  const results = (full ? full.results : !Array.isArray(data) && data.results) || {};
   return items.filter((x) => x && x.settings).map((x) => {
     const item = {
       id: uid(),
