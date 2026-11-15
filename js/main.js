@@ -1078,7 +1078,8 @@ function offerCapture(sess, result) {
     const { blob } = encodeWav(c.samples, c.sampleRate, meta);
     const stamp = meta.created.replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
     const s = settings;
-    const name = `scale-capture-${s.instrument}-${s.type}-${(s.type === 'chromatic' || s.type === 'dim7' ? s.start : s.key).replace('#', 's')}-${stamp}.wav`;
+    // the app version in the name too (it is also stored inside the file, as appVersion)
+    const name = `scale-capture-${s.instrument}-${s.type}-${(s.type === 'chromatic' || s.type === 'dim7' ? s.start : s.key).replace('#', 's')}-${stamp}-v${APP_VERSION}.wav`;
     saveFile(blob, name, 'audio/wav'); // the share sheet on phones: works in the installed app too
   });
 }
@@ -1146,6 +1147,7 @@ engine.setKeepMic(keepMic());
 
 // test mode from Config: the page reloads so that the test tools are set up
 $('o-testMode').checked = !!prefs.testMode;
+$('appVersion').textContent = APP_VERSION;
 $('o-testMode').addEventListener('change', () => {
   prefs.testMode = $('o-testMode').checked;
   savePrefs();

@@ -2,7 +2,27 @@
 // events. Insertions = extra notes, deletions = missing notes,
 // substitutions = wrong notes. No DOM access.
 
-export const ALIGN = { extraCost: 1.0, missingCost: 1.0, wrongCost: 0.9, farCost: 1.6 };
+export const ALIGN = { extraCost: 1.0, missingCost: 1.0, wrongCost: 0.9, farCost: 1.6, harmonicCost: 0.3 };
+
+/**
+ * How far off a microphone can hear a note: the 2nd harmonic (an octave up),
+ * the 3rd (an octave and a fifth), the 4th (two octaves), or an octave or an
+ * octave and a fifth down. Low open strings on phone microphones especially.
+ */
+export const HARMONIC_SHIFTS = [12, 19.02, 24, -12, -19.02];
+
+/**
+ * A heard pitch against the expected one. With `fold`, a pitch a harmonic away
+ * (within half a semitone) is taken as the expected note heard at a harmonic.
+ * @returns {{diff:number, shift:number}} diff in semitones after the shift
+ */
+export function foldPitch(midi, target, fold = true) {
+  const diff = midi - target;
+  if (fold && Math.abs(diff) > 0.5) {
+    for (const s of HARMONIC_SHIFTS) if (Math.abs(diff - s) <= 0.5) return { diff: diff - s, shift: s };
+  }
+  return { diff, shift: 0 };
+}
 
 /** Cost of pairing detected note d with expected event e (single-note mode). */
 export function pitchCost(d, e) {
@@ -22,10 +42,12 @@ export function pitchCost(d, e) {
  * wrong note. Pairing it here is made dearer than a missing note plus an extra
  * one, so it is matched where it belongs.
  */
-export function scaleCost(expected, base = pitchCost, reach = 3) {
+export function scaleCost(expected, base = pitchCost, reach = 3, { fold = false } = {}) {
   return (d, e, i, j) => {
     const c = base(d, e);
     if (d.midi == null || c < ALIGN.wrongCost - 1e-9 || j == null) return c;
+    // a harmonic of the expected note: very likely that note, heard by the microphone at a harmonic
+    if (fold) { const f = foldPitch(d.midi, e.midis[0]); if (f.shift) return ALIGN.harmonicCost + Math.abs(f.diff) * 0.1; }
     for (let k = Math.max(0, j - reach); k <= Math.min(expected.length - 1, j + reach); k++) {
       if (k !== j && Math.abs(d.midi - expected[k].midis[0]) <= 0.5 && Math.abs(expected[k].midis[0] - e.midis[0]) > 0.5) {
         return ALIGN.missingCost + ALIGN.extraCost + 0.1;

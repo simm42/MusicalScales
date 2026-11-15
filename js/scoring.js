@@ -2,6 +2,7 @@
 // No DOM access.
 
 import { linearScore, scrapeSize, scrapeWeight } from './precision.js';
+import { foldPitch, HARMONIC_SHIFTS } from './align.js';
 
 export const SCORING = { intonationWeight: 0.75, timingWeight: 0.25, extraPenalty: 3, wrongCents: 50 };
 
@@ -17,7 +18,7 @@ const median = (a) => { const s = a.slice().sort((x, y) => x - y); const n = s.l
  * @param {(note, event)=>{cents:(number|null)[], approx?:boolean}} [o.doubleStopEval]
  */
 export function scoreRun(o) {
-  const { expected, detected, alignment, prec, metronome = null, doubleStopEval = null, scrapes = [] } = o;
+  const { expected, detected, alignment, prec, metronome = null, doubleStopEval = null, scrapes = [], fold = false } = o;
   const per = alignment.pairs.map(({ event, note }) => {
     const e = expected[event];
     const row = { event, note, name: e.notes, status: 'missing', cents: null, intonation: 0, timing: 0 };
@@ -31,9 +32,14 @@ export function scoreRun(o) {
       if (ev.cents.some((c) => c == null || Math.abs(c) > SCORING.wrongCents)) { row.status = 'wrong'; row.intonation = 0; }
       else { row.status = 'ok'; row.intonation = ev.cents.reduce((a, c) => a + linearScore(c, prec.fullCents, prec.zeroCents), 0) / ev.cents.length; }
     } else {
-      const cents = (d.midi - e.midis[0]) * 100;
-      row.cents = [cents];
+      let cents = (d.midi - e.midis[0]) * 100;
       row.unsteady = !!d.unsteady;
+      if (Math.abs(cents) > SCORING.wrongCents) {
+        // presume a competent player: before calling it wrong, look at the note more closely
+        const closer = lookCloser(d, e.midis[0], fold);
+        if (closer) { cents = closer.cents; row.heardShift = closer.shift; row.rechecked = closer.how; }
+      }
+      row.cents = [cents];
       if (Math.abs(cents) > SCORING.wrongCents) { row.status = 'wrong'; row.intonation = 0; row.playedMidi = d.midi; }
       else { row.status = 'ok'; row.intonation = linearScore(cents, prec.fullCents, prec.zeroCents); }
     }
@@ -105,6 +111,37 @@ export function scoreRun(o) {
     wrong: per.filter((r) => r.status === 'wrong').length,
     bpm: metronome ? 60 / metronome.spb : o.secondsPerBeat ? 60 / o.secondsPerBeat : null,
   };
+}
+
+/**
+ * A note that came out far from the expected pitch, looked at more closely.
+ * Microphones (phones especially) often hear a low note at a harmonic, and a
+ * note can start with a slide or a stray reading. So:
+ *  - if at least a quarter of its pitch readings are at the expected note, it
+ *    is that note, measured on those readings ('part');
+ *  - else if most of it sits a harmonic away (an octave, an octave and a fifth,
+ *    two octaves up; an octave or an octave and a fifth down), it is the
+ *    expected note heard at a harmonic ('harmonic'), measured after the shift.
+ * Otherwise it stays a wrong note.
+ * @returns {{cents:number, shift:number, how:string}|null}
+ */
+export function lookCloser(d, target, fold = true) {
+  const ms = (d.pitches || []).map((p) => p[1]).filter((m) => m != null);
+  if (ms.length < 5) {
+    if (!fold || d.midi == null) return null;
+    const f = foldPitch(d.midi, target);
+    return f.shift && Math.abs(f.diff) * 100 <= SCORING.wrongCents ? { cents: f.diff * 100, shift: f.shift, how: 'harmonic' } : null;
+  }
+  const at = (shift) => ms.filter((m) => Math.abs(m - shift - target) <= 0.5);
+  const right = at(0);
+  if (right.length >= Math.max(3, 0.25 * ms.length)) return { cents: (median(right) - target) * 100, shift: 0, how: 'part' };
+  if (!fold) return null;
+  let best = null;
+  for (const s of HARMONIC_SHIFTS) {
+    const h = at(s);
+    if (h.length >= 0.5 * ms.length && (!best || h.length > best.h.length)) best = { s, h };
+  }
+  return best ? { cents: (median(best.h) - best.s - target) * 100, shift: best.s, how: 'harmonic' } : null;
 }
 
 /**

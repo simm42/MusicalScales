@@ -20,10 +20,10 @@ function heard(seq, { spb = SPB, t0 = 2 } = {}) {
     return note(onset, end, e.midis[0]);
   });
 }
-function note(onset, end, midi) {
-  const levels = [];
-  for (let t = onset; t < end; t += 0.02) levels.push([t, -20]);
-  return { onset, end, dur: end - onset, midi, nominal: Math.round(midi), frames: Math.round((end - onset) * 100), confirmed: true, levels };
+function note(onset, end, midi, { unsteady = false } = {}) {
+  const levels = [], pitches = [];
+  for (let t = onset; t < end; t += 0.02) { levels.push([t, -20]); pitches.push([t, midi]); }
+  return { onset, end, dur: end - onset, midi, nominal: Math.round(midi), frames: Math.round((end - onset) * 100), confirmed: true, levels, pitches, unsteady };
 }
 /** Run two or more neighbouring heard notes together into one. */
 function merge(notes, from, count) {
@@ -31,8 +31,8 @@ function merge(notes, from, count) {
   notes.splice(from, count, note(a.onset, b.end, a.midi));
 }
 function score(seq, notes) {
-  const { notes: kept, alignment } = refineNotes(notes, seq);
-  return scoreRun({ expected: seq.events, detected: kept, alignment, prec: precisionAt(1) });
+  const { notes: kept, alignment, fold } = refineNotes(notes, seq);
+  return scoreRun({ expected: seq.events, detected: kept, alignment, prec: precisionAt(1), fold });
 }
 const cello = (rhythm) => buildSequence(buildExercise({ instrument: 'cello', type: 'scale', key: 'C', range: '1', rhythm }));
 
@@ -126,4 +126,60 @@ test('singers’ consonants are not scrapes', () => {
   const n = heard(seq);
   n.splice(4, 0, note(n[3].end - 0.06, n[3].end + 0.06, 51));
   eq(refineNotes(n, seq, { scrapes: false }).scrapes.length, 0);
+});
+
+// ---------------------------------------------------------------- notes heard far off: look more closely
+import { lookCloser } from '../js/scoring.js';
+
+test('a note heard an octave or an octave and a fifth up is the right note heard at a harmonic', () => {
+  const at = (m) => note(0, 0.5, m);
+  eq([Math.round(lookCloser(at(48.03), 36).cents), lookCloser(at(48.03), 36).shift], [3, 12]);
+  const third = lookCloser(at(55.0), 36); // the 3rd harmonic of open C (G an octave and a fifth up)
+  eq([third.shift, Math.round(third.cents)], [19.02, -2]);
+  eq(lookCloser(at(24.1), 36).shift, -12);
+  // a real wrong note is still wrong: F♯ where F was expected, a tone off
+  eq(lookCloser(at(54), 53.0 - 1), null);
+  eq(lookCloser(at(54.6), 53), null);
+  // not when the exercise itself steps by octaves
+  eq(lookCloser(at(48), 36, false), null);
+});
+
+test('a note that slides in, or flickers an octave, is scored on the part at the right pitch', () => {
+  const d = note(0, 0.6, 36);
+  d.pitches = d.pitches.map(([t], k) => [t, k < 18 ? 48 : 36.1]); // 60 % an octave up, then the real note
+  const c = lookCloser(d, 36);
+  eq([c.how, c.shift, Math.round(c.cents)], ['part', 0, 10]);
+});
+
+test('open C heard an octave up at the start, then a slip mid-note: no missing, wrong or extra notes', () => {
+  const seq = cello('q2c');
+  const n = heard(seq);
+  // first quaver heard entirely as C3; second quaver flips to C3 near its end
+  n[0] = note(n[0].onset, n[0].end, 48);
+  const q2 = n[1];
+  n.splice(1, 1, note(q2.onset, q2.end - 0.1, 36), note(q2.end - 0.1, q2.end, 48));
+  const r = score(seq, n);
+  eq([r.missing, r.wrong, r.extras.length], [0, 0, 0]);
+  assert(r.perNote[0].heardShift === 12, 'first note marked as heard an octave up');
+});
+
+test('a slide between two notes becomes the start of the next one', () => {
+  const seq = cello('crotchet');
+  const n = heard(seq);
+  const k = 4; // between F (41) and G (43)
+  const g = note(n[k].onset - 0.15, n[k].onset, 42, { unsteady: true }); // F♯, sliding from F up to G
+  n[k - 1] = { ...n[k - 1], end: g.onset, dur: g.onset - n[k - 1].onset };
+  n.splice(k, 0, g);
+  const r = score(seq, n);
+  eq([r.missing, r.wrong, r.extras.length], [0, 0, 0]);
+});
+
+test('a crotchet chopped in three after two quavers run together is put back as played', () => {
+  const seq = cello('q2c');
+  const n = heard(seq);
+  const k = n.findIndex((d) => d.midi === 43); // G: quaver, quaver, crotchet
+  const [a, b, c] = n.slice(k, k + 3);
+  n.splice(k, 3, note(a.onset, b.end, 43), note(c.onset, c.onset + 0.35, 43), note(c.onset + 0.35, c.onset + 0.8, 43), note(c.onset + 0.8, c.end, 43));
+  const r = score(seq, n);
+  eq([r.missing, r.wrong, r.extras.length], [0, 0, 0]);
 });

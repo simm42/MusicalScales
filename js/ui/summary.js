@@ -39,6 +39,8 @@ function chart(result, prec) {
   return s + '</svg></div>';
 }
 
+const shiftName = (s) => ({ 12: 'an octave up', 19: 'an octave and a fifth up', 24: 'two octaves up', '-12': 'an octave down', '-19': 'an octave and a fifth down' }[String(Math.round(s))] || 'at a harmonic');
+
 /** Whole numbers as they are, part errors to one decimal ("1.4"). */
 const fmtErrors = (x) => (x == null ? '–' : Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1));
 
@@ -76,6 +78,8 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
     let p = '<span class="pill ok">ok</span>';
     if (r.unsteady) p += ' <span class="pill unsteady" title="pitch wobbled more than ±20 cents">unsteady</span>';
     if (r.approx) p += ' <span class="pill unsteady" title="octave double stops can only be measured approximately">approx.</span>';
+    if (r.heardShift) p += ` <span class="pill unsteady" title="The microphone heard this note at a harmonic (common with low strings on phone microphones); it was scored as the right note">heard ${esc(shiftName(r.heardShift))}</span>`;
+    else if (r.rechecked) p += ' <span class="pill unsteady" title="Part of this note was heard off (a slide or a stray reading); it was scored on the part at the right pitch">re-checked</span>';
     return p;
   };
   const centsCell = (r) => (r.cents ? r.cents.map((c) => (c == null ? 'not heard' : fmtCents(c).replace(' cents', ''))).join(' / ') : '–');

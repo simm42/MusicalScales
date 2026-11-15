@@ -311,6 +311,8 @@ export class Segmenter {
     const note = { onset: cur.onset, end, dur, frames: cur.frames.length, confirmed: cur.confirmed };
     // level trace, used later to find a soft re-articulation inside a merged repeated note
     if (!this.o.pitchless) note.levels = cur.frames.map((x) => [x.t, x.db]);
+    // every pitch reading, so a note that sounds far off can be looked at more closely
+    if (!this.o.pitchless) note.pitches = cur.frames.map((x) => [x.t, x.midi]);
     if (!this.o.pitchless) {
       const ms = mid.map((x) => x.midi);
       // vibrato: mean over the middle (whole cycles on average); otherwise the median

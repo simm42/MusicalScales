@@ -82,7 +82,7 @@ export function makeRun(result, seq, rhythm, when = Date.now(), noteName = null,
     // flags: 1 = unsteady, 2 = approximate (octave double stop)
     notes: result.perNote.map((p) => {
       const row = [p.cents ? r1(p.cents.filter((c) => c != null)[0] ?? null) : null, Math.round(p.intonation), Math.round(p.timing), STATUS[p.status] ?? 2, r1(p.timingDev != null ? p.timingDev * 100 : null)];
-      const flags = (p.unsteady ? 1 : 0) | (p.approx ? 2 : 0);
+      const flags = (p.unsteady ? 1 : 0) | (p.approx ? 2 : 0) | (p.heardShift ? 4 : 0) | (p.rechecked && !p.heardShift ? 8 : 0);
       const multi = p.cents && p.cents.length > 1;
       if (flags || multi) row.push(flags);
       if (multi) row.push(p.cents.map(r1));
@@ -112,6 +112,8 @@ export function runDetail(run, labels = null) {
     timingDev: n[4] == null ? null : n[4] / 100,
     unsteady: !!(n[5] & 1),
     approx: !!(n[5] & 2),
+    heardShift: n[5] & 4 ? 12 : 0, // (which harmonic is not kept)
+    rechecked: n[5] & 8 ? 'part' : null,
   }));
   const names = run.nl || labels;
   return {
