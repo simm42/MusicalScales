@@ -750,7 +750,8 @@ async function saveFile(text, name, type) {
   const file = typeof File === 'function' ? new File([text], name, { type }) : null;
   const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   if (touch && file && navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); return 'shared'; }
+    // the file only: a title or text would be saved as an extra .txt file by "Save to Files"
+    try { await navigator.share({ files: [file] }); return 'shared'; }
     catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; /* else fall back to a download */ }
   }
   const a = document.createElement('a');
