@@ -2,11 +2,13 @@
 // drives tuner colours, note colours in the score and the scoring curves.
 
 export const LEVELS = [
-  { name: 'Beginner',     fullCents: 15, zeroCents: 60, fullTiming: 0.15, zeroTiming: 0.60 },
-  { name: 'Elementary',   fullCents: 10, zeroCents: 45, fullTiming: 0.10, zeroTiming: 0.50 },
-  { name: 'Intermediate', fullCents: 7,  zeroCents: 35, fullTiming: 0.07, zeroTiming: 0.40 },
-  { name: 'Advanced',     fullCents: 5,  zeroCents: 25, fullTiming: 0.05, zeroTiming: 0.30 },
-  { name: 'Expert',       fullCents: 3,  zeroCents: 15, fullTiming: 0.03, zeroTiming: 0.20 },
+  // scrapeFree / scrapeFull: a bow-change scrape's size (see scrapeSize) below which it is
+  // not counted, and from which it counts as one whole error; in between, part of one
+  { name: 'Beginner',     fullCents: 15, zeroCents: 60, fullTiming: 0.15, zeroTiming: 0.60, scrapeFree: 2.5,  scrapeFull: 8 },
+  { name: 'Elementary',   fullCents: 10, zeroCents: 45, fullTiming: 0.10, zeroTiming: 0.50, scrapeFree: 1.2,  scrapeFull: 5 },
+  { name: 'Intermediate', fullCents: 7,  zeroCents: 35, fullTiming: 0.07, zeroTiming: 0.40, scrapeFree: 0.6,  scrapeFull: 3 },
+  { name: 'Advanced',     fullCents: 5,  zeroCents: 25, fullTiming: 0.05, zeroTiming: 0.30, scrapeFree: 0.3,  scrapeFull: 1.8 },
+  { name: 'Expert',       fullCents: 3,  zeroCents: 15, fullTiming: 0.03, zeroTiming: 0.20, scrapeFree: 0.12, scrapeFull: 1.0 },
 ];
 
 // Singers: pitch tolerances one and a half times as wide, timing a third wider
@@ -30,7 +32,24 @@ export function precisionAt(value, instrument = null) {
     zeroCents: lerp('zeroCents') * c,
     fullTiming: lerp('fullTiming') * tm,
     zeroTiming: lerp('zeroTiming') * tm,
+    scrapeFree: lerp('scrapeFree'),
+    scrapeFull: lerp('scrapeFull'),
   };
+}
+
+/**
+ * Size of a scrape: its length in tenths of a second times its loudness
+ * compared with the note it touches (1 = as loud). A 0.1 s scrape as loud as
+ * the note is 1; a quiet 0.05 s one much less.
+ */
+export function scrapeSize(dur, relDb = 0) {
+  return (dur / 0.1) * Math.min(2, Math.pow(10, Math.min(6, relDb) / 20));
+}
+
+/** How much of an error a scrape of this size is at a precision level: 0 … 1. */
+export function scrapeWeight(size, prec) {
+  if (!(size > prec.scrapeFree)) return 0;
+  return Math.min(1, (size - prec.scrapeFree) / (prec.scrapeFull - prec.scrapeFree));
 }
 
 /** 100 inside `full`, linear down to 0 at `zero`. */

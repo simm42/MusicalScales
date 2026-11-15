@@ -1021,6 +1021,7 @@ function captureMeta(sess, result, cap) {
     // the run's results in full, as shown in the summary
     result: result ? {
       total: r3(result.total, 1), intonation: r3(result.intonation, 1), timing: r3(result.timing, 1), penalty: result.penalty,
+      errors: r3(result.errors, 2), scrapes: (result.scrapes || []).map((x) => ({ onset: r3(x.onset, 3), dur: r3(x.dur, 3), relDb: r3(x.relDb, 1), size: r3(x.size, 2), weight: r3(x.weight, 2) })),
       missing: result.missing, wrong: result.wrong, bpm: r3(result.bpm, 1), globalOffset: result.globalOffset || null,
       precision: { level: settings.precision, ...precisionAt(settings.precision, settings.instrument) },
       notes: result.perNote.map((p) => {

@@ -78,3 +78,52 @@ test('octave steps in the exercise itself are recognised', () => {
   const octaves = buildSequence(buildExercise({ instrument: 'violin', type: 'dsBroken', key: 'G', range: '1', interval: '8ves' }));
   assert(hasOctaveSteps(octaves.events));
 });
+
+// ---------------------------------------------------------------- bow-change scrapes as errors
+import { scrapeSize, scrapeWeight } from '../js/precision.js';
+import { scoresAtLevels } from '../js/scoring.js';
+import { makeRun, recordRun, atLevel, lastRuns } from '../js/results.js';
+
+test('scrapes count by length and loudness: free for beginners, a whole error for experts', () => {
+  const s = scrapeSize(0.1, 0); // 0.1 s, as loud as the note
+  eq(s, 1);
+  eq(scrapeWeight(s, precisionAt(0)), 0);
+  eq(scrapeWeight(s, precisionAt(4)), 1);
+  assert(scrapeWeight(s, precisionAt(2)) > 0 && scrapeWeight(s, precisionAt(2)) < scrapeWeight(s, precisionAt(3)), 'stricter levels count more');
+  // quieter and shorter counts less
+  assert(scrapeSize(0.05, -12) < 0.2);
+  eq(scrapeWeight(scrapeSize(0.05, -12), precisionAt(3)), 0);
+  // even a beginner pays for a long, loud scrape
+  assert(scrapeWeight(scrapeSize(0.19, 6), precisionAt(0)) > 0);
+});
+
+test('scrapes are found with their loudness, scored, and kept per level with the run', () => {
+  const seq = cello('crotchet');
+  const n = heard(seq);
+  const loud = note(n[3].end - 0.06, n[3].end + 0.06, 51); // 0.12 s, as loud as the notes
+  n.splice(4, 0, loud);
+  const { notes: kept, alignment, scrapes } = refineNotes(n, seq);
+  eq(scrapes.length, 1);
+  assert(Math.abs(scrapes[0].relDb) < 0.5, 'as loud as the note');
+  const at = (lv) => scoreRun({ expected: seq.events, detected: kept, alignment, prec: precisionAt(lv), scrapes });
+  const beg = at(0), exp = at(4);
+  eq([beg.errors, beg.missing, beg.wrong], [0, 0, 0]);
+  eq(exp.errors, 1);
+  assert(exp.total < beg.total);
+  // stored with the run: errors per level
+  const lv = scoresAtLevels(exp, undefined, precisionAt);
+  eq(lv.map((l) => l[3]), [0, 0, lv[2][3], lv[3][3], 1]);
+  const store = {};
+  recordRun(store, 'x', { ...makeRun(exp, seq, 'crotchet', 1000), lv }, 2000);
+  const run = lastRuns(store, 'x')[0];
+  eq([atLevel(run, 0).e, atLevel(run, 4).e], [0, 1]);
+  // older runs without errors per level still show their one count
+  eq(atLevel({ t: 80, i: 80, ti: 80, e: 2, lv: [[1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1], [1, 1, 1]] }, 3).e, 2);
+});
+
+test('singers’ consonants are not scrapes', () => {
+  const seq = cello('crotchet');
+  const n = heard(seq);
+  n.splice(4, 0, note(n[3].end - 0.06, n[3].end + 0.06, 51));
+  eq(refineNotes(n, seq, { scrapes: false }).scrapes.length, 0);
+});

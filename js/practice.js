@@ -63,20 +63,39 @@ export function dropOctaveBlips(notes, { maxDur = 0.25, maxGap = 0.08 } = {}) {
  * typical note that touch a longer note. "Short" is judged against the run
  * itself, so fast playing keeps its short notes.
  */
-export function dropShortBlips(notes, { frac = 0.3, cap = 0.2, maxGap = 0.1 } = {}) {
+export function dropShortBlips(notes, opts = {}) { return findShortBlips(notes, opts).kept; }
+
+/**
+ * As dropShortBlips, also returning what was dropped as scrapes: when, how
+ * long, and how loud compared with the note it touched (dB, 0 = as loud).
+ */
+export function findShortBlips(notes, { frac = 0.3, cap = 0.2, maxGap = 0.1 } = {}) {
   const durs = notes.filter((d) => d.dur >= 0.15).map((d) => d.dur).sort((a, b) => a - b);
-  if (durs.length < 4) return notes;
+  if (durs.length < 4) return { kept: notes, scrapes: [] };
   const maxDur = Math.min(cap, frac * durs[Math.floor(durs.length / 2)]);
-  return notes.filter((d, i) => {
-    if (d.dur >= maxDur) return true;
-    for (const j of [i - 1, i + 1]) {
-      const n = notes[j];
-      if (!n || n.dur <= d.dur) continue;
-      const gap = j < i ? d.onset - n.end : n.onset - d.end;
-      if (gap <= maxGap) return false;
+  const kept = [], scrapes = [];
+  notes.forEach((d, i) => {
+    let host = null;
+    if (d.dur < maxDur) {
+      for (const j of [i - 1, i + 1]) {
+        const n = notes[j];
+        if (!n || n.dur <= d.dur) continue;
+        const gap = j < i ? d.onset - n.end : n.onset - d.end;
+        if (gap <= maxGap && (!host || n.dur > host.dur)) host = n;
+      }
     }
-    return true;
+    if (!host) { kept.push(d); return; }
+    scrapes.push({ onset: d.onset, dur: d.dur, relDb: relLevel(d, host) });
   });
+  return { kept, scrapes };
+}
+
+/** Loudest moment of a blip compared with the typical level of the note it touches (dB). */
+function relLevel(d, host) {
+  const peak = (d.levels || []).reduce((m, x) => Math.max(m, x[1]), -Infinity);
+  const ref = (host.levels || []).map((x) => x[1]).sort((a, b) => a - b);
+  if (!isFinite(peak) || !ref.length) return 0;
+  return peak - ref[Math.floor(ref.length / 2)];
 }
 
 /** Does the exercise itself step an octave from one note to the next (broken octaves)? */
@@ -175,12 +194,17 @@ export function splitByRhythm(notes, events, alignment, { tol = 0.35 } = {}) {
  * and bow-change scrapes, align with the exercise, split repeats that ran
  * together, align again. Used live and when re-analysing a recording.
  */
-export function refineNotes(notes, seq, { doubleStop = false, cost } = {}) {
+export function refineNotes(notes, seq, { doubleStop = false, cost, scrapes: keepScrapes = true } = {}) {
   let out = notes;
+  let scrapes = [];
   if (!doubleStop) {
     // longer octave slips can go too, unless the exercise really steps by octaves
+    // (those are the detector's mistakes, not the player's: not counted)
     out = dropOctaveBlips(out, { maxDur: hasOctaveSteps(seq.events) ? 0.25 : 0.45 });
-    out = dropShortBlips(out);
+    const b = findShortBlips(out);
+    out = b.kept;
+    // bow-change scrapes count as (part) errors, more strictly at higher precision; not for singers (consonants)
+    if (keepScrapes) scrapes = b.scrapes;
   }
   const c = doubleStop ? cost : scaleCost(seq.events);
   let alignment = align(out, seq.events, c);
@@ -190,7 +214,7 @@ export function refineNotes(notes, seq, { doubleStop = false, cost } = {}) {
     const byRhythm = splitByRhythm(out, seq.events, alignment);
     if (byRhythm) { out = byRhythm; alignment = align(out, seq.events, c); }
   }
-  return { notes: out, alignment };
+  return { notes: out, alignment, scrapes };
 }
 
 /**
@@ -426,13 +450,14 @@ export class PracticeSession {
     const { seq, prec } = this.o;
     const a4 = this.a4;
     const cost = this.doubleStop ? doubleStopCost(a4) : undefined;
-    const refined = refineNotes(notes, seq, { doubleStop: this.doubleStop, cost });
+    const refined = refineNotes(notes, seq, { doubleStop: this.doubleStop, cost, scrapes: this.o.settings.instrument !== 'voice' });
     notes.splice(0, notes.length, ...refined.notes); // in place: the capture refers to these notes by index
     const alignment = refined.alignment;
     const result = scoreRun({
       expected: seq.events, detected: notes, alignment, prec,
       metronome: this.t0 != null ? { t0: this.t0, spb: 60 / this.o.settings.bpm } : null,
       doubleStopEval: this.doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
+      scrapes: refined.scrapes,
     });
     result.noiseFloor = this.noiseFloor;
     if (!this.doubleStop) result.globalOffset = detectGlobalOffset(notes, seq.events);
@@ -472,7 +497,7 @@ export function analyseRecording(o) {
   for (const f of frames) segmenter.push(f); // same as live: calibration frames are analysed too
   segmenter.flush();
   const notes = segmenter.notes;
-  const refined = refineNotes(notes, seq, { doubleStop, cost: doubleStop ? doubleStopCost(a4) : undefined });
+  const refined = refineNotes(notes, seq, { doubleStop, cost: doubleStop ? doubleStopCost(a4) : undefined, scrapes: s.instrument !== 'voice' });
   notes.splice(0, notes.length, ...refined.notes);
   const alignment = refined.alignment;
   const prec = precisionAt(s.precision, s.instrument);
@@ -480,6 +505,7 @@ export function analyseRecording(o) {
     expected: seq.events, detected: notes, alignment, prec,
     metronome: metronomeT0 != null ? { t0: metronomeT0, spb: 60 / s.bpm } : null,
     doubleStopEval: doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
+    scrapes: refined.scrapes,
   });
   if (!doubleStop) result.globalOffset = detectGlobalOffset(notes, seq.events);
   const gate = segmenter.gate;

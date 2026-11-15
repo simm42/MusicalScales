@@ -1,7 +1,7 @@
 // Scoring: intonation 75 %, timing 25 %, minus a penalty for each extra note.
 // No DOM access.
 
-import { linearScore } from './precision.js';
+import { linearScore, scrapeSize, scrapeWeight } from './precision.js';
 
 export const SCORING = { intonationWeight: 0.75, timingWeight: 0.25, extraPenalty: 3, wrongCents: 50 };
 
@@ -17,7 +17,7 @@ const median = (a) => { const s = a.slice().sort((x, y) => x - y); const n = s.l
  * @param {(note, event)=>{cents:(number|null)[], approx?:boolean}} [o.doubleStopEval]
  */
 export function scoreRun(o) {
-  const { expected, detected, alignment, prec, metronome = null, doubleStopEval = null } = o;
+  const { expected, detected, alignment, prec, metronome = null, doubleStopEval = null, scrapes = [] } = o;
   const per = alignment.pairs.map(({ event, note }) => {
     const e = expected[event];
     const row = { event, note, name: e.notes, status: 'missing', cents: null, intonation: 0, timing: 0 };
@@ -69,23 +69,36 @@ export function scoreRun(o) {
 
   // ---- extra notes (only while the exercise was being played)
   let extras = [];
+  let inPlay = () => false;
   if (matched.length) {
     const first = matched[0].onset - 0.3;
     const lastNote = detected[matched[matched.length - 1].note];
     const last = lastNote.end + 0.3;
-    extras = alignment.extras.filter((i) => detected[i].onset >= first && detected[i].onset <= last);
+    inPlay = (t) => t >= first && t <= last;
+    extras = alignment.extras.filter((i) => inPlay(detected[i].onset));
   }
+  // bow-change scrapes: part errors, by size and the precision level
+  const scr = scrapes.filter((x) => inPlay(x.onset)).map((x) => {
+    const size = scrapeSize(x.dur, x.relDb);
+    return { onset: x.onset, dur: x.dur, relDb: x.relDb, size, weight: scrapeWeight(size, prec) };
+  });
+  const scrapeErrors = scr.reduce((a, x) => a + x.weight, 0);
 
   const n = per.length || 1;
   const intonation = per.reduce((a, r) => a + r.intonation, 0) / n;
   const timing = per.reduce((a, r) => a + r.timing, 0) / n;
-  const penalty = SCORING.extraPenalty * extras.length;
+  const extraPenalty = SCORING.extraPenalty * extras.length;
+  const penalty = extraPenalty + SCORING.extraPenalty * scrapeErrors;
   const total = Math.max(0, Math.min(100, SCORING.intonationWeight * intonation + SCORING.timingWeight * timing - penalty));
   return {
     perNote: per,
     intonation,
     timing,
     extras: extras.map((i) => detected[i]),
+    scrapes: scr,
+    // errors: extra notes, plus scrapes counted as part errors at this level
+    errors: extras.length + scrapeErrors,
+    extraPenalty,
     penalty,
     total,
     missing: per.filter((r) => r.status === 'missing').length,
@@ -97,7 +110,8 @@ export function scoreRun(o) {
 /**
  * The same run re-scored at each of the five precision levels (Beginner …
  * Expert), so results stay comparable whatever the slider is set to.
- * @returns {Array<[total, intonation, timing]>} index = precision level 0–4
+ * Scrapes count more at stricter levels, so the errors are worked out per level too.
+ * @returns {Array<[total, intonation, timing, errors]>} index = precision level 0–4
  */
 export function scoresAtLevels(result, levels = [0, 1, 2, 3, 4], precisionAt) {
   return levels.map((lv) => {
@@ -114,7 +128,11 @@ export function scoresAtLevels(result, levels = [0, 1, 2, 3, 4], precisionAt) {
     const n = result.perNote.length || 1;
     inton /= n;
     timing /= n;
-    const total = Math.max(0, Math.min(100, SCORING.intonationWeight * inton + SCORING.timingWeight * timing - (result.penalty || 0)));
-    return [Math.round(total * 10) / 10, Math.round(inton * 10) / 10, Math.round(timing * 10) / 10];
+    const scrapeErrors = (result.scrapes || []).reduce((a, x) => a + scrapeWeight(x.size ?? scrapeSize(x.dur, x.relDb), p), 0);
+    const base = result.extraPenalty ?? (result.scrapes ? SCORING.extraPenalty * (result.extras || []).length : result.penalty || 0);
+    const penalty = base + SCORING.extraPenalty * scrapeErrors;
+    const errors = result.extras ? Math.round((result.extras.length + scrapeErrors) * 10) / 10 : null;
+    const total = Math.max(0, Math.min(100, SCORING.intonationWeight * inton + SCORING.timingWeight * timing - penalty));
+    return [Math.round(total * 10) / 10, Math.round(inton * 10) / 10, Math.round(timing * 10) / 10, errors];
   });
 }

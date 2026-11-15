@@ -7,9 +7,10 @@
 //   months – day averages older than a year, averaged per month
 //
 // Scores depend on the precision level, so every record keeps total,
-// intonation and timing for all five levels in `lv` (lv[level] = [t, i, ti]);
-// errors (extra notes) don't depend on precision. Queries take the level to
-// show. No DOM access (localStorage only in load/save) – the rest is pure.
+// intonation, timing and errors for all five levels in `lv`
+// (lv[level] = [t, i, ti, e]; errors are extra notes plus bow-change scrapes,
+// which count more at stricter levels). Older records have no per-level
+// errors and use `e`. Queries take the level to show. No DOM access (localStorage only in load/save) – the rest is pure.
 
 const KEY = 'scales.results.v1';
 const DAY = 86400000;
@@ -36,15 +37,15 @@ const STATUS_NAME = ['ok', 'wrong', 'missing'];
 
 /** Scores per level for any record (older records without `lv` use their one set of scores). */
 export function levelsOf(x) {
-  if (Array.isArray(x.lv) && x.lv.length === LEVELS) return x.lv;
-  const one = [x.t ?? null, x.i ?? null, x.ti ?? null];
+  if (Array.isArray(x.lv) && x.lv.length === LEVELS) return x.lv.map((l) => (l.length >= 4 && l[3] != null ? l : [l[0], l[1], l[2], x.e ?? null]));
+  const one = [x.t ?? null, x.i ?? null, x.ti ?? null, x.e ?? null];
   return Array.from({ length: LEVELS }, () => one.slice());
 }
 
 /** A record's scores at one precision level: {t, i, ti, e}. */
 export function atLevel(x, level = 2) {
-  const [t, i, ti] = levelsOf(x)[Math.max(0, Math.min(LEVELS - 1, Math.round(level)))];
-  return { t, i, ti, e: x.e ?? null };
+  const [t, i, ti, e] = levelsOf(x)[Math.max(0, Math.min(LEVELS - 1, Math.round(level)))];
+  return { t, i, ti, e: e ?? x.e ?? null };
 }
 
 /**
@@ -72,7 +73,7 @@ export function makeRun(result, seq, rhythm, when = Date.now(), noteName = null,
     t: r1(result.total),
     i: r1(result.intonation),
     ti: r1(result.timing),
-    e: result.extras.length,
+    e: r1(result.errors ?? result.extras.length),
     missing: result.missing,
     wrong: result.wrong,
     steps: sum.map((s, k) => (cnt[k] ? r1(s / cnt[k]) : null)),
@@ -117,7 +118,8 @@ export function runDetail(run, labels = null) {
     result: {
       perNote,
       total: run.t, intonation: run.i, timing: run.ti,
-      extras: new Array(run.e || 0).fill(null),
+      extras: new Array(Math.round(run.e || 0)).fill(null),
+      errors: run.e ?? null,
       penalty: run.pen ?? null,
       missing: run.missing ?? perNote.filter((p) => p.status === 'missing').length,
       wrong: run.wrong ?? perNote.filter((p) => p.status === 'wrong').length,
@@ -135,8 +137,9 @@ function mergeInto(agg, x) {
   const xn = x.n || 1;
   const an = agg.n || 0;
   const xl = levelsOf(x);
-  if (!agg.lv) agg.lv = Array.from({ length: LEVELS }, () => [null, null, null]);
-  for (let L = 0; L < LEVELS; L++) for (let k = 0; k < 3; k++) {
+  if (!agg.lv) agg.lv = Array.from({ length: LEVELS }, () => [null, null, null, null]);
+  for (let L = 0; L < LEVELS; L++) for (let k = 0; k < 4; k++) {
+    if (agg.lv[L].length < 4) agg.lv[L].push(null);
     const xv = xl[L][k];
     if (xv == null) continue;
     const av = agg.lv[L][k];

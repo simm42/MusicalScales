@@ -39,6 +39,19 @@ function chart(result, prec) {
   return s + '</svg></div>';
 }
 
+/** Whole numbers as they are, part errors to one decimal ("1.4"). */
+const fmtErrors = (x) => (x == null ? '–' : Math.abs(x - Math.round(x)) < 0.05 ? String(Math.round(x)) : x.toFixed(1));
+
+function scrapeNote(result, prec) {
+  const s = result.scrapes;
+  if (!s || !s.length) return '';
+  const counted = s.reduce((a, x) => a + x.weight, 0);
+  const extras = result.extras.length;
+  return `<p class="muted small">${s.length} bow-change scrape${s.length === 1 ? '' : 's'} heard${counted > 0.05
+    ? ` – counted as ${fmtErrors(counted)} error${Math.abs(counted - 1) < 0.05 ? '' : 's'} at ${esc(prec.name)} precision (longer and louder scrapes count more)`
+    : ` – too small to count at ${esc(prec.name)} precision`}${extras ? `; ${extras} extra note${extras === 1 ? '' : 's'}` : ''}.</p>`;
+}
+
 function offsetNotice(result) {
   const g = result.globalOffset;
   if (!g) return '';
@@ -83,9 +96,10 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
         <div class="stat total"><div class="v">${r0(result.total)}</div><div class="l">Total / 100</div></div>
         <div class="stat"><div class="v">${r0(result.intonation)}</div><div class="l">Intonation (75%)</div></div>
         <div class="stat"><div class="v">${r0(result.timing)}</div><div class="l">Timing (25%)</div></div>
-        <div class="stat"><div class="v">${result.extras.length}</div><div class="l">Errors${result.penalty != null ? ` (−${r0(result.penalty)})` : ''}</div></div>
+        <div class="stat"><div class="v">${fmtErrors(result.errors ?? result.extras.length)}</div><div class="l">Errors${result.penalty != null ? ` (−${fmtErrors(result.penalty)})` : ''}</div></div>
       </div>
       ${offsetNotice(result)}
+      ${scrapeNote(result, prec)}
       <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents)${vib} · ${result.missing} missing · ${result.wrong} wrong${tempo}${timed}</p>
       ${chart(result, prec)}
       <div class="table-wrap"><table class="notes">
