@@ -71,7 +71,7 @@ button { cursor: pointer; }
 }
 .tabs button[aria-selected="true"], .seg button[aria-selected="true"] { background: var(--surface); color: var(--fg); box-shadow: var(--shadow); }
 .spacer { flex: 1; }
-.icon-btn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 12px; }
+.icon-btn { border: 1px solid var(--border); background: var(--surface); border-radius: 999px; padding: 6px 12px; white-space: nowrap; flex: none; }
 
 /* ---------- layout ---------- */
 main { max-width: 1200px; margin: 0 auto; padding: 16px max(16px, var(--safe-r)) max(16px, var(--safe-b)) max(16px, var(--safe-l)); }
@@ -334,3 +334,16 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 }
 
 .chip .note-icon { display: block; height: 20px; width: auto; margin: -1px 0; }
+
+/* ---------- install as an app ---------- */
+.install-panel {
+  max-width: min(520px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow: auto;
+  border: 1px solid var(--border); border-radius: 14px; background: var(--surface); color: var(--fg);
+  padding: 18px 20px; box-shadow: 0 10px 40px rgba(0, 0, 0, .35);
+}
+.install-panel::backdrop { background: rgba(0, 0, 0, .45); }
+.install-panel h2 { font-size: 18px; margin: 0 0 6px; }
+.install-panel ol { padding-left: 22px; margin: 6px 0 10px; }
+.install-panel li { margin: 4px 0; }
+.install-panel .mono { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.install-panel .row { margin-top: 10px; justify-content: flex-end; }

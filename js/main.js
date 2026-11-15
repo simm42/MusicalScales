@@ -29,6 +29,7 @@ import { CalibrationWizard } from './ui/calibrationWizard.js';
 import { MetronomeCard } from './ui/metronomeCard.js';
 import { noteIcon, RHYTHM_ICONS } from './ui/noteIcons.js';
 import { startAnalytics, ANALYTICS_ON } from './analytics.js';
+import { setupPwa } from './pwa.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
 import {
   loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings,
@@ -1089,6 +1090,7 @@ function setupDebug() {
 // ---------------------------------------------------------------- start up
 function init() {
   startAnalytics();
+  setupPwa();
   if (ANALYTICS_ON) $('privacyNote').textContent = 'Your sound, scores and settings never leave your device. Anonymous page visits are counted (no cookies, no personal data) to see how the site is used.';
   setupDebug();
   applyTheme(theme);

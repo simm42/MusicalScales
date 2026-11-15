@@ -10,6 +10,13 @@
   // apply saved theme before paint
   try { const t = localStorage.getItem('scales.theme'); if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t; } catch (e) {}
 </script>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<meta name="theme-color" content="#6b3fa0">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Scales">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="css/styles.css">
 <script src="vendor/vexflow.js" defer></script>
 <script type="module" src="js/main.js"></script>
@@ -24,6 +31,7 @@
     <button role="tab" id="tabBtnTuner" aria-selected="false" data-tab="tuner">Tuner</button>
   </nav>
   <div class="spacer"></div>
+  <button class="icon-btn" id="installBtn" title="Install as an app" aria-label="Install as an app" hidden>⬇<span class="theme-label"> Install</span></button>
   <button class="icon-btn" id="themeBtn" title="Colour theme">◐ Auto</button>
 </header>
 
@@ -211,5 +219,29 @@
 
   <p class="muted small footer-note"><span id="privacyNote">Everything happens in your browser – no sound or data is sent anywhere.</span> Pitches are measured in equal temperament against the A you set; notes tuned as pure fifths can read a few cents away from equal temperament.</p>
 </main>
+<dialog class="install-panel" id="installPanel" aria-labelledby="installTitle">
+  <h2 id="installTitle">Install Scale Practice</h2>
+  <p class="muted">As an app it opens full-screen from your home screen or desktop, and works without a connection.</p>
+  <div id="installPrompt" hidden>
+    <button class="btn primary" type="button" id="installNow">⬇ Install now</button>
+  </div>
+  <div id="installIOS" hidden>
+    <p>On iPhone and iPad, in <b>Safari</b>:</p>
+    <ol>
+      <li>Tap the <b>Share</b> button <span aria-hidden="true">(□ with an arrow up)</span> – at the bottom of the screen on iPhone, at the top on iPad.</li>
+      <li>Scroll down and tap <b>Add to Home Screen</b>.</li>
+      <li>Tap <b>Add</b>. Scale Practice is now on your home screen.</li>
+    </ol>
+    <p class="small muted">In Chrome on iPhone, the Share button is at the top right, next to the address.</p>
+  </div>
+  <div id="installOther" hidden>
+    <p>Open this page in <b>Chrome</b> or <b>Edge</b> (or Safari on iPhone and iPad) to install it. On Android, the browser menu <b>⋮</b> also has <b>Install app</b> or <b>Add to Home screen</b>.</p>
+  </div>
+  <div id="installDone" hidden><p>✓ You are using the installed app.</p></div>
+  <p class="small muted">Your syllabus, results and settings are kept on each device. On iPhone and iPad the installed app keeps its own copy, separate from Safari: use <b>Export</b> in Config in Safari and <b>Import</b> in the app to bring them across.</p>
+  <p class="small">Link to these steps, to send to students: <span id="installLink" class="mono"></span>
+    <button class="btn" type="button" id="installCopy">Copy link</button> <span id="installCopyMsg" class="muted small" role="status"></span></p>
+  <div class="row"><button class="btn" type="button" id="installClose">Close</button></div>
+</dialog>
 </body>
 </html>

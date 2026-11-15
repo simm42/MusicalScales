@@ -46,6 +46,18 @@ Then turn on Pages as in step 3 above.
 
 To update the site later, change the files and push again, or upload them again on the website.
 
+## Installing it as an app (phones, tablets, computers)
+
+The site is an installable web app: it gets a home-screen icon, opens full-screen and works offline after the first visit.
+
+- **Android, and Chrome or Edge on a computer:** tap **⬇ Install** at the top of the page, then **Install now**.
+- **iPhone and iPad:** in Safari, tap **Share** → **Add to Home Screen** → **Add**. The **⬇** button shows these steps.
+- **A link to send to students:** add `#install` to the address, for example `https://simm42.github.io/MusicalScales/#install`. It opens the page with the install steps showing.
+
+When online, the app always loads the newest version. The copy for offline use is updated at the same time. If you add a new file to the app, add it to `APP_FILES` in `sw.js`; a test in `tests/` checks that nothing the app loads is missing from that list.
+
+On iPhone and iPad the installed app keeps its own storage, separate from Safari, so use the export in Config to bring a syllabus and results across.
+
 ## Counting visits (optional, free)
 
 The site can count anonymous page visits with **Cloudflare Web Analytics** (free, no cookies, no personal data, so no consent banner is needed):
