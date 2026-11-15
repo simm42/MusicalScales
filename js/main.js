@@ -938,7 +938,7 @@ function setTab(tab) {
         setStudentName: (n) => { prefs.studentName = n; savePrefs(); $('studentName').value = n; },
       });
     }
-    resultsPage.show();
+    resultsPage.show(activeId); // open on the syllabus exercise being practised
   }
   if (tab === 'tuner') {
     stopSession(true);

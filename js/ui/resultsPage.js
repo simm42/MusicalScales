@@ -109,9 +109,11 @@ export class ResultsPage {
 
   invalidate() { this.dirty = true; }
 
-  show() {
+  /** @param {string} [prefer] syllabus item to open on (the one being practised) */
+  show(prefer = null) {
     const list = this.getList();
     const ids = new Set(list.map((x) => x.id));
+    if (prefer && ids.has(prefer)) this.current = prefer;
     if (this.current !== 'summary' && !ids.has(this.current)) this.current = 'summary';
     this.sel.innerHTML = '';
     this.sel.add(new Option('Summary – whole syllabus', 'summary'));
