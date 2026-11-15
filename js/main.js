@@ -115,6 +115,8 @@ function syncForm() {
   sel('slur').closest('.field').hidden = isVoice();
   $('slurNote').hidden = isVoice();
   $('f-solfege').hidden = !isVoice();
+  $('f-solfegeLetters').hidden = !isVoice();
+  sel('solfegeLetters').checked = !!s.solfegeLetters;
   fillSelect(sel('solfege'), Object.entries(SOLFEGE_SYSTEMS).map(([value, label]) => ({ value, label })), s.solfege);
   // notes per bow when the Practice page's "Slurred" switch is on
   const per = isBowed(s.instrument) ? 'to a bow' : 'to a slur';
@@ -313,7 +315,7 @@ function drawScore() {
   rendered = { arrowTargets: [] };
   if (!window.Vex) { scoreEl.textContent = ''; return; }
   try {
-    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables });
+    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables, letters: !!syllables && settings.solfegeLetters });
     else if (settings.display === 'keysig') rendered = renderKeySignature(scoreEl, exercise);
     else scoreEl.innerHTML = '';
   } catch (err) {

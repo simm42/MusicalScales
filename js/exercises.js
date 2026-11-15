@@ -52,6 +52,7 @@ export const DEFAULT_SETTINGS = {
   vibrato: false,
   hint: false,
   solfege: 'movable', // singing: 'movable' (minor on Do), 'movableLa' (minor on La) or 'fixed'
+  solfegeLetters: false, // singing: letter names under the sol-fa in the score
 };
 
 export const SOLFEGE_SYSTEMS = { movable: 'Movable Do (minor keys on Do)', movableLa: 'Movable Do (minor keys on La)', fixed: 'Fixed Do (C is Do)' };
@@ -59,7 +60,7 @@ export const SOLFEGE_SYSTEMS = { movable: 'Movable Do (minor keys on Do)', movab
 // What belongs to a syllabus item (and share links) …
 export const EXERCISE_FIELDS = ['instrument', 'type', 'mode', 'key', 'start', 'form', 'interval', 'range', 'octaveUp', 'slur', 'repeatTop'];
 // … and what is a global practice/display/listening preference.
-export const GLOBAL_FIELDS = ['rhythm', 'slurred', 'display', 'clefMode', 'hint', 'precision', 'vibrato', 'metronome', 'bpm', 'solfege'];
+export const GLOBAL_FIELDS = ['rhythm', 'slurred', 'display', 'clefMode', 'hint', 'precision', 'vibrato', 'metronome', 'bpm', 'solfege', 'solfegeLetters'];
 
 /** Notes per bow actually used: 0 when playing separate bows. */
 export function slurGroup(s) {
@@ -116,6 +117,7 @@ export function normalise(input) {
   s.bpm = Math.min(200, Math.max(30, Number(s.bpm) || 60));
   s.precision = Math.round(Math.min(4, Math.max(0, Number(s.precision) || 0)));
   if (!SOLFEGE_SYSTEMS[s.solfege]) s.solfege = 'movable';
+  s.solfegeLetters = !!s.solfegeLetters;
   return s;
 }
 
