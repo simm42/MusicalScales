@@ -76,7 +76,8 @@ let syllables = null; // sol-fa syllable per note when singing
 const engine = new AudioEngine();
 const player = new Player();
 const meter = new Meter($('liveTuner'));
-const DEBUG_MODE = new URLSearchParams(location.search).get('debug'); // 'synth' | 'capture' | other
+// ?debug=synth | capture in the address, or "Test mode" in Config (the installed app has no address bar)
+const DEBUG_MODE = new URLSearchParams(location.search).get('debug') ?? (prefs.testMode ? 'capture' : null);
 const DEBUG = DEBUG_MODE != null;
 
 const a4 = () => Math.min(446, Math.max(415, Number(prefs.a4) || 440));
@@ -745,9 +746,9 @@ $('exportBtn').addEventListener('click', () => {
 });
 
 // ---------------------------------------------------------------- move to another device (everything in one file)
-/** Save a file: the share sheet on phones (Save to Files, AirDrop, email…), else a download. */
-async function saveFile(text, name, type) {
-  const file = typeof File === 'function' ? new File([text], name, { type }) : null;
+/** Save a file (text or Blob): the share sheet on phones (Save to Files, AirDrop, email…), else a download. */
+async function saveFile(data, name, type) {
+  const file = typeof File === 'function' ? new File([data], name, { type }) : null;
   const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   if (touch && file && navigator.canShare && navigator.canShare({ files: [file] })) {
     // the file only: a title or text would be saved as an extra .txt file by "Save to Files"
@@ -755,11 +756,11 @@ async function saveFile(text, name, type) {
     catch (e) { if (e && e.name === 'AbortError') return 'cancelled'; /* else fall back to a download */ }
   }
   const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([text], { type }));
+  a.href = URL.createObjectURL(data instanceof Blob ? data : new Blob([data], { type }));
   a.download = name;
   document.body.appendChild(a);
   a.click();
-  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
   return 'downloaded';
 }
 
@@ -1067,7 +1068,7 @@ function offerCapture(sess, result) {
   const st = tr && tr.settings;
   const processing = st ? ['echoCancellation', 'noiseSuppression', 'autoGainControl'].filter((k) => st[k] === true) : [];
   box.innerHTML = `<div class="field"><label for="d-notes">What did you do? (optional)</label><textarea id="d-notes" rows="2" style="width:100%" placeholder="e.g. iPhone playing the recording 1 m from the webcam, calibrated first"></textarea></div>
-    <p><button type="button" class="btn primary" id="d-download">⬇ Download recording</button></p>
+    <p><button type="button" class="btn primary" id="d-download">⬇ Save recording</button></p>
     <p class="small muted">${(cap.samples.length / cap.sampleRate).toFixed(1)} s at ${cap.sampleRate} Hz · loudest sample ${(20 * Math.log10(peak + 1e-9)).toFixed(1)} dBFS${clipped ? ` · ⚠ ${clipped} samples clipped – move a little further from the microphone` : ''}${tr ? ` · microphone: ${esc(tr.label || 'unnamed')}` : ''}${processing.length ? ` · ⚠ the browser left ${processing.join(', ')} switched on` : ''}.
     The file contains this recording, the exercise settings, the score and the app's listening details – nothing else.</p>`;
   $('d-download').addEventListener('click', () => {
@@ -1077,12 +1078,7 @@ function offerCapture(sess, result) {
     const stamp = meta.created.replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
     const s = settings;
     const name = `scale-capture-${s.instrument}-${s.type}-${(s.type === 'chromatic' || s.type === 'dim7' ? s.start : s.key).replace('#', 's')}-${stamp}.wav`;
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    saveFile(blob, name, 'audio/wav'); // the share sheet on phones: works in the installed app too
   });
 }
 
@@ -1146,6 +1142,14 @@ function warmMic() {
   });
 }
 engine.setKeepMic(keepMic());
+
+// test mode from Config: the page reloads so that the test tools are set up
+$('o-testMode').checked = !!prefs.testMode;
+$('o-testMode').addEventListener('change', () => {
+  prefs.testMode = $('o-testMode').checked;
+  savePrefs();
+  location.replace(location.pathname + location.search);
+});
 $('o-keepMic').checked = keepMic();
 $('o-keepMic').addEventListener('change', () => {
   prefs.keepMic = $('o-keepMic').checked;
