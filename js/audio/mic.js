@@ -2,6 +2,7 @@
 // analysis worker → frames delivered to the page. Everything stays local.
 
 const HOP = 512;
+const STALL_MS = 3000; // no sound analysed for this long: the audio has stopped
 
 export class MicError extends Error {
   constructor(kind, message) { super(message); this.kind = kind; }
@@ -43,7 +44,9 @@ export class AudioEngine {
   /** The held microphone stream, if it is still live. */
   heldStream() {
     const s = this.held;
-    return s && s.getAudioTracks().some((t) => t.readyState === 'live') ? s : null;
+    // iOS silences ("mutes") the microphone while the app is in the background,
+    // but the track still says live: a muted track sends nothing
+    return s && s.getAudioTracks().some((t) => t.readyState === 'live' && !t.muted) ? s : null;
   }
 
   /** A live microphone stream: the held one, or a new one (asks permission the first time). */
@@ -55,7 +58,12 @@ export class AudioEngine {
     if (this.keepMic) {
       this.held = stream;
       // the system can end it (a phone call, another app taking the microphone): open again when needed
-      stream.getAudioTracks().forEach((t) => t.addEventListener('ended', () => { if (this.held === stream) this.held = null; }));
+      const drop = () => {
+        if (this.held !== stream) return;
+        this.held = null;
+        if (this.stream !== stream) stream.getTracks().forEach((t) => t.stop()); // in use: stop() closes it
+      };
+      stream.getAudioTracks().forEach((t) => { t.addEventListener('ended', drop); t.addEventListener('mute', drop); });
     }
     return stream;
   }
@@ -74,6 +82,17 @@ export class AudioEngine {
     if (this.running && this.stream === this.held) { this.releaseWhenStopped = true; return; }
     if (this.held) this.held.getTracks().forEach((t) => t.stop());
     this.held = null;
+  }
+
+  /**
+   * The app went into the background. iOS silences the microphone and pauses
+   * this app's audio; a fresh microphone request on return wakes it again.
+   * Call after stopping anything that is listening.
+   */
+  sleep() {
+    if (this.held && this.stream !== this.held) this.held.getTracks().forEach((t) => t.stop());
+    if (this.stream !== this.held) this.held = null;
+    this.slept = true;
   }
 
   setKeepMic(on) {
@@ -98,6 +117,15 @@ export class AudioEngine {
    */
   unlock(sessionType = null) {
     if (sessionType) this.setSessionType(sessionType);
+    // iOS leaves the context "interrupted" after the app was in the background; one
+    // that stopped delivering sound is not to be trusted either: start a new one
+    // (after the app was in the background, too: iOS may not say so until later)
+    const stale = this.ctx && (this.ctx.state === 'closed' || this.ctx.state === 'interrupted' || this.stalled || this.slept);
+    if (stale && !this.running) {
+      try { if (this.ctx.state !== 'closed') this.ctx.close(); } catch { /* ignore */ }
+      this.ctx = null;
+    }
+    if (!this.running) { this.stalled = false; this.slept = false; }
     if (!this.ctx) {
       const AC = window.AudioContext || window.webkitAudioContext;
       if (!AC) return;
@@ -198,6 +226,7 @@ export class AudioEngine {
 
     this.worker = new Worker(new URL('./pitch-worker.js', import.meta.url), { type: 'module' });
     this.worker.onmessage = (e) => {
+      if (e.data.type === 'frames') this.lastFrameAt = performance.now();
       if (e.data.type === 'frames' && this.onFrames) this.onFrames(e.data.frames);
       if (e.data.type === 'ready') this.windowSize = e.data.windowSize;
     };
@@ -230,6 +259,16 @@ export class AudioEngine {
     this.node.connect(sink);
     if (o.source !== 'mic') this.source.start(ctx.currentTime + 0.05);
     this.running = true;
+    this.lastFrameAt = performance.now();
+    clearInterval(this.watchdog);
+    this.watchdog = setInterval(() => {
+      if (!this.running || document.hidden) return;
+      if (performance.now() - this.lastFrameAt > STALL_MS) {
+        clearInterval(this.watchdog);
+        this.stalled = true; // the next tap starts a new audio context
+        if (this.onStall) this.onStall();
+      }
+    }, 500);
     return ctx;
   }
 
@@ -261,6 +300,7 @@ export class AudioEngine {
 
   async stop() {
     this.running = false;
+    clearInterval(this.watchdog);
     try { if (this.source && this.source.stop) this.source.stop(); } catch { /* not started */ }
     for (const n of [this.source, this.node, this.sink]) { try { if (n) n.disconnect(); } catch { /* ignore */ } }
     // the held microphone stays open (unless keeping it open was just switched off)

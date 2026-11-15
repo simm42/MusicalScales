@@ -1153,8 +1153,25 @@ $('o-keepMic').addEventListener('change', () => {
   engine.setKeepMic(prefs.keepMic);
   warmMic();
 });
-// back in view: open it again if the system closed it (a call, another app)
-document.addEventListener('visibilitychange', () => { if (!document.hidden) warmMic(); });
+// Into the background: stop listening and close the microphone (iOS silences it
+// and pauses the app's audio). Back in view: open it again.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { warmMic(); return; }
+  if (session) stopSession(true);
+  if (tunerPage && tunerPage.running) tunerPage.stop();
+  if (calWizard && calWizard.running) calWizard.cancel('Calibration stopped because the app went into the background. Start it again.');
+  if (metroCard && metroCard.running) metroCard.stop();
+  engine.sleep();
+});
+
+// The audio stopped arriving (seen on iPhones after switching apps): stop instead of hanging.
+engine.onStall = () => {
+  const msg = 'The microphone stopped sending sound (this can happen after switching apps). Tap Start again.';
+  if (session) { stopSession(true); $('micError').textContent = msg; $('micError').hidden = false; }
+  if (tunerPage && tunerPage.running) { tunerPage.stop(); tunerPage.el.error.textContent = msg; tunerPage.el.error.hidden = false; }
+  if (calWizard && calWizard.running) calWizard.cancel(msg.replace('Tap Start', 'Start calibrating'));
+  engine.sleep();
+};
 
 function init() {
   startAnalytics();
