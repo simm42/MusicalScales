@@ -5,7 +5,7 @@
 import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, DAYS } from '../results.js';
 import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
-import { lineChart, legendHtml, chartPalette } from './charts.js';
+import { lineChart, multiLineChart, legendHtml, chartPalette } from './charts.js';
 import { Surface3D } from './surface3d.js';
 import { readPalette } from './meter.js';
 import { precisionAt } from '../precision.js';
@@ -42,13 +42,28 @@ export function itemData(store, id, now = Date.now(), level = 2) {
   };
 }
 
-export function summaryData(store, ids, now = Date.now(), level = 2) {
+/**
+ * The summary: for each syllabus exercise, its average total per day (past 6
+ * months) and per month (all history, when there is more than 6 months).
+ * @param {Array<{id:string, name:string}>} items
+ */
+export function summaryData(store, items, now = Date.now(), level = 2) {
+  const ids = items.map((x) => x.id);
   const first = firstTime(store, ids);
-  return {
-    sixMonths: summaryDaily(store, ids, now - SIX_MONTHS, level),
-    allTime: first != null && first < now - SIX_MONTHS ? summaryMonthly(store, ids, level) : null,
-    any: first != null,
+  const table = (rows, key) => {
+    const labels = [...new Set(rows.flatMap((r) => r.points.map((p) => p[key])))].sort();
+    return {
+      keys: labels,
+      series: rows.filter((r) => r.points.length).map((r) => {
+        const at = new Map(r.points.map((p) => [p[key], p]));
+        return { id: r.id, name: r.name, values: labels.map((l) => (at.has(l) ? at.get(l).t : null)), counts: labels.map((l) => (at.has(l) ? at.get(l).n : 0)) };
+      }),
+    };
   };
+  const sixMonths = table(items.map((it) => ({ id: it.id, name: it.name, points: daily(store, it.id, now - SIX_MONTHS, level) })), 'day');
+  const allTime = first != null && first < now - SIX_MONTHS
+    ? table(items.map((it) => ({ id: it.id, name: it.name, points: monthly(store, it.id, level) })), 'month') : null;
+  return { sixMonths, allTime, any: first != null };
 }
 
 /** The four standard charts as SVG strings. */
@@ -79,10 +94,9 @@ export function chartsSvg(data, palette, width = 760) {
 }
 
 export function summaryChartsSvg(data, palette, width = 760) {
-  const opts = { keys: ['t'], errors: false, palette, width };
   return {
-    sixMonths: data.sixMonths.length ? lineChart({ ...opts, points: data.sixMonths, labels: data.sixMonths.map((d) => dayLabel(d.day)), tips: data.sixMonths.map((d) => `${dayLabel(d.day)} · ${d.n} run${d.n === 1 ? '' : 's'}`), title: 'Average total per day' }) : null,
-    allTime: data.allTime ? lineChart({ ...opts, points: data.allTime, labels: data.allTime.map((m) => monthLabel(m.month)), title: 'Average total per month' }) : null,
+    sixMonths: data.sixMonths.series.length ? multiLineChart({ labels: data.sixMonths.keys.map(dayLabel), series: data.sixMonths.series, palette, width, title: 'Total score per day for each exercise' }) : null,
+    allTime: data.allTime && data.allTime.series.length ? multiLineChart({ labels: data.allTime.keys.map(monthLabel), series: data.allTime.series, palette, width, title: 'Total score per month for each exercise' }) : null,
   };
 }
 
@@ -132,12 +146,12 @@ export class ResultsPage {
     const level = this.getPrecision();
     const levelNote = `<p class="muted small">Scores shown at <b>${esc(precisionAt(level).name)}</b> precision (change it in Config – every run is kept at all five levels).</p>`;
     if (this.current === 'summary') {
-      const data = summaryData(store, list.map((x) => x.id), Date.now(), level);
+      const data = summaryData(store, list, Date.now(), level);
       const svg = summaryChartsSvg(data, pal, width);
       this.body.innerHTML = `${levelNote}
-        <div class="res-block"><h3>Average total score per day – past 6 months</h3><p class="muted small">All syllabus exercises together; days without practice are left out.</p>
+        <div class="res-block"><h3>Total score per day – past 6 months</h3><p class="muted small">One line for each syllabus exercise (its average on days it was practised). Days without any practice are left out.</p>
           ${svg.sixMonths || '<p class="muted">No runs yet.</p>'}</div>
-        ${svg.allTime ? `<div class="res-block"><h3>Average total score per month – all history</h3>${svg.allTime}</div>` : ''}
+        ${svg.allTime ? `<div class="res-block"><h3>Total score per month – all history</h3><p class="muted small">One line for each syllabus exercise.</p>${svg.allTime}</div>` : ''}
         <div class="res-block"><h3>Exercises</h3>${this.summaryTable(store, list)}</div>`;
       this.body.querySelectorAll('[data-item]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); this.current = a.dataset.item; this.sel.value = this.current; this.render(); }));
       return;

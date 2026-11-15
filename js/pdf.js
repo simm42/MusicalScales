@@ -60,7 +60,10 @@ export async function makePdf(o) {
   };
   const image = async (svg, h = 54) => {
     if (!svg) return;
-    const jpg = await svgToPng(svg, W_SVG, H_SVG, 2, 'image/jpeg', 0.88);
+    // charts taller than the standard (the summary, with its colour key) keep their proportions
+    const sh = Number((/height="(\d+(?:\.\d+)?)"/.exec(svg) || [])[1]) || H_SVG;
+    if (sh !== H_SVG) h = (h * sh) / H_SVG;
+    const jpg = await svgToPng(svg, W_SVG, sh, 2, 'image/jpeg', 0.88);
     need(h + 2);
     doc.addImage(jpg, 'JPEG', M, y, CW, h);
     y += h + 3;
@@ -84,11 +87,11 @@ export async function makePdf(o) {
   if (o.studentName) text(`Student: ${o.studentName}`, 12, 'bold');
   text(`Made ${dateTime(now)} - ${o.range === '2w' ? 'exercises: past 2 weeks' : 'all history'} - summary: all history - scores at ${precisionAt(level).name} precision`, 9, 'normal', [102, 98, 111]);
   y += 3;
-  const sum = summaryData(o.results, o.list.map((x) => x.id), now, level);
+  const sum = summaryData(o.results, o.list.map((x) => ({ id: x.id, name: plain(x.name) })), now, level);
   const ss = summaryChartsSvg(sum, pal, W_SVG);
-  text('Summary - average total score per day, past 6 months (all syllabus exercises)', 12, 'bold');
+  text('Summary - total score per day for each exercise, past 6 months', 12, 'bold');
   if (ss.sixMonths) await image(ss.sixMonths); else text('No runs yet.', 10, 'normal', [102, 98, 111]);
-  if (ss.allTime) { text('Summary - average total score per month, all history', 12, 'bold'); await image(ss.allTime); }
+  if (ss.allTime) { text('Summary - total score per month for each exercise, all history', 12, 'bold'); await image(ss.allTime); }
 
   // ---- each chosen exercise
   for (const id of o.items) {

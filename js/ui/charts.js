@@ -10,7 +10,7 @@ export const SERIES = [
 /** Palette from the page's CSS variables (current theme) or a fixed light one for print. */
 export function chartPalette(light = false) {
   if (light) {
-    return { fg: '#1c1a22', muted: '#66626f', grid: '#e4e1ea', bg: '#ffffff', total: '#6b3fa0', intonation: '#1a73e8', timing: '#0f9d8a', errors: '#c62f2f' };
+    return { fg: '#1c1a22', muted: '#66626f', grid: '#e4e1ea', bg: '#ffffff', total: '#6b3fa0', intonation: '#1a73e8', timing: '#0f9d8a', errors: '#c62f2f', dark: false };
   }
   const cs = getComputedStyle(document.documentElement);
   const v = (n, d) => (cs.getPropertyValue(n).trim() || d);
@@ -18,8 +18,14 @@ export function chartPalette(light = false) {
   return {
     fg: v('--fg', '#1c1a22'), muted: v('--muted', '#66626f'), grid: v('--border', '#e4e1ea'), bg: 'transparent',
     total: v('--accent', '#6b3fa0'), intonation: dark ? '#7cb2ff' : '#1a73e8', timing: dark ? '#4fd1bd' : '#0f9d8a', errors: v('--bad', '#c62f2f'),
+    dark,
   };
 }
+
+// one colour per syllabus exercise (no orange); lighter versions for the dark theme
+const ITEM_COLORS = ['#6b3fa0', '#1a73e8', '#0f9d8a', '#c2185b', '#2e7d32', '#3949ab', '#00838f', '#8e24aa', '#546e7a', '#6d4c41', '#ad1457', '#558b2f'];
+const ITEM_COLORS_DARK = ['#b79cf0', '#7cb2ff', '#4fd1bd', '#f48fb1', '#81c784', '#9fa8da', '#4dd0e1', '#ce93d8', '#b0bec5', '#bcaaa4', '#f06292', '#aed581'];
+export const itemColor = (k, palette) => (palette.dark ? ITEM_COLORS_DARK : ITEM_COLORS)[k % ITEM_COLORS.length];
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const fmt = (x) => (x == null || !isFinite(x) ? '–' : Math.round(x * 10) / 10);
@@ -59,7 +65,8 @@ export function lineChart({ points, labels, tips = [], keys = ['t', 'i', 'ti'], 
   // x labels: at most ~9
   const every = Math.max(1, Math.ceil(n / 9));
   labels.forEach((lab, k) => {
-    if (k % every !== 0 && k !== n - 1) return;
+    // every few, and always the last – dropping a regular one that would run into it
+    if (k !== n - 1 && (k % every !== 0 || (n - 1 - k) < every * 0.6)) return;
     s += `<text x="${x(k)}" y="${T + H + 18}" font-size="11" text-anchor="middle" fill="${palette.muted}">${esc(lab)}</text>`;
   });
   for (const ser of SERIES.filter((d) => keys.includes(d.key))) {
@@ -80,6 +87,60 @@ export function lineChart({ points, labels, tips = [], keys = ['t', 'i', 'ti'], 
       s += `<circle cx="${x(k).toFixed(1)}" cy="${y(v).toFixed(1)}" r="${r}" fill="${col}"><title>${esc(tips[k] || labels[k] || '')}\n${ser.name}: ${fmt(v)}</title></circle>`;
     });
   }
+  return s + '</svg>';
+}
+
+/**
+ * One line per series (a syllabus exercise each) over shared x labels, with
+ * the colour key drawn inside the chart (so the PDF gets it too).
+ * @param {object} o
+ * @param {string[]} o.labels  x labels (days or months)
+ * @param {Array<{name:string, values:(number|null)[], counts?:number[]}>} o.series  values per label (null = not practised)
+ */
+export function multiLineChart({ labels, series, width = 760, height = 230, palette = chartPalette(), title = '' }) {
+  const n = labels.length;
+  const L = 38, R = 12, T = 12, B = 34;
+  // colour key below the chart: as many columns as fit
+  const cols = Math.max(1, Math.floor((width - L) / 240));
+  const keyRows = Math.ceil(series.length / cols);
+  const keyH = keyRows * 18 + 6;
+  const W = width - L - R, H = height - T - B;
+  const total = height + keyH;
+  const x = (k) => L + (n <= 1 ? W / 2 : (k / (n - 1)) * W);
+  const y = (v) => T + H - (Math.max(0, Math.min(100, v)) / 100) * H;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${total}" width="${width}" height="${total}" role="img" aria-label="${esc(title)}" font-family="Helvetica, Arial, sans-serif">`;
+  if (palette.bg && palette.bg !== 'transparent') s += `<rect width="${width}" height="${total}" fill="${palette.bg}"/>`;
+  for (const g of [0, 25, 50, 75, 100]) {
+    s += `<line x1="${L}" x2="${L + W}" y1="${y(g)}" y2="${y(g)}" stroke="${palette.grid}" stroke-width="1"/>`;
+    s += `<text x="${L - 6}" y="${y(g) + 4}" font-size="11" text-anchor="end" fill="${palette.muted}">${g}</text>`;
+  }
+  const every = Math.max(1, Math.ceil(n / 9));
+  labels.forEach((lab, k) => {
+    // every few, and always the last – dropping a regular one that would run into it
+    if (k !== n - 1 && (k % every !== 0 || (n - 1 - k) < every * 0.6)) return;
+    s += `<text x="${x(k)}" y="${T + H + 18}" font-size="11" text-anchor="middle" fill="${palette.muted}">${esc(lab)}</text>`;
+  });
+  series.forEach((ser, si) => {
+    const col = itemColor(si, palette);
+    // an exercise's own points are joined across days it was not practised
+    const pts = ser.values.map((v, k) => (v == null || !isFinite(v) ? null : [x(k), y(v), v, k])).filter(Boolean);
+    if (pts.length > 1) s += `<path d="${pts.map((p, k) => `${k ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join('')}" fill="none" stroke="${col}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" opacity=".9"/>`;
+    const r = n > 40 ? 1.8 : 2.8;
+    for (const [px, py, v, k] of pts) {
+      const c = ser.counts && ser.counts[k];
+      s += `<circle cx="${px.toFixed(1)}" cy="${py.toFixed(1)}" r="${r}" fill="${col}"><title>${esc(ser.name)}
+${esc(labels[k])}: total ${fmt(v)}${c ? ` (${c} run${c === 1 ? '' : 's'})` : ''}</title></circle>`;
+    }
+  });
+  // the key
+  const colW = (width - L) / cols;
+  const maxChars = Math.max(12, Math.floor(colW / 6.6) - 3);
+  series.forEach((ser, si) => {
+    const cx = L + (si % cols) * colW, cy = height + 4 + Math.floor(si / cols) * 18;
+    const name = ser.name.length > maxChars ? ser.name.slice(0, maxChars - 1) + '…' : ser.name;
+    s += `<rect x="${cx}" y="${cy + 3}" width="14" height="4" rx="2" fill="${itemColor(si, palette)}"/>`;
+    s += `<text x="${cx + 20}" y="${cy + 9}" font-size="11.5" fill="${palette.fg}"><title>${esc(ser.name)}</title>${esc(name)}</text>`;
+  });
   return s + '</svg>';
 }
 
