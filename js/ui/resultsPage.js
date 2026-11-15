@@ -101,7 +101,8 @@ export function summaryChartsSvg(data, palette, width = 760) {
 }
 
 export class ResultsPage {
-  constructor({ getList, getResults, getStudentName, setStudentName, getPrecision = () => 2, labelsFor = () => null }) {
+  constructor({ getList, getResults, getStudentName, setStudentName, getPrecision = () => 2, labelsFor = () => null, details = false }) {
+    this.details = details;
     this.labelsFor = labelsFor;
     this.picked = {}; // chosen run (its time) per item for the detailed summary
     this.getPrecision = getPrecision;
@@ -198,7 +199,7 @@ export class ResultsPage {
     if (!run.nl) { try { names = this.labelsFor(item, run); } catch { names = null; } }
     const d = runDetail(run, names);
     if (!d) { el.innerHTML = '<p class="muted">The details of this run were not kept.</p>'; return; }
-    renderSummary(el, { result: d.result, labels: d.labels, prec: precisionAt(run.level ?? 2, item.settings.instrument), settings: { vibrato: run.vib, metronome: run.met, instrument: item.settings.instrument }, title: null });
+    renderSummary(el, { result: d.result, labels: d.labels, prec: precisionAt(run.level ?? 2, item.settings.instrument), settings: { vibrato: run.vib, metronome: run.met, instrument: item.settings.instrument }, title: null, details: this.details });
     const note = document.createElement('p');
     note.className = 'muted small';
     note.textContent = `Played ${dateTime(run.d)}${playedHow(run) ? ' – ' + playedHow(run) : ''}. Scores are as marked at the time, at the precision used then.`;

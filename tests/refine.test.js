@@ -183,3 +183,20 @@ test('a crotchet chopped in three after two quavers run together is put back as 
   const r = score(seq, n);
   eq([r.missing, r.wrong, r.extras.length], [0, 0, 0]);
 });
+
+// ---------------------------------------------------------------- what students see after a run
+import { renderSummary } from '../js/ui/summary.js';
+
+test('the sound-analysis notes after a run are only shown in Test mode', () => {
+  const seq = cello('crotchet');
+  const n = heard(seq);
+  n[0] = note(n[0].onset, n[0].end, 48); // heard an octave up
+  n.splice(4, 0, note(n[3].end - 0.06, n[3].end + 0.06, 51)); // a scrape
+  const { notes: kept, alignment, scrapes, fold } = refineNotes(n, seq);
+  const result = scoreRun({ expected: seq.events, detected: kept, alignment, prec: precisionAt(4), scrapes, fold });
+  const show = (details) => { const el = document.createElement('div'); renderSummary(el, { result, seq, prec: precisionAt(4), settings: {}, details }); return el.textContent; };
+  const student = show(false), test = show(true);
+  assert(!/scrape|heard an octave/i.test(student), 'students see the plain result');
+  assert(/scrape/i.test(test) && /heard an octave up/.test(test), 'Test mode explains the analysis');
+  assert(/Errors/.test(student) && /Total/.test(student), 'the scores are there for everyone');
+});

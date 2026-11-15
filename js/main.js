@@ -530,7 +530,7 @@ function finishSession(result) {
   if (!played) { setStatus(`No notes were heard. Check the microphone and ${verb()} a little louder, or move closer.`); return; }
   setStatus(`Finished – score ${Math.round(result.total)} / 100.`);
   lastResult = result;
-  renderSummary($('summary'), { result, seq, prec: prec(), settings, labels: syllables ? seq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
+  renderSummary($('summary'), { result, seq, prec: prec(), settings, details: DEBUG, labels: syllables ? seq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
   colourAll(result);
   showSummary();
   const item = activeId && list.find((x) => x.id === activeId);
@@ -918,6 +918,9 @@ function setTab(tab) {
   $('tab-config').hidden = !(tab === 'config' || (wide && tab === 'practice'));
   $('tab-results').hidden = tab !== 'results';
   $('tab-tuner').hidden = tab !== 'tuner';
+  $('tab-help').hidden = tab !== 'help';
+  $('helpBtn').setAttribute('aria-pressed', String(tab === 'help'));
+  if (tab === 'help') window.scrollTo(0, 0);
   if (tab !== 'practice') { stopSession(true); stopPlayback(); }
   else setTimeout(hideTabBar, 50);
   if (tab === 'results') {
@@ -927,6 +930,7 @@ function setTab(tab) {
         getResults: () => results,
         getStudentName: () => ($('studentName').value.trim() || prefs.studentName || ''),
         getPrecision: () => settings.precision,
+        details: DEBUG, // sound-analysis notes in "Run in detail": Test mode only
         // note names for runs saved before they were stored: rebuild the exercise as it was played
         labelsFor: (item, run) => {
           const s = normalise({ ...expandSettings(item.settings), rhythm: run.rhythm });
@@ -974,6 +978,9 @@ function setTab(tab) {
 }
 wideQuery.addEventListener('change', () => setTab(prefs.tab || 'practice'));
 document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.addEventListener('click', () => setTab(b.dataset.tab)));
+// Help: the ? button (and a link ending in #help, to send to students)
+$('helpBtn').addEventListener('click', () => setTab('help'));
+window.addEventListener('hashchange', () => { if (location.hash.startsWith('#help')) setTab('help'); });
 
 const THEMES = ['auto', 'light', 'dark'];
 function applyTheme(t) {
@@ -1191,6 +1198,7 @@ function init() {
   updateExercise();
   renderList();
   setTab(['practice', 'config', 'results', 'tuner'].includes(prefs.tab) ? prefs.tab : (list.length ? 'practice' : 'config'));
+  if (location.hash.startsWith('#help')) setTab('help');
   checkShareLink();
 }
 

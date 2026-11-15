@@ -68,7 +68,11 @@ function offsetNotice(result) {
  * @param {HTMLElement} el
  * @param {object} o  { result, seq, prec, settings, title }
  */
-export function renderSummary(el, { result, seq, labels = null, prec, settings = {}, title = 'Your result' }) {
+/**
+ * @param {boolean} [o.details] the sound-analysis notes (scrapes, notes heard at a harmonic,
+ *   re-checked notes): Test mode only – students see the plain result
+ */
+export function renderSummary(el, { result, seq, labels = null, prec, settings = {}, title = 'Your result', details = false }) {
   if (!result) { el.innerHTML = ''; return; }
   // note names come from the sequence (live run) or are given (a stored run)
   const label = (r, i) => (labels ? labels[i] : seq.events[r.event].notes.map((n) => noteName(n, { octave: true })).join(' + '));
@@ -77,6 +81,7 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
     if (r.status === 'wrong') return '<span class="pill wrong">wrong note</span>';
     let p = '<span class="pill ok">ok</span>';
     if (r.unsteady) p += ' <span class="pill unsteady" title="pitch wobbled more than ±20 cents">unsteady</span>';
+    if (!details) return p;
     if (r.approx) p += ' <span class="pill unsteady" title="octave double stops can only be measured approximately">approx.</span>';
     if (r.heardShift) p += ` <span class="pill unsteady" title="The microphone heard this note at a harmonic (common with low strings on phone microphones); it was scored as the right note">heard ${esc(shiftName(r.heardShift))}</span>`;
     else if (r.rechecked) p += ' <span class="pill unsteady" title="Part of this note was heard off (a slide or a stray reading); it was scored on the part at the right pitch">re-checked</span>';
@@ -103,7 +108,7 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
         <div class="stat"><div class="v">${fmtErrors(result.errors ?? result.extras.length)}</div><div class="l">Errors${result.penalty != null ? ` (−${fmtErrors(result.penalty)})` : ''}</div></div>
       </div>
       ${offsetNotice(result)}
-      ${scrapeNote(result, prec)}
+      ${details ? scrapeNote(result, prec) : ''}
       <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents)${vib} · ${result.missing} missing · ${result.wrong} wrong${tempo}${timed}</p>
       ${chart(result, prec)}
       <div class="table-wrap"><table class="notes">

@@ -31,6 +31,7 @@
     <button role="tab" id="tabBtnTuner" aria-selected="false" data-tab="tuner">Tuner</button>
   </nav>
   <div class="spacer"></div>
+  <button class="icon-btn" id="helpBtn" title="Help" aria-label="Help">?<span class="theme-label"> Help</span></button>
   <button class="icon-btn" id="installBtn" title="Install as an app" aria-label="Install as an app" hidden>⬇<span class="theme-label"> Install</span></button>
   <button class="icon-btn" id="themeBtn" title="Colour theme">◐ Auto</button>
 </header>
@@ -229,6 +230,216 @@
       </div>
       <div class="notice" id="calStep" hidden aria-live="polite"></div>
       <ul class="cal-advice" id="calAdvice"></ul>
+    </div>
+  </section>
+
+  <!-- ================= HELP ================= -->
+  <section id="tab-help" role="tabpanel" aria-labelledby="helpBtn" hidden>
+    <div class="card stage help">
+      <h2>Help</h2>
+      <p class="muted">Tap a heading to open it. Everything here is also safe to try – you can't break anything.</p>
+
+      <details open>
+        <summary>Getting started in five steps</summary>
+        <ol>
+          <li><b>Tune your instrument</b> on the <b>Tuner</b> tab (or with your own tuner).</li>
+          <li>On the <b>Config</b> tab, choose your <b>instrument</b> and the <b>exercise</b> – for example a G major scale, 2 octaves.</li>
+          <li>Go to the <b>Practice</b> tab and press <b>▶ Play</b> if you'd like to hear how it goes first.</li>
+          <li>Press <b>Start</b>, wait until it says <b>“Play now”</b>, then play the exercise at your own speed.</li>
+          <li>When you finish (or press <b>Stop</b>), your <b>score</b> appears under the music, with every note checked.</li>
+        </ol>
+        <p>The first time, your browser asks if the app may use the <b>microphone</b> – choose <b>Allow</b>. Nothing you play is recorded or sent anywhere.</p>
+      </details>
+
+      <details>
+        <summary>The four tabs</summary>
+        <ul>
+          <li><b>Practice</b> – the music, the tuning bar, Start and Play, and your score.</li>
+          <li><b>Config</b> – choose exercises, build your syllabus, and change how things look and how strictly you are marked.</li>
+          <li><b>Results</b> – charts of how you are getting on, and a PDF to send to your teacher.</li>
+          <li><b>Tuner</b> – tune your instrument, use the metronome, and set up the microphone.</li>
+        </ul>
+        <p>On a very wide screen, Practice and Config are shown side by side.</p>
+      </details>
+
+      <details>
+        <summary>Choosing an exercise</summary>
+        <p>On the <b>Config</b> tab, under <b>Exercise</b>:</p>
+        <ul>
+          <li><b>Instrument</b> – violin, viola, cello, double bass, voice, or “other instrument”. The exercise starts on a sensible note for it.</li>
+          <li><b>Type</b> – scale, arpeggio, chromatic scale, dominant 7th, diminished 7th, and (for some instruments) double stops, scales in thirds and thumb-position scales.</li>
+          <li><b>Tonality</b> and <b>Key</b> – major or minor, and which key. For minor scales you can pick <b>natural</b>, <b>harmonic</b> or <b>melodic</b>.</li>
+          <li><b>Range</b> – how many octaves (or to a 6th / 12th where that is used).</li>
+          <li><b>Start an octave higher</b> – if you'd rather play it higher up.</li>
+          <li><b>Repeat the top note</b> – play the top note twice before coming down.</li>
+          <li><b>When slurred</b> – how many notes to a bow when you switch on <b>Slurred</b> on the Practice tab.</li>
+        </ul>
+        <p>If an exercise doesn't fit on your instrument, the app tells you – try fewer octaves or a different starting octave.</p>
+      </details>
+
+      <details>
+        <summary>Your syllabus (your list of exercises)</summary>
+        <p>The <b>syllabus</b> is the list of exercises you are working on, so you don't have to set them up every time.</p>
+        <ul>
+          <li>Set up an exercise and press <b>Add to syllabus</b>. You can give it your own name.</li>
+          <li>Tap an exercise in the list to practise it. On the Practice tab, <b>◀</b> and <b>▶</b> move to the previous or next one.</li>
+          <li>Use ⚙ to change an exercise, ✎ to rename it, and the arrows to move it up or down the list.</li>
+          <li>Your teacher can send you a <b>syllabus link</b> – open it and the exercises are added to your list. <b>Share syllabus</b> makes a link like that for someone else (your scores are not included).</li>
+          <li><b>Export</b> and <b>Import</b> save your list and its results as a file and load it again.</li>
+        </ul>
+        <p>Only runs of exercises in your syllabus are saved in <b>Results</b>.</p>
+      </details>
+
+      <details>
+        <summary>Practising</summary>
+        <ul>
+          <li><b>Rhythm buttons</b> along the top: one note per beat, long notes at the ends (and on the key notes), two quavers, two quavers and a crotchet, two quavers and a rest, or four quavers on each note.</li>
+          <li><b>⌒ Slurred</b> switches slurs on and off (for the one-note-per-beat rhythms).</li>
+          <li><b>▶ Play</b> plays the exercise to you, with an arrow following the music.</li>
+          <li><b>Start</b>: the app listens to the room for a moment (stay quiet), then says <b>“Play now”</b>. Take your time – it waits for you to begin.</li>
+          <li>While you play, the <b>tuning bar</b> on the left shows each note: in the middle and green is in tune, higher up is sharp, lower down is flat. The <b>arrow</b> above the music shows where you are, and the music scrolls along with you.</li>
+          <li>The run ends by itself when you reach the end, or press <b>Stop</b>.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Your score explained</summary>
+        <ul>
+          <li><b>Total</b> out of 100 is mostly about <b>intonation</b> (playing in tune – 75%) and partly about <b>timing</b> (keeping a steady pulse – 25%).</li>
+          <li><b>Errors</b> take points off: extra notes that aren't in the exercise, and scratchy sounds between notes when you change bow. Small scratches only count at the stricter levels.</li>
+          <li>A note you didn't play counts as <b>missing</b> and scores nothing; a different note counts as <b>wrong</b>.</li>
+          <li>The <b>chart</b> shows each note: bars going up were sharp, bars going down were flat. Green is good, then amber, then red.</li>
+          <li><b>Cents</b> measure how far out a note was: 100 cents is a semitone, so 10 cents is a tiny bit out and 50 cents is half way to the next note.</li>
+          <li>The notes in the music are coloured the same way after a run.</li>
+          <li><b>Unsteady</b> means the note wobbled in pitch while you held it.</li>
+        </ul>
+        <p>Don't worry about one low score – everyone has off days. Look at which notes were out and practise those slowly.</p>
+      </details>
+
+      <details>
+        <summary>How strict should the marking be? (Precision)</summary>
+        <p>On the Config tab under <b>Listening</b>, the <b>Precision</b> slider goes from <b>Beginner</b> through <b>Elementary</b>, <b>Intermediate</b> and <b>Advanced</b> to <b>Expert</b>. At Beginner, notes that are a little out still get full marks; at Expert they must be very close.</p>
+        <p>Start where you get a mix of green and amber, and move up as you improve. Your past results are kept for every level, so the charts are always right when you change it.</p>
+        <p>Tick <b>I'm using vibrato</b> if you play with vibrato, so the wobble isn't counted against you.</p>
+      </details>
+
+      <details>
+        <summary>Tempo and the metronome</summary>
+        <ul>
+          <li>Without the metronome you play at your own speed – the app judges how steady you are.</li>
+          <li>Tick <b>Metronome with one-bar count-in</b> (Config, Listening) to play along with clicks. Set the speed with <b>Tempo</b>.</li>
+          <li>The same tempo is used by <b>▶ Play</b>.</li>
+          <li>There's also a separate metronome on the <b>Tuner</b> tab for any practice, with beats in a bar and a <b>Tap tempo</b> button.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>What you see: name, key signature or full music</summary>
+        <ul>
+          <li><b>Show</b>: just the name of the exercise, the key signature, or the full music.</li>
+          <li><b>High notes</b>: <b>Change clef</b> (as in printed music) or stay in one clef with <b>Ledger lines</b>.</li>
+          <li><b>Show the next note's name</b> helps if you're playing from memory.</li>
+          <li>The ◐ button at the top switches between light and dark colours.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Results and sending them to your teacher</summary>
+        <ul>
+          <li>Pick an exercise at the top of the <b>Results</b> tab (it opens on the one you're practising), or <b>Summary</b> for everything.</li>
+          <li>The <b>3D picture</b> shows your last 10 runs note by note: hills are sharp notes, valleys are flat. Drag it to turn it round.</li>
+          <li>The <b>line charts</b> show your scores over the last 2 weeks, the last 6 months, and all time.</li>
+          <li><b>Run in detail</b>: choose any of your last 10 runs to see its full result again.</li>
+          <li>The <b>Summary</b> shows one line for each exercise in your syllabus.</li>
+          <li><b>Export PDF</b> makes a report to send to your teacher. Put your name in <b>Student name</b> on the Config tab so it's on the report. <b>More PDF options</b> lets you choose which exercises and charts to include.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Tuning your instrument</summary>
+        <ul>
+          <li>On the <b>Tuner</b> tab, press <b>Start tuner</b> and play an open string. The app finds the nearest string; tap a string to stick to it.</li>
+          <li>When the bar is in the middle and green for a moment, it says <b>In tune ✓</b>. It also tells you whether to tighten or loosen.</li>
+          <li>🔊 plays a reference note to tune to by ear.</li>
+          <li>You can tune in <b>equal temperament</b> or with <b>pure fifths</b> (pure fourths on the double bass), and change the <b>A</b> (usually 440).</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Setting up the microphone (calibrating)</summary>
+        <p>Every phone, tablet and room sounds a little different. Calibrating helps the app hear <i>your</i> instrument clearly. Do it once on each device, and again if you move somewhere very different.</p>
+        <ol>
+          <li>Tune your instrument first.</li>
+          <li>On the <b>Tuner</b> tab, press <b>Calibrate microphone</b>.</li>
+          <li>Stay quiet for a few seconds, then bow each open string when asked – long, steady and at your normal volume.</li>
+        </ol>
+        <p>The app then tells you if anything needs attention, such as being too far from the microphone.</p>
+      </details>
+
+      <details>
+        <summary>Singing</summary>
+        <ul>
+          <li>Choose <b>Voice</b> as the instrument.</li>
+          <li>First, measure your range on the <b>Tuner</b> tab: <b>Measure my range</b> asks you to sing your lowest and then your highest comfortable note, each held steadily for two seconds. The app works out your voice type and puts every exercise in the right place for your voice.</li>
+          <li>You sing to <b>Do, Re, Mi…</b> – shown under the music. Choose <b>movable Do</b> (the key note is Do) or <b>fixed Do</b> (C is always Do) under <b>Sing with</b>.</li>
+          <li>Tick <b>Show letter names with the sol-fa</b> to see “Sol · G4” on the tuning bar as you sing.</li>
+          <li>Singing is marked a little more gently than instruments.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Other instruments</summary>
+        <p>Choose <b>Other instrument</b>, type its name, and pick its <b>lowest</b> and <b>highest</b> notes. If it's a transposing instrument (for example a B♭ clarinet, which sounds a tone lower than written), choose the <b>Transposition</b> so the music is written as you read it. The clef is chosen for you, or you can pick one.</p>
+      </details>
+
+      <details>
+        <summary>Using it as an app on your phone or computer</summary>
+        <ul>
+          <li><b>Android, and Chrome or Edge on a computer:</b> tap <b>⬇ Install</b> at the top, then <b>Install now</b>.</li>
+          <li><b>iPhone and iPad:</b> in Safari, tap <b>Share</b> → <b>Add to Home Screen</b> → <b>Add</b>. The ⬇ button shows these steps.</li>
+          <li>Once installed it opens full-screen and works even without an internet connection.</li>
+          <li>The microphone stays on while the app is open, so you're only asked once. You can turn this off in Config (<b>Keep the microphone on…</b>).</li>
+          <li>On iPhone in Safari, to stop being asked about the microphone: tap <b>aA</b> in the address bar → <b>Website Settings</b> → <b>Microphone</b> → <b>Allow</b>.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Moving to a new phone or computer</summary>
+        <p>Your syllabus, results and settings are kept on each device. To move them:</p>
+        <ol>
+          <li>On the old device, Config → <b>⬇ Export everything</b>. On a phone you can save the file to Files, AirDrop it or email it to yourself.</li>
+          <li>On the new device, Config → <b>⬆ Import everything</b> and choose that file.</li>
+        </ol>
+        <p>On iPhone, the installed app and Safari keep separate copies – use these same two steps to move between them. Calibrate the microphone again on the new device.</p>
+      </details>
+
+      <details>
+        <summary>Tips for the best results</summary>
+        <ul>
+          <li>Practise in a <b>quiet room</b> – no music, TV or talking in the background.</li>
+          <li>Put your phone or computer about <b>1 metre</b> away, pointing towards your instrument.</li>
+          <li><b>Tune first</b>, and calibrate the microphone once on each device.</li>
+          <li>Play each note clearly; a new bow on each note (or a clear change on slurs) helps the app hear where each note starts.</li>
+          <li>Phones find the lowest notes of a cello or double bass hardest to hear – moving a little closer helps.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Something not working?</summary>
+        <ul>
+          <li><b>“No notes were heard”</b> – check the microphone is allowed, play a little louder, or move closer.</li>
+          <li><b>“Microphone access was blocked”</b> – allow the microphone for this site in your browser's settings, then try again.</li>
+          <li><b>Everything sounded too high or low</b> – the app warns you if every note was out by the same amount. Check your instrument is tuned and the <b>Tuning A</b> is right.</li>
+          <li><b>No sound from ▶ Play on iPhone</b> – turn the volume up; it plays even with the silent switch on.</li>
+          <li><b>It stopped listening after you switched apps</b> – just press Start again.</li>
+          <li><b>A result looks wrong</b> – your teacher may ask you to switch on <b>Test mode</b> (Config, Fault-finding). It keeps a recording of each run that you can save and send, so the problem can be found and fixed.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Your privacy</summary>
+        <p>Everything happens on your own device. Your playing is listened to while you practise but never recorded or sent anywhere (unless you switch on Test mode and choose to save a recording yourself). Your syllabus, scores and settings stay in your browser.</p>
+      </details>
     </div>
   </section>
 
