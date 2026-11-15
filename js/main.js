@@ -1,10 +1,12 @@
 // Page wiring: settings form, exercise display, practice runs, list, tuner tab, theme.
 
-import { INSTRUMENTS } from './instruments.js';
+import { INSTRUMENTS, instrumentInfo, VOICE_TYPES, voiceSetup, classifyVoice, isBowed } from './instruments.js';
 import {
   EXERCISE_TYPES, DEFAULT_SETTINGS, RANGE_LABELS, EXERCISE_FIELDS, GLOBAL_FIELDS, normalise, buildExercise, isPlayable,
-  typesForInstrument, rangesFor, keyListFor, pickFields, slurGroup,
+  typesForInstrument, rangesFor, keyListFor, pickFields, slurGroup, SOLFEGE_SYSTEMS,
 } from './exercises.js';
+import { getProfile, setProfile, getProfiles } from './profiles.js';
+import { syllablesFor } from './solfege.js';
 import { buildSequence, RHYTHMS, isCrotchetRhythm } from './sequence.js';
 import { loadResults, saveResults, recordRun, makeRun, migrateHistory, cardStats, compactAll } from './results.js';
 import { ResultsPage } from './ui/resultsPage.js';
@@ -60,6 +62,7 @@ let rendered = { arrowTargets: [] };
 let session = null;
 let lastResult = null;
 let arrowIndex = 0;
+let syllables = null; // sol-fa syllable per note when singing
 
 const engine = new AudioEngine();
 const player = new Player();
@@ -68,7 +71,11 @@ const DEBUG_MODE = new URLSearchParams(location.search).get('debug'); // 'synth'
 const DEBUG = DEBUG_MODE != null;
 
 const a4 = () => Math.min(446, Math.max(415, Number(prefs.a4) || 440));
-const prec = () => precisionAt(settings.precision);
+const prec = () => precisionAt(settings.precision, settings.instrument);
+const isVoice = () => settings.instrument === 'voice';
+const verb = () => (isVoice() ? 'sing' : 'play');
+const idleStatus = () => (isVoice() ? 'Press Start, wait for “Sing now”, then sing.' : 'Press Start, wait for “Play now”, then play.');
+const instName = (id) => instrumentInfo(id).name;
 
 // ---------------------------------------------------------------- form
 const form = $('optionsView');
@@ -87,7 +94,8 @@ function fillSelect(el, options, value) {
 function syncForm() {
   const s = settings;
   const t = EXERCISE_TYPES[s.type];
-  fillSelect(sel('instrument'), Object.entries(INSTRUMENTS).map(([v, i]) => ({ value: v, label: i.name })), s.instrument);
+  fillSelect(sel('instrument'), Object.keys(INSTRUMENTS).map((v) => ({ value: v, label: instName(v) })), s.instrument);
+  syncInstrumentFields();
   fillSelect(sel('type'), typesForInstrument(s.instrument).map((v) => ({ value: v, label: EXERCISE_TYPES[v].label })), s.type);
   $('f-mode').hidden = !t.tonality;
   sel('mode').value = s.mode;
@@ -102,9 +110,16 @@ function syncForm() {
   sel('octaveUp').checked = s.octaveUp;
   sel('octaveUp').disabled = !s.octaveUp && !isPlayable(s, { octaveUp: true });
   for (const k of ['repeatTop', 'hint', 'vibrato', 'metronome']) sel(k).checked = !!s[k];
+  // singers always get vibrato-tolerant listening, and sing every note to its own syllable
+  sel('vibrato').closest('label').hidden = isVoice();
+  sel('slur').closest('.field').hidden = isVoice();
+  $('slurNote').hidden = isVoice();
+  $('f-solfege').hidden = !isVoice();
+  fillSelect(sel('solfege'), Object.entries(SOLFEGE_SYSTEMS).map(([value, label]) => ({ value, label })), s.solfege);
   // notes per bow when the Practice page's "Slurred" switch is on
+  const per = isBowed(s.instrument) ? 'to a bow' : 'to a slur';
   const slurOpts = t.slurs.length
-    ? t.slurs.map((n, k) => ({ value: k === 0 ? 0 : n, label: `${n} notes to a bow${k === 0 ? ' (usual)' : ''}` }))
+    ? t.slurs.map((n, k) => ({ value: k === 0 ? 0 : n, label: `${n} notes ${per}${k === 0 ? ' (usual)' : ''}` }))
     : [{ value: 0, label: t.doubleStop ? 'Separate bows only' : 'Not slurred' }];
   fillSelect(sel('slur'), slurOpts, t.slurs.length && s.slur === t.slurs[0] ? 0 : s.slur);
   sel('slur').disabled = !t.slurs.length;
@@ -114,7 +129,7 @@ function syncForm() {
   sel('precision').value = s.precision;
   $('precisionName').textContent = prec().name;
   sel('a4').value = a4();
-  $('calInfo').textContent = describeCalibration(loadCalibration(s.instrument), INSTRUMENTS[s.instrument].name);
+  $('calInfo').textContent = describeCalibration(loadCalibration(s.instrument), instName(s.instrument));
   $('saveItemBtn').hidden = !editingId;
   $('addBtn').textContent = editingId ? 'Add as new' : 'Add to syllabus';
   renderRhythmBar();
@@ -134,8 +149,117 @@ form.addEventListener('change', (e) => {
   const next = { ...settings };
   if (el.name === 'key') next[EXERCISE_TYPES[settings.type].keyKind === 'start' ? 'start' : 'key'] = v;
   else next[el.name] = v;
+  if (el.name === 'instrument') Object.assign(next, playableRange(next));
   setSettings(next);
 });
+
+/** After a change of instrument or range, keep a range that fits (a voice may not manage two octaves). */
+function playableRange(s) {
+  const n = normalise(s);
+  if (isPlayable(n, {})) return {};
+  for (const r of ['1', '6th', '2', '12th', '3']) {
+    if (rangesFor(n.instrument, n.type).includes(r) && isPlayable(n, { range: r })) return { range: r };
+    if (rangesFor(n.instrument, n.type).includes(r) && n.octaveUp && isPlayable(n, { range: r, octaveUp: false })) return { range: r, octaveUp: false };
+  }
+  return {};
+}
+
+// ---------------------------------------------------------------- voice and other instrument (device profiles)
+const NOTE_OPTIONS = (() => {
+  const out = [];
+  for (let m = 21; m <= 108; m++) {
+    const sh = spellMidi(m, 'sharp'), fl = spellMidi(m, 'flat');
+    let label = noteName(sh, { octave: true });
+    if (sh.a) label += ' / ' + noteName(fl, { octave: true });
+    if (m === 60) label += ' (middle C)';
+    out.push({ value: m, label });
+  }
+  return out;
+})();
+
+const TRANSPOSE_HINTS = {
+  12: 'piccolo, glockenspiel, xylophone', 3: 'E♭ clarinet', 2: 'D trumpet', 0: 'concert pitch: flute, oboe, piano…',
+  '-2': 'B♭: clarinet, trumpet, soprano sax', '-3': 'A: clarinet', '-5': 'G: alto flute', '-7': 'F: horn, cor anglais',
+  '-9': 'E♭: alto sax, tenor horn', '-12': 'guitar, bass guitar, contrabassoon', '-14': 'B♭: tenor sax, bass clarinet, euphonium (treble clef)', '-21': 'E♭: baritone sax',
+};
+function tonesText(semis) {
+  const t = Math.abs(semis) / 2;
+  const whole = Math.floor(t), half = t - whole > 0;
+  const num = whole ? `${whole}${half ? '½' : ''}` : '½';
+  return `${num} tone${t > 1 ? 's' : ''}`;
+}
+const TRANSPOSE_OPTIONS = (() => {
+  const out = [];
+  for (let k = 12; k >= -24; k--) {
+    const hint = TRANSPOSE_HINTS[k];
+    const label = k === 0 ? 'None – sounds as written' : `Sounds ${tonesText(k)} ${k > 0 ? 'higher' : 'lower'} (${k > 0 ? '+' : '−'}${Math.abs(k)} semitone${Math.abs(k) === 1 ? '' : 's'})`;
+    out.push({ value: k, label: hint ? `${label} – ${hint}` : label });
+  }
+  return out;
+})();
+
+function syncInstrumentFields() {
+  const inst = settings.instrument;
+  $('f-voice').hidden = inst !== 'voice';
+  $('f-other').hidden = inst !== 'other';
+  if (inst === 'voice') {
+    const v = voiceSetup();
+    const info = instrumentInfo('voice');
+    const p = getProfile('voice');
+    const range = `${noteName(spellMidi(v.low, 'sharp'), { octave: true })}–${noteName(spellMidi(v.high, 'sharp'), { octave: true })}`;
+    const clef = `${v.type.clef} clef${info.clefAnnotation ? ', sung an octave lower than written' : ''}`;
+    $('voiceInfo').textContent = v.measured
+      ? `Your range: ${range} (measured ${new Date(v.date || Date.now()).toLocaleDateString()}). ${v.type.name} – ${clef}.`
+      : `Range not measured yet – using a typical ${v.type.name.toLowerCase()} range (${range}), ${clef}. Measure your own range on the Tuner tab.`;
+    const auto = v.measured ? `From my range (${classifyVoice(p.low, p.high).name})` : 'Mezzo-soprano (typical range, until measured)';
+    fillSelect($('o-voiceType'), [{ value: '', label: auto }, ...VOICE_TYPES.map((t) => ({
+      value: t.id, label: `${t.name} (${noteName(spellMidi(t.low, 'sharp'), { octave: true })}–${noteName(spellMidi(t.high, 'sharp'), { octave: true })})`,
+    }))], p.override || '');
+    $('measureVoiceBtn').textContent = v.measured ? 'Measure my range again' : 'Measure my range';
+  }
+  if (inst === 'other') {
+    const p = getProfile('other');
+    if (document.activeElement !== $('o-otherName')) $('o-otherName').value = p.name || '';
+    fillSelect($('o-otherLow'), NOTE_OPTIONS, p.low);
+    fillSelect($('o-otherHigh'), NOTE_OPTIONS, p.high);
+    fillSelect($('o-otherTranspose'), TRANSPOSE_OPTIONS, p.transpose);
+    const autoClef = instrumentInfo('other').clef;
+    fillSelect($('o-otherClef'), [
+      { value: 'auto', label: `Automatic (${p.clef === 'auto' ? autoClef : 'from the range'})` },
+      { value: 'treble', label: 'Treble' }, { value: 'alto', label: 'Alto' }, { value: 'tenor', label: 'Tenor' }, { value: 'bass', label: 'Bass' },
+    ], p.clef || 'auto');
+  }
+}
+
+/** A device profile changed: everything that depends on the instrument's range is rebuilt. */
+function profileChanged() {
+  setSettings({ ...settings, ...playableRange(settings) }, { keepActive: true });
+  if (tunerPage) tunerPage.refresh(true);
+  if (calWizard) calWizard.refresh();
+  if (resultsPage) resultsPage.invalidate();
+}
+
+$('o-voiceType').addEventListener('change', () => { setProfile('voice', { override: $('o-voiceType').value }); profileChanged(); });
+$('measureVoiceBtn').addEventListener('click', () => { setTab('tuner'); $('calCard').scrollIntoView({ behavior: 'smooth', block: 'start' }); });
+$('o-otherName').addEventListener('change', () => { setProfile('other', { name: $('o-otherName').value.trim().slice(0, 40) }); profileChanged(); });
+$('o-otherLow').addEventListener('change', () => {
+  const low = Number($('o-otherLow').value);
+  const p = getProfile('other');
+  const high = Math.max(p.high, Math.min(108, low + 12));
+  $('otherMsg').textContent = high !== p.high ? 'The highest note was raised to keep at least an octave.' : '';
+  setProfile('other', { low, high });
+  profileChanged();
+});
+$('o-otherHigh').addEventListener('change', () => {
+  const high = Number($('o-otherHigh').value);
+  const p = getProfile('other');
+  const low = Math.min(p.low, Math.max(21, high - 12));
+  $('otherMsg').textContent = low !== p.low ? 'The lowest note was lowered to keep at least an octave.' : '';
+  setProfile('other', { low, high });
+  profileChanged();
+});
+$('o-otherTranspose').addEventListener('change', () => { setProfile('other', { transpose: Number($('o-otherTranspose').value) }); profileChanged(); });
+$('o-otherClef').addEventListener('change', () => { setProfile('other', { clef: $('o-otherClef').value }); profileChanged(); });
 sel('precision').addEventListener('input', () => { $('precisionName').textContent = precisionAt(sel('precision').value).name; });
 
 /** Change global (practice/display/listening) options – they apply to every exercise. */
@@ -166,7 +290,8 @@ function updateExercise() {
   stopPlayback();
   exercise = buildExercise(settings);
   seq = buildSequence(exercise);
-  $('exTitle').textContent = `${INSTRUMENTS[settings.instrument].name}: ${exercise.title}`;
+  $('exTitle').textContent = `${instName(settings.instrument)}: ${exercise.title}`;
+  syllables = syllablesFor(exercise);
   $('exOptions').textContent = describeOptions(settings);
   // the full score already shows the rhythm, long notes and slurs
   $('exOptions').hidden = settings.display === 'score';
@@ -176,6 +301,7 @@ function updateExercise() {
   $('playBtn').disabled = !exercise.ok;
   lastResult = null;
   $('summary').innerHTML = '';
+  setStatus(idleStatus());
   meter.setCount(exercise.type.doubleStop ? 2 : 1);
   meter.clear();
   drawScore();
@@ -187,7 +313,7 @@ function drawScore() {
   rendered = { arrowTargets: [] };
   if (!window.Vex) { scoreEl.textContent = ''; return; }
   try {
-    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape() });
+    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables });
     else if (settings.display === 'keysig') rendered = renderKeySignature(scoreEl, exercise);
     else scoreEl.innerHTML = '';
   } catch (err) {
@@ -259,20 +385,27 @@ function setStatus(text, strong = false) {
   st.style.color = strong ? 'var(--accent)' : '';
 }
 
+/** Note name, with its sol-fa syllable when singing ("G4 · Sol"). */
+function labelNote(n, octave = true) {
+  const name = noteName(n, { octave });
+  return syllables ? `${name} · ${syllables(n)}` : name;
+}
+
 function liveNoteName(midiSounding) {
   const written = Math.round(midiSounding) - exercise.info.transpose;
   const ev = seq.events[arrowIndex];
   if (ev) {
     const k = ev.writtenMidis.indexOf(written);
-    if (k >= 0) return noteName(ev.notes[k], { octave: true });
+    if (k >= 0) return labelNote(ev.notes[k]);
   }
-  return noteName(spellMidi(written, exercise.fifths < 0 ? 'flat' : 'sharp'), { octave: true });
+  return labelNote(spellMidi(written, exercise.fifths < 0 ? 'flat' : 'sharp'));
 }
 
 function hintText() {
   if (!settings.hint || settings.display === 'score') return '';
   const ev = seq.events[arrowIndex];
-  return ev ? `Next: ${ev.notes.map((n) => noteName(n)).join(' + ')}` : '';
+  if (!ev) return '';
+  return syllables ? `Next: ${syllables(ev.notes[0])} (${noteName(ev.notes[0])})` : `Next: ${ev.notes.map((n) => noteName(n)).join(' + ')}`;
 }
 
 function colourNote(k, cents) {
@@ -299,6 +432,9 @@ function synthOptions() {
     extras: extraAfter.map((i) => ({ after: i, midi: (seq.events[i] ? seq.events[i].midis[0] : 60) + 1 })),
     seed: Math.floor(Math.random() * 1e6),
     monitor: !!($('d-monitor') && $('d-monitor').checked),
+    // a sung performance: a consonant before each note and a scoop up into it
+    sung: isVoice() ? true : null,
+    vibratoCents: isVoice() ? Math.max(Number(v('d-vibrato')) || 0, 30) : Number(v('d-vibrato')) || 0,
   };
 }
 
@@ -322,7 +458,7 @@ async function startSession() {
         if (st === 'starting') setStatus('Starting the microphone…');
         if (st === 'calibrating') setStatus('Listening to the room – stay quiet for a moment…');
         if (st === 'countin') setStatus(`Count-in… ${extra}`, true);
-        if (st === 'listening') setStatus('Play now', true);
+        if (st === 'listening') setStatus(isVoice() ? 'Sing now' : 'Play now', true);
       },
       pitch: (pv) => {
         if (!pv) { meter.clear(hintText()); return; }
@@ -370,17 +506,18 @@ function finishSession(result) {
   offerCapture(finished, result);
   if (!result) { setStatus('Stopped.'); return; }
   const played = result.perNote.some((r) => r.status !== 'missing');
-  if (!played) { setStatus('No notes were heard. Check the microphone and play a little louder, or move closer.'); return; }
+  if (!played) { setStatus(`No notes were heard. Check the microphone and ${verb()} a little louder, or move closer.`); return; }
   setStatus(`Finished – score ${Math.round(result.total)} / 100.`);
   lastResult = result;
-  renderSummary($('summary'), { result, seq, prec: prec(), settings });
+  renderSummary($('summary'), { result, seq, prec: prec(), settings, labels: syllables ? seq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
   colourAll(result);
   showSummary();
   const item = activeId && list.find((x) => x.id === activeId);
   if (item && sameSettings(expandSettings(item.settings), settings)) {
-    const run = makeRun(result, seq, settings.rhythm, Date.now(), (n) => noteName(n, { octave: true }), scoresAtLevels(result, undefined, precisionAt));
+    const run = makeRun(result, seq, settings.rhythm, Date.now(), (n) => labelNote(n), scoresAtLevels(result, undefined, (lv) => precisionAt(lv, settings.instrument)));
     run.level = settings.precision;
-    run.slurred = slurGroup(settings) || 0; // notes per bow, 0 = separate bows
+    // notes per bow, 0 = separate bows; the voice and other instruments say it in a word
+    run.slurred = isVoice() ? 'sung' : slurGroup(settings) || (isBowed(settings.instrument) ? 0 : 'detached');
     run.vib = !!settings.vibrato;
     run.met = !!settings.metronome;
     recordRun(results, item.id, run);
@@ -395,7 +532,7 @@ function stopSession(silent = false) {
   if (!session) return;
   const s = session;
   session = null;
-  if (silent) { s.abort(); $('startBtn').textContent = 'Start'; setStatus('Press Start, wait for “Play now”, then play.'); meter.clear(); }
+  if (silent) { s.abort(); $('startBtn').textContent = 'Start'; setStatus(idleStatus()); meter.clear(); }
   else s.stop();
 }
 
@@ -406,7 +543,7 @@ function stopPlayback() {
   $('playBtn').textContent = '▶ Play';
   $('arrow').hidden = true;
   meter.clear();
-  setStatus('Press Start, wait for “Play now”, then play.');
+  setStatus(idleStatus());
 }
 
 $('playBtn').addEventListener('click', async () => {
@@ -426,12 +563,12 @@ $('playBtn').addEventListener('click', async () => {
       onEvent: (k) => {
         placeArrow(k);
         const ev = seq.events[k];
-        meter.setReadout(ev.notes.map((n) => noteName(n, { octave: true })).join(' + '), '', '');
+        meter.setReadout(ev.notes.map((n) => labelNote(n)).join(' + '), '', '');
       },
       onEnd: () => { $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
     });
     await playing;
-    if (player.playing) setStatus(`Playing the exercise at ♩ = ${settings.bpm} on the ${INSTRUMENTS[settings.instrument].name.toLowerCase()}…`);
+    if (player.playing) setStatus(isVoice() ? `Playing the exercise at ♩ = ${settings.bpm}…` : `Playing the exercise at ♩ = ${settings.bpm} on the ${/^[A-Z][a-z ]*$/.test(instName(settings.instrument)) ? instName(settings.instrument).toLowerCase() : instName(settings.instrument)}…`);
   } catch (e) {
     $('playBtn').textContent = '▶ Play';
     setStatus('Could not play: ' + (e && e.message));
@@ -456,7 +593,7 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 function autoName(s) {
   const ex = buildExercise(s);
   const extra = shortOptions(s);
-  return `${INSTRUMENTS[s.instrument].name}: ${ex.title}${extra ? ' – ' + extra : ''}`;
+  return `${instName(s.instrument)}: ${ex.title}${extra ? ' – ' + extra : ''}`;
 }
 
 function renderList() {
@@ -660,6 +797,7 @@ function renderRhythmBar() {
   const t = EXERCISE_TYPES[settings.type];
   const can = t.slurs.length > 0 && isCrotchetRhythm(settings.rhythm);
   const per = slurGroup({ ...settings, slurred: true });
+  sw.hidden = isVoice(); // every sung note has its own syllable
   sw.disabled = !can;
   sw.setAttribute('aria-pressed', String(!!settings.slurred && can));
   sw.textContent = settings.slurred && can ? `⌒ Slurred ${per}` : '⌒ Slurred';
@@ -724,8 +862,10 @@ function setTab(tab) {
         // note names for runs saved before they were stored: rebuild the exercise as it was played
         labelsFor: (item, run) => {
           const s = normalise({ ...expandSettings(item.settings), rhythm: run.rhythm });
-          const sq = buildSequence(buildExercise(s));
-          return sq.events.map((ev) => ev.notes.map((n) => noteName(n, { octave: true })).join(' + '));
+          const ex = buildExercise(s);
+          const sq = buildSequence(ex);
+          const syl = syllablesFor(ex);
+          return sq.events.map((ev) => ev.notes.map((n) => noteName(n, { octave: true }) + (syl ? ' · ' + syl(n) : '')).join(' + '));
         },
         setStudentName: (n) => { prefs.studentName = n; savePrefs(); $('studentName').value = n; },
       });
@@ -741,7 +881,7 @@ function setTab(tab) {
         getA4: a4,
         setA4: (v) => { prefs.a4 = Math.min(446, Math.max(415, Number(v) || 440)); savePrefs(); },
         getInstrument: () => settings.instrument,
-        setInstrument: (inst) => { setSettings({ ...settings, instrument: inst }); if (calWizard) calWizard.refresh(); },
+        setInstrument: (inst) => { const next = { ...settings, instrument: inst }; setSettings({ ...next, ...playableRange(next) }); if (calWizard) calWizard.refresh(); },
         beforeStart: () => { if (calWizard) calWizard.cancel(''); },
       });
       metroCard = new MetronomeCard({
@@ -754,7 +894,7 @@ function setTab(tab) {
         getInstrument: () => settings.instrument,
         getA4: a4,
         beforeStart: () => { if (tunerPage.running) tunerPage.stop(); tunerPage.stopTones(); if (metroCard && metroCard.running) metroCard.stop(); },
-        onChange: () => syncForm(),
+        onChange: () => { syncForm(); updateExercise(); if (tunerPage) tunerPage.refresh(true); },
       });
     } else { tunerPage.refresh(true); calWizard.refresh(); metroCard.refresh(); }
   } else {
@@ -800,6 +940,7 @@ function captureMeta(sess, result, cap) {
     // what the calibration changed: effective A and listening thresholds
     calibrationApplied: sess && sess.o.calibration ? { a4: sess.a4, ...sess.segOpts } : null,
     calibrationsStored: loadCalibrationsSafe(),
+    profiles: getProfiles(), // voice range / other instrument as set on this device
     audio: engine.describe(),
     analysis: sess ? { minFreq: sess.minFreq, maxFreq: sess.maxFreq, seg: { ...SEG }, run: { ...RUN }, finalNoiseFloor: segm ? segm.noiseFloor : null, finalGate: segm ? segm.gate : null } : null,
     log: sess ? sess.log : null,
@@ -813,7 +954,7 @@ function captureMeta(sess, result, cap) {
     result: result ? {
       total: r3(result.total, 1), intonation: r3(result.intonation, 1), timing: r3(result.timing, 1), penalty: result.penalty,
       missing: result.missing, wrong: result.wrong, bpm: r3(result.bpm, 1), globalOffset: result.globalOffset || null,
-      precision: { level: settings.precision, ...precisionAt(settings.precision) },
+      precision: { level: settings.precision, ...precisionAt(settings.precision, settings.instrument) },
       notes: result.perNote.map((p) => {
         const ev = seq.events[p.event];
         const d = p.note != null && segm ? segm.notes[p.note] : null;
@@ -887,7 +1028,7 @@ async function runSelfTest() {
   const t0 = performance.now();
   try {
     const h = await import('../tests/harness.js');
-    for (const m of ['theory', 'audio', 'scoring', 'list']) await import(`../tests/${m}.test.js`);
+    for (const m of ['theory', 'audio', 'scoring', 'list', 'voice']) await import(`../tests/${m}.test.js`);
     const box = document.createElement('div');
     const results = await h.run(box);
     const failed = results.filter((r) => !r.ok);

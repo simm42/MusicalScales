@@ -2,6 +2,7 @@
 
 import { RHYTHMS, isCrotchetRhythm } from './sequence.js';
 import { EXERCISE_TYPES, slurGroup } from './exercises.js';
+import { isBowed } from './instruments.js';
 
 export function describeOptions(s) {
   const t = EXERCISE_TYPES[s.type];
@@ -17,9 +18,11 @@ export function describeOptions(s) {
   }[s.rhythm] || RHYTHMS.crotchet.label;
   parts.push(rhythm);
   if (s.repeatTop) parts.push('top note repeated');
-  if (t.doubleStop) parts.push('both notes together, separate bows');
-  else if (slurGroup(s) > 1) parts.push(`slurred ${slurGroup(s)} notes to a bow`);
-  else parts.push('separate bows');
+  const bowed = isBowed(s.instrument);
+  if (s.instrument === 'voice') parts.push(s.solfege === 'fixed' ? 'sung to fixed Do' : s.solfege === 'movableLa' ? 'sung to movable Do, minor on La' : 'sung to movable Do');
+  else if (t.doubleStop) parts.push('both notes together, separate bows');
+  else if (slurGroup(s) > 1) parts.push(`slurred ${slurGroup(s)} notes ${bowed ? 'to a bow' : 'at a time'}`);
+  else parts.push(bowed ? 'separate bows' : 'detached');
   if (s.metronome) parts.push(`with metronome at ♩ = ${s.bpm}`);
   return parts.join(' · ');
 }

@@ -28,6 +28,12 @@ export function clickMask(t0, spb, windowSec = 0.085) {
   };
 }
 
+/** The exercise's shortest note at the set tempo, in seconds. */
+export function shortestNoteSec(seq, bpm) {
+  const beats = Math.min(...seq.events.map((e) => e.beats).filter((b) => b > 0));
+  return isFinite(beats) ? (beats * 60) / bpm : null;
+}
+
 /** Pitches the exercise plays twice in a row (sounding MIDI). */
 export function repeatPitches(seq) {
   return [...new Set(seq.events.filter((e) => e.sameAsPrev).map((e) => e.midis[0]))];
@@ -184,7 +190,7 @@ export class PracticeSession {
     this.noiseFloor = floor;
     this.segmenter = new Segmenter({
       ...this.segOpts,
-      a4, noiseFloor: floor, vibrato: settings.vibrato, minFreq: this.minFreq, maxFreq: this.maxFreq, pitchless: this.doubleStop,
+      a4, noiseFloor: floor, vibrato: settings.vibrato, voice: settings.instrument === 'voice', shortestNoteSec: shortestNoteSec(this.o.seq, settings.bpm), minFreq: this.minFreq, maxFreq: this.maxFreq, pitchless: this.doubleStop,
       repeats: this.o.seq.events.some((e) => e.sameAsPrev),
       repeatPitches: repeatPitches(this.o.seq),
       onOnset: (n) => {
@@ -265,7 +271,7 @@ export class PracticeSession {
       if (Math.abs(r - exp) === 12) m += exp - r;
     }
     // smoothing: ~1 vibrato cycle with vibrato, a few frames without
-    const span = settings.vibrato ? 0.2 : 0.035;
+    const span = settings.vibrato || settings.instrument === 'voice' ? 0.2 : 0.035;
     this.smooth.push({ t: f.t, m });
     while (this.smooth.length && f.t - this.smooth[0].t > span) this.smooth.shift();
     const avg = this.smooth.reduce((a, x) => a + x.m, 0) / this.smooth.length;
@@ -329,7 +335,7 @@ export function analyseRecording(o) {
   const t0 = frames.length ? frames[0].t : startTime;
   const measured = estimateNoiseFloor(frames.filter((f) => f.t - t0 < RUN.calibrateSec));
   const noiseFloor = applied.segmenter.noiseFloor ? Math.min(applied.segmenter.noiseFloor, measured) : measured;
-  const segmenter = new Segmenter({ ...applied.segmenter, a4, noiseFloor, vibrato: s.vibrato, minFreq, maxFreq, pitchless: doubleStop, repeats: seq.events.some((e) => e.sameAsPrev), repeatPitches: repeatPitches(seq),
+  const segmenter = new Segmenter({ ...applied.segmenter, a4, noiseFloor, vibrato: s.vibrato, voice: s.instrument === 'voice', shortestNoteSec: shortestNoteSec(seq, s.bpm), minFreq, maxFreq, pitchless: doubleStop, repeats: seq.events.some((e) => e.sameAsPrev), repeatPitches: repeatPitches(seq),
     clickMask: metronomeT0 != null ? clickMask(metronomeT0, 60 / s.bpm, windowSizeFor(sampleRate, minFreq) / sampleRate) : undefined });
   for (const f of frames) segmenter.push(f); // same as live: calibration frames are analysed too
   segmenter.flush();
@@ -340,7 +346,7 @@ export function analyseRecording(o) {
     const fixed = splitMergedRepeats(notes, seq.events, alignment);
     if (fixed) { notes.splice(0, notes.length, ...fixed); alignment = align(notes, seq.events); }
   }
-  const prec = precisionAt(s.precision);
+  const prec = precisionAt(s.precision, s.instrument);
   const result = scoreRun({
     expected: seq.events, detected: notes, alignment, prec,
     metronome: metronomeT0 != null ? { t0: metronomeT0, spb: 60 / s.bpm } : null,

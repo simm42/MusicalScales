@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Scale Practice</title>
-<meta name="description" content="Practise scales and arpeggios on violin, viola, cello and double bass. The microphone listens and scores your intonation and timing – everything stays on your device.">
+<meta name="description" content="Practise scales and arpeggios on violin, viola, cello, double bass, any other instrument, or sing them to sol-fa. The microphone listens and scores your intonation and timing – everything stays on your device.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='11' cy='22' r='6' fill='%236b3fa0'/%3E%3Crect x='15' y='4' width='3' height='18' fill='%236b3fa0'/%3E%3C/svg%3E">
 <script>
   // apply saved theme before paint
@@ -53,6 +53,19 @@
         <fieldset>
           <legend>Exercise</legend>
           <div class="field"><label for="o-instrument">Instrument</label><select id="o-instrument" name="instrument"></select></div>
+          <div id="f-voice" hidden>
+            <p class="small muted" id="voiceInfo" style="margin:2px 0 6px"></p>
+            <div class="field"><label for="o-voiceType">Voice type</label><select id="o-voiceType"></select></div>
+            <div class="row"><button type="button" class="btn" id="measureVoiceBtn">Measure my range</button></div>
+          </div>
+          <div id="f-other" hidden>
+            <div class="field"><label for="o-otherName">Instrument name</label><input type="text" id="o-otherName" maxlength="40" autocomplete="off" placeholder="Other instrument"></div>
+            <div class="field"><label for="o-otherLow">Lowest written note</label><select id="o-otherLow"></select></div>
+            <div class="field"><label for="o-otherHigh">Highest written note</label><select id="o-otherHigh"></select></div>
+            <div class="field"><label for="o-otherTranspose">Transposition</label><select id="o-otherTranspose"></select></div>
+            <div class="field"><label for="o-otherClef">Clef</label><select id="o-otherClef"></select></div>
+            <p class="small muted" id="otherMsg" role="status" style="margin:2px 0 0"></p>
+          </div>
           <div class="field"><label for="o-type">Type</label><select id="o-type" name="type"></select></div>
           <div class="field" id="f-mode"><label for="o-mode">Tonality</label><select id="o-mode" name="mode"><option value="major">Major</option><option value="minor">Minor</option></select></div>
           <div class="field" id="f-key"><label for="o-key" id="l-key">Key</label><select id="o-key" name="key"></select></div>
@@ -62,7 +75,7 @@
           <label class="check"><input type="checkbox" id="o-octaveUp" name="octaveUp"> Start an octave higher</label>
           <label class="check"><input type="checkbox" id="o-repeatTop" name="repeatTop"> Repeat the top note</label>
           <div class="field"><label for="o-slur">When slurred</label><select id="o-slur" name="slur"></select></div>
-          <p class="small muted" style="margin:2px 0 0">Rhythm and the Slurred switch are on the Practice page; slurs apply to the crotchet rhythms.</p>
+          <p class="small muted" id="slurNote" style="margin:2px 0 0">Rhythm and the Slurred switch are on the Practice page; slurs apply to the crotchet rhythms.</p>
         </fieldset>
         <div class="field"><label for="o-itemName">Name in syllabus</label><input type="text" id="o-itemName" maxlength="120" autocomplete="off"></div>
         <div class="row">
@@ -75,6 +88,7 @@
           <legend>Display <span class="legend-note">– for every exercise</span></legend>
           <div class="field"><label for="o-display">Show</label><select id="o-display" name="display"><option value="name">Name only</option><option value="keysig">Key signature</option><option value="score">Full score</option></select></div>
           <div class="field"><label for="o-clefMode">High notes</label><select id="o-clefMode" name="clefMode"><option value="change">Change clef</option><option value="home">Ledger lines</option></select></div>
+          <div class="field" id="f-solfege" hidden><label for="o-solfege">Sing with</label><select id="o-solfege" name="solfege"></select></div>
           <label class="check"><input type="checkbox" id="o-hint" name="hint"> Show the next note’s name</label>
         </fieldset>
         <fieldset>
@@ -180,8 +194,8 @@
       </div>
     </div>
     <div class="card stage" id="calCard" style="margin-top:16px">
-      <h2 style="font-size:18px;margin:0 0 6px">Calibrate the microphone</h2>
-      <p class="muted" style="margin:0 0 8px">Tune your instrument first. The app then listens to the room for a few seconds and to each open string, and adjusts to this microphone, room and instrument. Calibrate again if you change device, microphone or room.</p>
+      <h2 style="font-size:18px;margin:0 0 6px" id="calTitle">Calibrate the microphone</h2>
+      <p class="muted" style="margin:0 0 8px" id="calIntro">Tune your instrument first. The app then listens to the room for a few seconds and to each open string, and adjusts to this microphone, room and instrument. Calibrate again if you change device, microphone or room.</p>
       <p id="calStatus" style="margin:0 0 8px"></p>
       <div class="row">
         <button class="btn primary" id="calStart" type="button">Calibrate microphone</button>

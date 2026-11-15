@@ -7,8 +7,11 @@ import {
 import { instrumentInfo } from './instruments.js';
 import { RHYTHMS, isCrotchetRhythm } from './sequence.js';
 
-const ALL = ['violin', 'viola', 'cello', 'bass'];
+const ALL = ['violin', 'viola', 'cello', 'bass', 'voice', 'other'];
+const STRINGS_OTHER = ['violin', 'viola', 'cello', 'bass', 'other'];
 const UPPER = ['violin', 'viola', 'cello'];
+// ranges a 6th / a 12th: double bass syllabuses, and handy for singers and any instrument
+const SHORT_RANGE_OK = ['bass', 'voice', 'other'];
 
 export const EXERCISE_TYPES = {
   scale:        { label: 'Scale', instruments: ALL, keyKind: 'key', tonality: true, forms: true, ranges: ['1', '2', '3', '6th', '12th'], bassOnlyRanges: ['6th', '12th'], slurs: [2, 4, 7] },
@@ -16,10 +19,10 @@ export const EXERCISE_TYPES = {
   chromatic:    { label: 'Chromatic scale', instruments: ALL, keyKind: 'start', ranges: ['1', '2', '3'], slurs: [3, 4, 6, 12] },
   dom7:         { label: 'Dominant 7th', instruments: ALL, keyKind: 'majorKey', ranges: ['1', '2', '3'], slurs: [2, 4] },
   dim7:         { label: 'Diminished 7th', instruments: ALL, keyKind: 'start', ranges: ['1', '2', '3'], slurs: [2, 4] },
-  dsBroken:     { label: 'Double stops – broken steps', instruments: ALL, keyKind: 'key', tonality: true, forms: true, intervals: true, ranges: ['1', '2'], slurs: [2] },
+  dsBroken:     { label: 'Double stops – broken steps', instruments: STRINGS_OTHER, keyKind: 'key', tonality: true, forms: true, intervals: true, ranges: ['1', '2'], slurs: [2] },
   dsParallel:   { label: 'Double stops – together', instruments: UPPER, keyKind: 'key', tonality: true, forms: true, intervals: true, ranges: ['1', '2'], slurs: [], doubleStop: true },
-  brokenThirds: { label: 'Scale in broken thirds', instruments: ['bass'], keyKind: 'key', tonality: true, forms: true, ranges: ['1', '2'], slurs: [2] },
-  runningThirds:{ label: 'Scale in running thirds', instruments: ['bass'], keyKind: 'key', tonality: true, forms: true, ranges: ['1', '2'], slurs: [3] },
+  brokenThirds: { label: 'Scale in broken thirds', instruments: ['bass', 'other'], keyKind: 'key', tonality: true, forms: true, ranges: ['1', '2'], slurs: [2] },
+  runningThirds:{ label: 'Scale in running thirds', instruments: ['bass', 'other'], keyKind: 'key', tonality: true, forms: true, ranges: ['1', '2'], slurs: [3] },
   thumbScale:   { label: 'Thumb-position scale', instruments: ['cello', 'bass'], keyKind: 'key', tonality: true, forms: true, ranges: ['1'], slurs: [2, 4, 7] },
 };
 
@@ -48,16 +51,21 @@ export const DEFAULT_SETTINGS = {
   precision: 2,
   vibrato: false,
   hint: false,
+  solfege: 'movable', // singing: 'movable' (minor on Do), 'movableLa' (minor on La) or 'fixed'
 };
+
+export const SOLFEGE_SYSTEMS = { movable: 'Movable Do (minor keys on Do)', movableLa: 'Movable Do (minor keys on La)', fixed: 'Fixed Do (C is Do)' };
 
 // What belongs to a syllabus item (and share links) …
 export const EXERCISE_FIELDS = ['instrument', 'type', 'mode', 'key', 'start', 'form', 'interval', 'range', 'octaveUp', 'slur', 'repeatTop'];
 // … and what is a global practice/display/listening preference.
-export const GLOBAL_FIELDS = ['rhythm', 'slurred', 'display', 'clefMode', 'hint', 'precision', 'vibrato', 'metronome', 'bpm'];
+export const GLOBAL_FIELDS = ['rhythm', 'slurred', 'display', 'clefMode', 'hint', 'precision', 'vibrato', 'metronome', 'bpm', 'solfege'];
 
 /** Notes per bow actually used: 0 when playing separate bows. */
 export function slurGroup(s) {
   const t = EXERCISE_TYPES[s.type];
+  // every sung note has its own syllable
+  if (s.instrument === 'voice') return 0;
   if (!s.slurred || !t || !t.slurs.length || !isCrotchetRhythm(s.rhythm)) return 0;
   return t.slurs.includes(Number(s.slur)) ? Number(s.slur) : t.slurs[0];
 }
@@ -74,7 +82,7 @@ export function typesForInstrument(inst) {
 
 export function rangesFor(inst, type) {
   const t = EXERCISE_TYPES[type];
-  return t.ranges.filter((r) => inst === 'bass' || !(t.bassOnlyRanges || []).includes(r));
+  return t.ranges.filter((r) => SHORT_RANGE_OK.includes(inst) || !(t.bassOnlyRanges || []).includes(r));
 }
 
 export function keyListFor(s) {
@@ -107,6 +115,7 @@ export function normalise(input) {
   s.slurred = !!s.slurred;
   s.bpm = Math.min(200, Math.max(30, Number(s.bpm) || 60));
   s.precision = Math.round(Math.min(4, Math.max(0, Number(s.precision) || 0)));
+  if (!SOLFEGE_SYSTEMS[s.solfege]) s.solfege = 'movable';
   return s;
 }
 
@@ -130,6 +139,16 @@ export function buildExercise(input) {
   const { lo } = stepsMidiRange(gen);
   const floor = s.type === 'thumbScale' ? info.thumbMidi : info.lowestMidi;
   let k = Math.ceil((floor - lo) / 12);
+  if (info.placement === 'centre') {
+    // singers: the octave that sits best in the middle of the range, if more than one fits
+    const hi0 = stepsMidiRange(gen).hi;
+    const mid = (info.lowestMidi + info.highestMidi) / 2;
+    let best = k;
+    for (let j = k; hi0 + 12 * j <= info.highestMidi; j++) {
+      if (Math.abs((lo + hi0) / 2 + 12 * j - mid) < Math.abs((lo + hi0) / 2 + 12 * best - mid)) best = j;
+    }
+    k = best;
+  }
   if (s.octaveUp) k += 1;
   gen = shiftSteps(gen, k);
   const range = stepsMidiRange(gen);
@@ -138,7 +157,10 @@ export function buildExercise(input) {
   const res = { settings: s, info, type: t, gen, fifths, title, lowMidi: range.lo, highMidi: range.hi };
   if (range.hi > info.highestMidi) {
     const top = gen.steps.flatMap((x) => x.notes).find((n) => midiOf(n) === range.hi);
-    return { ...res, ok: false, reason: `The top note (${noteName(top, { octave: true })}) is above the ${info.name.toLowerCase()} range set for this tool (${info.highest}).` };
+    const where = info.family === 'voice' ? `your vocal range (up to ${info.highest}${info.transpose ? ' written' : ''})`
+      : info.family === 'other' ? `the range set for your instrument (up to written ${info.highest})`
+      : `the ${info.name.toLowerCase()} range set for this tool (${info.highest})`;
+    return { ...res, ok: false, reason: `The top note (${noteName(top, { octave: true })}) is above ${where}.` };
   }
   return { ...res, ok: true };
 }

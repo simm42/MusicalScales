@@ -4,6 +4,7 @@ import { analyseRecording } from '../js/practice.js';
 import { DEFAULT_SETTINGS } from '../js/exercises.js';
 import { noteName, freqToMidi } from '../js/theory.js';
 import { SEG } from '../js/segmenter.js';
+import { useProfiles } from '../js/profiles.js';
 
 const out = document.getElementById('out');
 const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -110,6 +111,8 @@ async function analyseBuffer(name, buf) {
   const { samples, sampleRate, meta } = decodeWav(buf);
   const m = meta || { settings: {}, a4: 440 };
   const settings = { ...DEFAULT_SETTINGS, ...(m.settings || {}) };
+  // the voice range / other instrument as set on the device that made the recording
+  useProfiles(m.profiles || null);
   const r = analyseRecording({ samples, sampleRate, settings, a4: m.a4 || 440, startTime: m.startTime || 0, metronomeT0: m.metronomeT0 ?? null, calibration: m.calibration || null });
   render(name, m, r);
 }

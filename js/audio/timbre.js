@@ -1,4 +1,4 @@
-// Approximate tone colours of the four bowed strings. A bowed string vibrates
+// Approximate tone colours of the four bowed strings (plus a sung vowel and a plain tone). A bowed string vibrates
 // roughly as a sawtooth (all harmonics, falling as 1/k); the wooden body then
 // boosts some frequency regions (air and wood resonances, the "bridge hill").
 // No samples are used – everything is synthesised.
@@ -9,6 +9,10 @@ export const TIMBRES = {
   viola:  { res: [[230, 1.1, 0.2], [380, 1.3, 0.18], [1700, 1.1, 0.4], [2400, 0.6, 0.3]], base: 0.3, rolloff: 0.95, maxH: 24, vibrato: 15, attack: 0.06, noise: 0.012 },
   cello:  { res: [[100, 1.0, 0.25], [190, 1.4, 0.2], [580, 1.0, 0.25], [1500, 0.9, 0.4]], base: 0.3, rolloff: 1.0, maxH: 30, vibrato: 13, attack: 0.07, noise: 0.01 },
   bass:   { res: [[60, 1.0, 0.3], [110, 1.3, 0.25], [300, 0.9, 0.3], [900, 0.6, 0.4]], base: 0.35, rolloff: 1.05, maxH: 30, vibrato: 10, attack: 0.09, noise: 0.008 },
+  // a sung "ah": the voice's formants (vocal-tract resonances) on a soft source
+  voice:  { res: [[750, 2.2, 0.15], [1150, 1.4, 0.12], [2600, 0.7, 0.12], [3300, 0.35, 0.1]], base: 0.12, rolloff: 1.1, maxH: 30, vibrato: 22, attack: 0.07, noise: 0.003 },
+  // any other instrument: a plain, mellow tone
+  other:  { res: [[900, 0.6, 0.6]], base: 0.5, rolloff: 1.5, maxH: 16, vibrato: 0, attack: 0.04, noise: 0.002 },
 };
 
 function bodyGain(t, f) {

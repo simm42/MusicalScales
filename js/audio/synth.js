@@ -39,7 +39,11 @@ export function renderPerformance(seq, o = {}) {
     sampleRate = 48000, bpm = 80, a4 = 440, detuneSd = 0, detune = null, jitter = 0, vibratoCents = 0,
     vibratoRate = 5.5, missing = [], extras = [], noise = 0.002, leadIn = 1.2, tail = 2.0, seed = 7, amp = 0.25,
     dipFloor = 0.15, clicks = null, vibratoAmDb = 0, timbre = null, attackSec = null, releaseSec = null,
+    // singing sol-fa: each note opens with an unpitched consonant, then the vowel
+    // scoops up into the pitch. { consonantSec, consonantAmp, scoopCents, scoopSec }
+    sung = null,
   } = o;
+  const SUNG = sung ? { consonantSec: 0.06, consonantAmp: 0.08, scoopCents: 60, scoopSec: 0.1, ...(sung === true ? {} : sung) } : null;
   const r = rng(seed);
   const spb = 60 / bpm;
   const events = seq.events;
@@ -90,11 +94,18 @@ export function renderPerformance(seq, o = {}) {
         const f0 = isExtra ? extraF : baseF;
         const vib = Math.sin(2 * Math.PI * vibratoRate * (i / sampleRate));
         const vAmt = T ? vDepth * Math.min(1, Math.max(0, (tt - 0.15) / 0.2)) : vDepth;
-        const f = f0 * Math.pow(2, (vAmt * vib) / 1200);
+        if (SUNG && v === 0 && tt < SUNG.consonantSec) {
+          // the consonant: breathy noise, no pitch (and the vowel's phase starts afresh)
+          out[i] += SUNG.consonantAmp * gauss(nr2);
+          continue;
+        }
+        const scoop = SUNG ? -SUNG.scoopCents * Math.max(0, 1 - (tt - SUNG.consonantSec) / SUNG.scoopSec) : 0;
+        const f = f0 * Math.pow(2, (vAmt * vib + scoop) / 1200);
         phases[v] += (2 * Math.PI * f) / sampleRate;
         // bow envelope: attack unless slurred; release before a bow change/rest
         let env = vibratoAmDb ? Math.pow(10, (vibratoAmDb * vib) / 20) : 1; // vibrato also swells the level
-        if (!tr.slurred) env *= Math.min(1, dipFloor + tt / attack);
+        if (SUNG) env *= Math.min(1, dipFloor + Math.max(0, tt - SUNG.consonantSec) / attack);
+        else if (!tr.slurred) env *= Math.min(1, dipFloor + tt / attack);
         const toEnd = (end - i) / sampleRate;
         if (!legatoNext) env *= Math.min(1, dipFloor + toEnd / release);
         if (isExtra) { const te = (i - extraFrom) / sampleRate; env *= Math.min(1, 0.15 + te / 0.02); }

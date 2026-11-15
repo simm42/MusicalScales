@@ -1,6 +1,9 @@
 # Scale Practice
 
-A free web page that helps students practise scales and arpeggios on the **violin, viola, cello and double bass**.
+A free web page that helps students practise scales and arpeggios on the **violin, viola, cello and double bass**, on **any other instrument**, or **sung to sol-fa**.
+
+- **Voice:** on the Tuner page the singer holds their lowest and highest comfortable notes for two seconds each. Notes that waver or come through strained are refused, so the range is realistic. The range gives a traditional voice type (female names where a range fits both), the clef (tenors read treble clef an octave up) and where each exercise sits. Notes are sung to Do Re Mi: movable Do (minor keys on Do or on La) or fixed Do. Syllables appear under the score and in the summary. Listening allows for consonants, scoops into notes and vibrato, and the pitch and timing tolerances are wider than for strings. The voice type can also be chosen by hand.
+- **Other instrument:** name it, choose its lowest and highest written notes from drop-downs, and set its transposition (up an octave to down an octave and a 6th; for example B♭ clarinet sounds a tone lower). The clef is chosen from the range or set by hand. Calibration uses two long notes and warns if the transposition looks wrong. The instrument's range and transposition are kept on this device only and are not part of a syllabus link.
 
 - Choose the exercise: major and minor scales (natural, harmonic or melodic), arpeggios, chromatic scales, dominant and diminished 7ths, double stops (broken or together), double-bass scales in broken and running thirds, thumb-position scales, and double-bass ranges to a 6th or 12th.
 - Four tabs: **Practice**, **Config**, **Results** and **Tuner**. On very wide screens (1600 px and up) Practice and Config share one page. The layout is made for phones, including landscape.

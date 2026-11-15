@@ -24,6 +24,8 @@ export function dateTime(ts) {
 export function playedHow(r) {
   if (!r || !r.rhythm) return '';
   const rh = RHYTHMS[r.rhythm] ? RHYTHMS[r.rhythm].label : r.rhythm;
+  // voice / other instruments store how they were performed as a word ('sung', 'detached')
+  if (typeof r.slurred === 'string') return `${rh}, ${r.slurred}`;
   return r.slurred ? `${rh}, slurred ${r.slurred}` : `${rh}, separate bows`;
 }
 
@@ -149,7 +151,7 @@ export class ResultsPage {
     this.body.innerHTML = `${levelNote}
       <div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
-        <p class="muted small">Notes of the scale left to right, oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision()).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision()).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
+        <p class="muted small">Notes of the scale left to right, oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
         <div class="surface-wrap"><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div></div>
       <div class="res-block"><h3>Last 2 weeks – every run</h3>${legendHtml(undefined, true, pal)}${svg.twoWeeks || '<p class="muted">No runs in the last 2 weeks.</p>'}</div>
       <div class="res-block"><h3>Past 6 months – average per day</h3>${legendHtml(undefined, true, pal)}${svg.sixMonths || '<p class="muted">No runs in the past 6 months.</p>'}</div>
@@ -171,7 +173,7 @@ export class ResultsPage {
       show();
     }
     const canvas = this.body.querySelector('#surface');
-    this.surface = new Surface3D(canvas, { runs: plotted, labels, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision()), colors: readPalette() });
+    this.surface = new Surface3D(canvas, { runs: plotted, labels, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision(), item.settings.instrument), colors: readPalette() });
   }
 
   /** The same detailed summary as after a run, for a stored run (scored at the precision it was played at). */
@@ -180,7 +182,7 @@ export class ResultsPage {
     if (!run.nl) { try { names = this.labelsFor(item, run); } catch { names = null; } }
     const d = runDetail(run, names);
     if (!d) { el.innerHTML = '<p class="muted">The details of this run were not kept.</p>'; return; }
-    renderSummary(el, { result: d.result, labels: d.labels, prec: precisionAt(run.level ?? 2), settings: { vibrato: run.vib, metronome: run.met }, title: null });
+    renderSummary(el, { result: d.result, labels: d.labels, prec: precisionAt(run.level ?? 2, item.settings.instrument), settings: { vibrato: run.vib, metronome: run.met, instrument: item.settings.instrument }, title: null });
     const note = document.createElement('p');
     note.className = 'muted small';
     note.textContent = `Played ${dateTime(run.d)}${playedHow(run) ? ' – ' + playedHow(run) : ''}. Scores are as marked at the time, at the precision used then.`;

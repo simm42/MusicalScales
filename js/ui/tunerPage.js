@@ -2,7 +2,7 @@
 // a choice of equal temperament or pure fifths/fourths.
 
 import { INSTRUMENTS, instrumentInfo, detectionRange } from '../instruments.js';
-import { midiOf, midiToFreq, freqToMidi, noteName } from '../theory.js';
+import { midiOf, midiToFreq, freqToMidi, noteName, spellMidi } from '../theory.js';
 import { Meter, fmtCents } from './meter.js';
 import { MicError } from '../audio/mic.js';
 import { periodicWave } from '../audio/timbre.js';
@@ -28,6 +28,7 @@ export function stringTargets(instId, system, a4 = 440) {
 
 export function systemsFor(instId) {
   const sys = INSTRUMENTS[instId].tuningSystem;
+  if (!sys) return [['equal', 'Equal temperament']];
   return [['equal', 'Equal temperament'], sys === 'fourths' ? ['fourths', 'Pure fourths from G'] : ['fifths', 'Pure fifths from A']];
 }
 
@@ -53,7 +54,7 @@ export class TunerPage {
     this.tones = new Map();
     this.smooth = [];
     this.inTuneSince = null;
-    for (const id of Object.keys(INSTRUMENTS)) this.el.inst.add(new Option(INSTRUMENTS[id].name, id));
+    for (const id of Object.keys(INSTRUMENTS)) this.el.inst.add(new Option(instrumentInfo(id).name, id));
     this.el.inst.addEventListener('change', () => { this.setInstrument(this.el.inst.value); this.refresh(true); });
     this.el.sys.addEventListener('change', () => { this.system = this.el.sys.value; this.refresh(false); });
     this.el.a4.addEventListener('change', () => { this.setA4(this.el.a4.value); this.el.a4.value = this.getA4(); this.refresh(false); });
@@ -63,6 +64,8 @@ export class TunerPage {
 
   refresh(instrumentChanged) {
     const inst = this.getInstrument();
+    // the other instrument's name can change in Config
+    [...this.el.inst.options].forEach((o) => { o.textContent = instrumentInfo(o.value).name; });
     this.el.inst.value = inst;
     this.el.a4.value = this.getA4();
     if (instrumentChanged) {
@@ -76,6 +79,11 @@ export class TunerPage {
     }
     this.targets = stringTargets(inst, this.system, this.getA4());
     const info = instrumentInfo(inst);
+    this.chromatic = !info.stringNotes.length;
+    this.el.sys.closest('.field').hidden = this.chromatic;
+    this.el.status.textContent = this.chromatic
+      ? (info.family === 'voice' ? 'Sing a note – the nearest note is shown.' : `Play a note – the nearest note is shown${info.transpose ? ' as written for your instrument' : ''}.`)
+      : 'Tap a string to lock onto it, or just play and the nearest string is chosen. 🔊 plays a reference note.';
     this.el.strings.innerHTML = '';
     this.stringEls = info.stringNotes.map((n, i) => {
       const d = document.createElement('div');
@@ -100,8 +108,10 @@ export class TunerPage {
       return d;
     });
     this.markStrings(this.locked);
-    this.meter.clear(this.running ? 'Play an open string' : '');
+    this.meter.clear(this.running ? this.idleText() : '');
   }
+
+  idleText() { return this.chromatic ? (this.getInstrument() === 'voice' ? 'Sing a note' : 'Play a note') : 'Play an open string'; }
 
   markStrings(near, tuned = null) {
     (this.stringEls || []).forEach((d, i) => {
@@ -148,13 +158,14 @@ export class TunerPage {
     if (this.beforeStart) this.beforeStart();
     this.el.error.hidden = true;
     const inst = this.getInstrument();
-    const { minFreq, maxFreq } = detectionRange(inst, this.getA4());
+    // a voice whose range is not measured yet may be anywhere from bass to soprano
+    const { minFreq, maxFreq } = inst === 'voice' ? { minFreq: 60, maxFreq: 1400 } : detectionRange(inst, this.getA4());
     try {
       this.el.start.disabled = true;
       await this.engine.start({ source: 'mic', minFreq, maxFreq, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
       this.running = true;
       this.el.start.textContent = 'Stop tuner';
-      this.meter.clear('Play an open string');
+      this.meter.clear(this.idleText());
     } catch (e) {
       this.el.error.textContent = e instanceof MicError ? e.message : 'Could not start: ' + e.message;
       this.el.error.hidden = false;
@@ -176,11 +187,12 @@ export class TunerPage {
   frame(f) {
     if (!this.running) return;
     const voiced = f.rms > TUNER.gate && f.freq > 0 && f.clarity >= TUNER.clarityMin;
-    if (!voiced) { this.smooth = []; this.inTuneSince = null; this.meter.clear('Play an open string'); this.markStrings(null); return; }
+    if (!voiced) { this.smooth = []; this.inTuneSince = null; this.meter.clear(this.idleText()); this.markStrings(null); return; }
     this.smooth.push({ t: f.t, m: freqToMidi(f.freq, 440) });
     while (this.smooth.length && f.t - this.smooth[0].t > TUNER.smoothSec) this.smooth.shift();
     const m = this.smooth.reduce((a, x) => a + x.m, 0) / this.smooth.length;
     const freq = 440 * Math.pow(2, (m - 69) / 12);
+    if (this.chromatic) { this.chromaticFrame(f, freq); return; }
     let idx = this.locked;
     if (idx == null) {
       let best = Infinity;
@@ -196,5 +208,22 @@ export class TunerPage {
     const tuned = ok && f.t - this.inTuneSince >= TUNER.holdSec;
     this.meter.setReadout(noteName(inst.stringNotes[idx]), shown == null ? 'too far from this string' : fmtCents(cents), tuned ? 'In tune ✓' : cents > 0 ? 'sharp – loosen' : 'flat – tighten');
     this.markStrings(idx, tuned);
+  }
+
+  /** Voice / other instrument: the nearest equal-tempered note (written pitch for transposing instruments). */
+  chromaticFrame(f, freq) {
+    const info = instrumentInfo(this.getInstrument());
+    const a4 = this.getA4();
+    const m = freqToMidi(freq, a4);
+    const near = Math.round(m);
+    const cents = (m - near) * 100;
+    const prec = { fullCents: TUNER.fullCents, zeroCents: TUNER.zeroCents };
+    this.meter.setBar(0, cents, prec);
+    const ok = Math.abs(cents) <= TUNER.fullCents;
+    if (ok) { if (this.inTuneSince == null) this.inTuneSince = f.t; } else this.inTuneSince = null;
+    const tuned = ok && f.t - this.inTuneSince >= TUNER.holdSec;
+    const written = near - (info.family === 'other' ? info.transpose : 0);
+    const name = noteName(spellMidi(written, 'sharp'), { octave: true });
+    this.meter.setReadout(name, fmtCents(cents), tuned ? 'In tune ✓' : cents > 0 ? 'sharp' : 'flat');
   }
 }

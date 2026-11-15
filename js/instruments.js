@@ -1,8 +1,11 @@
 // Instrument data. All pitches are WRITTEN pitches; `transpose` is the number
 // of semitones from written to sounding (the double bass sounds an octave lower).
 // Edit this table to change ranges, starting notes or clef-change points.
+// The voice and "other instrument" take their range from the device profile
+// (profiles.js): the singer's measured range, or the notes chosen in Config.
 
-import { parseNote, midiOf } from './theory.js';
+import { parseNote, midiOf, spellMidi, noteName } from './theory.js';
+import { getProfile } from './profiles.js';
 
 export const INSTRUMENTS = {
   violin: {
@@ -48,28 +51,134 @@ export const INSTRUMENTS = {
     clefChanges: [['tenor', 'E4', 'C4'], ['treble', 'F5', 'C5']],
     tuningSystem: 'fourths',
   },
+  voice: { name: 'Voice', dynamic: true },
+  other: { name: 'Other instrument', dynamic: true },
 };
 
 export const INSTRUMENT_IDS = Object.keys(INSTRUMENTS);
 
+/** Bowed strings have open strings, bows and a string tuner. */
+export const isBowed = (id) => !!INSTRUMENTS[id] && !INSTRUMENTS[id].dynamic;
+
+// Traditional voice types with their usual ranges (sounding MIDI). Where a male
+// and a female name would fit the same range the female one is used, so there
+// is no countertenor. Tenors read the treble clef an octave higher than they sing.
+export const VOICE_TYPES = [
+  { id: 'soprano', name: 'Soprano', low: 60, high: 84, female: true, clef: 'treble', transpose: 0 },
+  { id: 'mezzo', name: 'Mezzo-soprano', low: 57, high: 81, female: true, clef: 'treble', transpose: 0 },
+  { id: 'contralto', name: 'Contralto', low: 53, high: 77, female: true, clef: 'treble', transpose: 0 },
+  { id: 'tenor', name: 'Tenor', low: 48, high: 72, female: false, clef: 'treble', clefAnnotation: '8vb', transpose: -12 },
+  { id: 'baritone', name: 'Baritone', low: 45, high: 69, female: false, clef: 'bass', transpose: 0 },
+  { id: 'bass', name: 'Bass', low: 40, high: 64, female: false, clef: 'bass', transpose: 0 },
+];
+export const voiceType = (id) => VOICE_TYPES.find((v) => v.id === id) || null;
+const DEFAULT_VOICE = 'mezzo';
+
+/**
+ * The voice type whose usual range best matches a sung range (sounding MIDI):
+ * mostly the middle of the range, partly the lowest note. Female names win
+ * close calls.
+ */
+export function classifyVoice(low, high) {
+  const mid = (low + high) / 2;
+  let best = null, bestCost = Infinity;
+  for (const v of VOICE_TYPES) {
+    const cost = Math.abs(mid - (v.low + v.high) / 2) + 0.5 * Math.abs(low - v.low) - (v.female ? 1 : 0);
+    if (cost < bestCost) { bestCost = cost; best = v; }
+  }
+  return best;
+}
+
+/** The voice as currently set up: measured range (or a typical one) and type. */
+export function voiceSetup() {
+  const p = getProfile('voice') || {};
+  const measured = p.low != null && p.high != null && p.high > p.low;
+  const type = voiceType(p.override) || (measured ? voiceType(p.type) || classifyVoice(p.low, p.high) : voiceType(DEFAULT_VOICE));
+  return {
+    type,
+    measured,
+    low: measured ? p.low : type.low,
+    high: measured ? p.high : type.high,
+    date: p.measured || null,
+    overridden: !!voiceType(p.override),
+  };
+}
+
+/** Clef for an instrument of a given written range, chosen from the middle of the range. */
+export function autoClef(lowMidi, highMidi) { return (lowMidi + highMidi) / 2 >= 57 ? 'treble' : 'bass'; }
+
+const CLEF_CHANGES = {
+  treble: [],
+  alto: [['treble', 'G5', 'D5']],
+  tenor: [['treble', 'F5', 'C5']],
+  bass: [['tenor', 'E4', 'C4'], ['treble', 'F5', 'C5']],
+};
+
+const nameOf = (m) => noteName(spellMidi(m, 'sharp'), { octave: true, unicode: false });
+
+/** A natural note at or just above (dir 1) / below (dir -1) a MIDI number. */
+function naturalNear(m, dir) {
+  for (let k = 0; k < 3; k++) { const x = m + dir * k; const n = spellMidi(x, 'sharp'); if (n.a === 0) return n; }
+  return spellMidi(m, 'sharp');
+}
+
+function dynamicInstrument(id) {
+  if (id === 'voice') {
+    const v = voiceSetup();
+    const t = v.type;
+    return {
+      name: 'Voice', detail: t.name, voiceType: t.id, clef: t.clef, clefAnnotation: t.clefAnnotation || null,
+      strings: [], transpose: t.transpose, clefChanges: [], tuningSystem: null, family: 'voice', placement: 'centre',
+      lowestMidi: v.low - t.transpose, highestMidi: v.high - t.transpose, calNotes: [],
+    };
+  }
+  const p = getProfile('other');
+  const low = Math.min(p.low, p.high), high = Math.max(p.low, p.high);
+  const clef = ['treble', 'alto', 'tenor', 'bass'].includes(p.clef) ? p.clef : autoClef(low, high);
+  // two comfortable reference notes for the microphone calibration, a little inside the range
+  const a = naturalNear(Math.min(low + 5, high), 1), b = naturalNear(Math.max(high - 5, low), -1);
+  const calNotes = midiOf(b) - midiOf(a) >= 5 ? [a, b] : [a];
+  return {
+    name: (p.name || '').trim() || 'Other instrument', detail: null, clef, clefAnnotation: null, strings: [],
+    transpose: Number(p.transpose) || 0, clefChanges: CLEF_CHANGES[clef], tuningSystem: null, family: 'other', placement: 'lowest',
+    lowestMidi: low, highestMidi: high, calNotes,
+  };
+}
+
 export function instrumentInfo(id) {
   const inst = INSTRUMENTS[id];
   if (!inst) throw new Error('Unknown instrument ' + id);
+  if (inst.dynamic) {
+    const d = dynamicInstrument(id);
+    return {
+      ...d, id, dynamic: true,
+      lowest: nameOf(d.lowestMidi), highest: nameOf(d.highestMidi),
+      thumbMidi: null, stringNotes: [], calNames: d.calNotes.map((n) => noteName(n, { octave: true, unicode: false })),
+    };
+  }
+  const stringNotes = inst.strings.map(parseNote);
   return {
     ...inst,
     id,
+    family: 'strings',
+    placement: 'lowest',
+    clefAnnotation: null,
     lowestMidi: midiOf(parseNote(inst.lowest)),
     highestMidi: midiOf(parseNote(inst.highest)),
     thumbMidi: inst.thumbStart ? midiOf(parseNote(inst.thumbStart)) : null,
-    stringNotes: inst.strings.map(parseNote),
+    stringNotes,
+    calNotes: stringNotes,
+    calNames: inst.strings,
   };
 }
 
 /** Lowest/highest SOUNDING frequency the detector should accept for this instrument. */
 export function detectionRange(id, a4 = 440) {
   const info = instrumentInfo(id);
-  const lo = info.lowestMidi + info.transpose - 2;
-  const hi = info.highestMidi + info.transpose + 3;
+  // singers scoop into notes and slide between them: a little more room
+  const extra = info.family === 'voice' ? 2 : 0;
+  const lo = info.lowestMidi + info.transpose - 2 - extra;
+  const hi = info.highestMidi + info.transpose + 3 + extra;
   const f = (m) => a4 * Math.pow(2, (m - 69) / 12);
   return { minFreq: f(lo), maxFreq: f(hi) };
 }

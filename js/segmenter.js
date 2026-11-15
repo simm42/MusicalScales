@@ -38,6 +38,18 @@ export const SEG = {
   dipWindowMs: 70,
   trim: 0.15,                // fraction trimmed from each end of a note before measuring pitch
   unsteadyCents: 20,
+  // Singing: always treated as vibrato; a new pitch must hold longer (singers scoop
+  // and slide into notes), more of the start is ignored when measuring the pitch,
+  // and a sung vowel is accepted as clear a little sooner.
+  stableMsVoice: 110,
+  trimVoiceStart: 0.3,
+  clarityMinVoice: 0.75,
+  // a scoop or slide into a sung note: a pitch up to this far away, for at most this
+  // long at the start of the note, belongs to the note rather than being a note itself
+  scoopMsVoice: 220,         // at most this, and at most…
+  scoopFracVoice: 0.6,       // …this fraction of the exercise's shortest note at the set tempo
+  scoopSemisVoice: 2.5,
+  confirmMsVoice: 180,       // a sung note is announced once any scoop is over
 };
 
 const median = (a) => { const s = a.slice().sort((x, y) => x - y); const n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : NaN; };
@@ -63,6 +75,8 @@ export class Segmenter {
    * @param {number} o.noiseFloor RMS of background noise
    * @param {number} [o.clarityMin] / [o.clarityWeak] / [o.maxGate] overrides from microphone calibration
    * @param {boolean} o.vibrato
+   * @param {boolean} [o.voice] singing (sol-fa syllables): see SEG.*Voice
+   * @param {number} [o.shortestNoteSec] shortest note of the exercise at the set tempo (limits the sung scoop window)
    * @param {number} o.minFreq @param {number} o.maxFreq
    * @param {boolean} [o.pitchless] segment by level only (double stops played together)
    * @param {(t:number)=>boolean} [o.clickMask] true while a metronome click may be in the analysis
@@ -82,16 +96,22 @@ export class Segmenter {
     this.notes = [];
     this.lastT = 0;
     this.noiseFloor = o.noiseFloor || SEG.defaultNoiseFloor;
+    this.voice = !!o.voice;
+    // a scoop is part of the note only while it is clearly shorter than the notes themselves
+    this.scoopSec = Math.min(SEG.scoopMsVoice / 1000, o.shortestNoteSec ? SEG.scoopFracVoice * o.shortestNoteSec : Infinity);
+    this.confirmSec = Math.min(SEG.confirmMsVoice / 1000, this.scoopSec);
+    this.vibrato = !!o.vibrato || this.voice;
     this.clarityMin = o.clarityMin ?? SEG.clarityMin;
+    if (this.voice) this.clarityMin = Math.min(this.clarityMin, SEG.clarityMinVoice);
     this.clarityWeak = Math.min(this.clarityMin, o.clarityWeak ?? SEG.clarityWeak);
     this.updateGate();
     this.noiseHist = [];
-    this.changeSemis = o.vibrato ? SEG.changeSemisVibrato : SEG.changeSemis;
-    this.stable = (o.vibrato ? SEG.stableMsVibrato : SEG.stableMs) / 1000;
-    this.dipDb = o.vibrato ? SEG.dipDbVibrato : SEG.dipDb;
+    this.changeSemis = this.vibrato ? SEG.changeSemisVibrato : SEG.changeSemis;
+    this.stable = (this.voice ? SEG.stableMsVoice : this.vibrato ? SEG.stableMsVibrato : SEG.stableMs) / 1000;
+    this.dipDb = this.vibrato ? SEG.dipDbVibrato : SEG.dipDb;
     this.useDips = o.pitchless || o.repeats !== false;
     this.repeatPitches = !o.pitchless && o.repeatPitches ? new Set(o.repeatPitches) : null;
-    this.dipDbRough = o.vibrato ? SEG.dipDbRoughVibrato : SEG.dipDbRough;
+    this.dipDbRough = this.vibrato ? SEG.dipDbRoughVibrato : SEG.dipDbRough;
     this.recent = [];
     this.backdate = null;
   }
@@ -181,7 +201,8 @@ export class Segmenter {
     if (!this.useDips) at = null;
     // only where the music really repeats a pitch (room echo makes the level wobble elsewhere)
     if (at != null && this.repeatPitches && !this.repeatPitches.has(cur.nominal())) at = null;
-    if (at != null && at - cur.onset >= SEG.minNoteMs / 1000) {
+    // singing: the vowel swelling in after a consonant is not a re-articulation
+    if (at != null && at - cur.onset >= (this.voice ? Math.max(SEG.minNoteMs / 1000, this.scoopSec) : SEG.minNoteMs / 1000)) {
       const after = cur.frames.filter((x) => x.t >= at);
       cur.frames = cur.frames.filter((x) => x.t < at);
       this.close(at);
@@ -203,6 +224,16 @@ export class Segmenter {
       if (f.t - this.cand.startT >= this.stable && this.cand.frames.length >= 3) {
         const c = this.cand;
         this.cand = null;
+        // (timed from the note's first pitched frame: a consonant before it is not part of the scoop)
+        const pitchedFrom = cur.frames.length ? cur.frames[0].t : cur.onset;
+        if (this.voice && c.startT - pitchedFrom <= this.scoopSec && Math.abs(c.semi - cur.nominal()) <= SEG.scoopSemisVoice) {
+          // the singer slid into the note: same note, now at its real pitch
+          cur.frames = c.frames;
+          cur._nom = null;
+          cur.scoop = true;
+          this.maybeConfirm(f.t);
+          return;
+        }
         this.close(c.startT);
         this.open(c.startT, c.frames);
       }
@@ -259,6 +290,8 @@ export class Segmenter {
   maybeConfirm(t) {
     const cur = this.cur;
     if (!cur || cur.confirmed) return;
+    // singing: wait until a scoop into the note is over (no pitch change pending)
+    if (this.voice && (this.cand || t - cur.onset < this.confirmSec)) return;
     if (t - cur.onset >= Math.max(SEG.minNoteMs / 1000, this.stable) && cur.frames.length >= 3) {
       cur.confirmed = true;
       if (this.o.onOnset) this.o.onOnset({ onset: cur.onset, nominal: this.o.pitchless ? null : cur.nominal() });
@@ -272,7 +305,7 @@ export class Segmenter {
     if (!cur) return;
     const dur = end - cur.onset;
     if (dur < SEG.minNoteMs / 1000 || cur.frames.length < 3) return;
-    const lo = cur.onset + SEG.trim * dur, hi = end - SEG.trim * dur;
+    const lo = cur.onset + (this.voice ? SEG.trimVoiceStart : SEG.trim) * dur, hi = end - SEG.trim * dur;
     let mid = cur.frames.filter((x) => x.t >= lo && x.t <= hi);
     if (mid.length < 2) mid = cur.frames;
     const note = { onset: cur.onset, end, dur, frames: cur.frames.length, confirmed: cur.confirmed };
@@ -285,11 +318,11 @@ export class Segmenter {
       // far from the note's centre; otherwise the median
       const med = median(ms);
       const core = ms.filter((x) => Math.abs(x - med) <= 0.8);
-      note.midi = this.o.vibrato && core.length ? core.reduce((a, b) => a + b, 0) / core.length : med;
+      note.midi = this.vibrato && core.length ? core.reduce((a, b) => a + b, 0) / core.length : med;
       note.nominal = Math.round(note.midi);
       const spread = (quantile(ms, 0.9) - quantile(ms, 0.1)) * 50; // half the 10–90 % range, in cents
       note.wobble = spread;
-      note.unsteady = !this.o.vibrato && spread > SEG.unsteadyCents;
+      note.unsteady = !this.vibrato && spread > SEG.unsteadyCents;
     } else {
       note.peakFrames = mid.map((x) => x.peaks).filter(Boolean);
     }

@@ -110,7 +110,7 @@ export async function makePdf(o) {
       const c = document.createElement('canvas');
       c.width = 1200; c.height = 608;
       const labels = (runs.length && runs[runs.length - 1].labels) || [];
-      new Surface3D(c, { runs, labels: labels.map(plain), palette: { ...pal }, interactive: false, prec: precisionAt(o.precision ?? 2) });
+      new Surface3D(c, { runs, labels: labels.map(plain), palette: { ...pal }, interactive: false, prec: precisionAt(o.precision ?? 2, item.settings.instrument) });
       need(CW * 608 / 1200 + 2);
       doc.addImage(c.toDataURL('image/jpeg', 0.88), 'JPEG', M, y, CW, CW * 608 / 1200);
       y += CW * 608 / 1200 + 3;

@@ -33,7 +33,7 @@ export function renderKeySignature(container, exercise) {
   const width = 110 + 11 * Math.abs(exercise.fifths);
   const ctx = newRenderer(container, width + 10, 130);
   const stave = new V.Stave(0, 20, width);
-  stave.addClef(exercise.info.clef);
+  stave.addClef(exercise.info.clef, 'default', exercise.info.clefAnnotation || undefined);
   if (exercise.fifths) stave.addKeySignature(vexKeySpec(exercise.fifths));
   stave.setEndBarType(V.Barline.type.NONE);
   stave.setContext(ctx).draw();
@@ -43,8 +43,9 @@ export function renderKeySignature(container, exercise) {
 /**
  * Full score. Returns positions for the follow arrow and an element per event
  * for colouring notes after scoring.
+ * @param {(note)=>string|null} [o.syllables] sol-fa syllable shown under each note (singing)
  */
-export function renderScore(container, exercise, seq, { clefMode = 'change', compact = false } = {}) {
+export function renderScore(container, exercise, seq, { clefMode = 'change', compact = false, syllables = null } = {}) {
   container.innerHTML = '';
   const V = VF();
   const width = Math.max(200, Math.floor(container.clientWidth || 800));
@@ -77,7 +78,10 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   if (cur.length) { lines.push(cur); lineUsed.push(used); }
 
   // compact: tighter line spacing for short (landscape phone) screens
-  const lineH = clefMode === 'change' ? (compact ? 108 : 130) : (compact ? 140 : 170);
+  const lineH = (clefMode === 'change' ? (compact ? 108 : 130) : (compact ? 140 : 170)) + (syllables ? 22 : 0);
+  // a treble clef with a small 8 below (tenor voice: sung an octave lower)
+  const homeAnn = exercise.info.clefAnnotation || undefined;
+  const annFor = (c) => (c === exercise.info.clef ? homeAnn : undefined);
   const topPad = clefMode === 'change' ? (compact ? 34 : 40) : (compact ? 56 : 70);
   const ctx = newRenderer(container, width, lines.length * lineH + 30);
 
@@ -91,7 +95,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     const staveW = isLast && lines.length > 1 ? Math.min(width - 12, Math.max(lineUsed[li] * 1.1 + 20, 200)) : width - 12;
     const stave = new V.Stave(5, y, staveW);
     const lineClef = clefs[line[0]];
-    stave.addClef(lineClef);
+    stave.addClef(lineClef, 'default', annFor(lineClef));
     if (exercise.fifths) stave.addKeySignature(vexKeySpec(exercise.fifths));
     stave.setEndBarType(li === lines.length - 1 ? V.Barline.type.END : V.Barline.type.SINGLE);
     stave.setContext(ctx).draw();
@@ -109,7 +113,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     let clef = lineClef;
     for (const gi of line) {
       const g = glyphs[gi];
-      if (clefs[gi] !== clef) { clef = clefs[gi]; tickables.push(new V.ClefNote(clef, 'small')); }
+      if (clefs[gi] !== clef) { clef = clefs[gi]; tickables.push(new V.ClefNote(clef, 'small', annFor(clef))); }
       let note;
       if (g.kind === 'rest') {
         note = new V.StaveNote({ clef, keys: [REST_KEY[clef]], duration: g.dur.replace('d', '') + 'r' });
@@ -141,6 +145,23 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     new V.Formatter().joinVoices([voice]).format([voice], staveW + 5 - stave.getNoteStartX() - 25);
     voice.draw(ctx, stave);
     beams.forEach((b) => b.setContext(ctx).draw());
+
+    // sol-fa syllables on one line under the stave, like the words of a song
+    if (syllables) {
+      const notesHere = line.filter((gi) => glyphs[gi].kind === 'note');
+      const lowest = Math.max(stave.getYForLine(4), ...notesHere.map((gi) => Math.max(...noteObjs[gi].getYs())));
+      const y = Math.max(stave.getYForLine(4) + 26, lowest + 20);
+      ctx.save();
+      ctx.setFont('Arial', compact ? 11 : 13, 'normal', 'italic');
+      for (const gi of notesHere) {
+        const syl = syllables(glyphs[gi].notes[0]);
+        if (!syl) continue;
+        const note = noteObjs[gi];
+        const w = ctx.measureText(syl).width;
+        ctx.fillText(syl, note.getAbsoluteX() + note.getGlyphWidth() / 2 - w / 2, y);
+      }
+      ctx.restore();
+    }
   });
 
   // slurs (split where a slur group crosses a line break)

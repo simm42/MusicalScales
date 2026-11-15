@@ -9,21 +9,27 @@ export const LEVELS = [
   { name: 'Expert',       fullCents: 3,  zeroCents: 15, fullTiming: 0.03, zeroTiming: 0.20 },
 ];
 
-/** Interpolated tolerances for a slider value 0..4. */
-export function precisionAt(value) {
+// Singers: pitch tolerances one and a half times as wide, timing a third wider
+// (a consonant before each vowel makes the start of a sung note less exact).
+export const VOICE_TOLERANCE = { cents: 1.5, timing: 1.3 };
+
+/** Interpolated tolerances for a slider value 0..4 (wider for the voice). */
+export function precisionAt(value, instrument = null) {
   const v = Math.min(LEVELS.length - 1, Math.max(0, Number(value) || 0));
   const i = Math.min(LEVELS.length - 2, Math.floor(v));
   const f = v - i;
   const a = LEVELS[i], b = LEVELS[i + 1];
   const lerp = (k) => a[k] + (b[k] - a[k]) * f;
   const nearest = LEVELS[Math.round(v)];
+  const c = instrument === 'voice' ? VOICE_TOLERANCE.cents : 1;
+  const tm = instrument === 'voice' ? VOICE_TOLERANCE.timing : 1;
   return {
     value: v,
     name: f === 0 || f === 1 ? LEVELS[Math.round(v)].name : nearest.name,
-    fullCents: lerp('fullCents'),
-    zeroCents: lerp('zeroCents'),
-    fullTiming: lerp('fullTiming'),
-    zeroTiming: lerp('zeroTiming'),
+    fullCents: lerp('fullCents') * c,
+    zeroCents: lerp('zeroCents') * c,
+    fullTiming: lerp('fullTiming') * tm,
+    zeroTiming: lerp('zeroTiming') * tm,
   };
 }
 

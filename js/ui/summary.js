@@ -73,7 +73,8 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
   };
   const rows = result.perNote.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(label(r, i))}</td><td>${centsCell(r)}</td><td>${r0(r.intonation)}</td><td>${timingCell(r)}</td><td>${r0(r.timing)}</td><td style="text-align:left">${statusPill(r)}</td></tr>`).join('');
   const tempo = result.bpm ? ` · tempo ≈ ♩ ${Math.round(result.bpm)}` : '';
-  const vib = settings.vibrato == null ? '' : ` · Vibrato ${settings.vibrato ? 'on' : 'off'}`;
+  // singing is always listened to as if with vibrato
+  const vib = settings.instrument === 'voice' ? ' · Sung' : settings.vibrato == null ? '' : ` · Vibrato ${settings.vibrato ? 'on' : 'off'}`;
   const timed = settings.metronome == null ? '' : settings.metronome ? ' · timed against the metronome' : ' · timed against your own pulse';
   el.innerHTML = `
     <div class="summary">
