@@ -1,7 +1,7 @@
 // Score rendering with VexFlow (loaded as a classic script: window.Vex).
 
 import { assignClefs } from './instruments.js';
-import { vexKeySpec, keySigAccidental, LETTERS, midiOf, noteName } from './theory.js';
+import { vexKeySpec, keySigAccidental, LETTERS, midiOf } from './theory.js';
 
 const VF = () => window.Vex.Flow;
 const ACC_SYM = { '-2': 'bb', '-1': 'b', 0: 'n', 1: '#', 2: '##' };
@@ -44,9 +44,8 @@ export function renderKeySignature(container, exercise) {
  * Full score. Returns positions for the follow arrow and an element per event
  * for colouring notes after scoring.
  * @param {(note)=>string|null} [o.syllables] sol-fa syllable shown under each note (singing)
- * @param {boolean} [o.letters] also show each note's letter name under its syllable
  */
-export function renderScore(container, exercise, seq, { clefMode = 'change', compact = false, syllables = null, letters = false } = {}) {
+export function renderScore(container, exercise, seq, { clefMode = 'change', compact = false, syllables = null } = {}) {
   container.innerHTML = '';
   const V = VF();
   const width = Math.max(200, Math.floor(container.clientWidth || 800));
@@ -79,7 +78,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   if (cur.length) { lines.push(cur); lineUsed.push(used); }
 
   // compact: tighter line spacing for short (landscape phone) screens
-  const lineH = (clefMode === 'change' ? (compact ? 108 : 130) : (compact ? 140 : 170)) + (syllables ? 22 : 0) + (syllables && letters ? (compact ? 14 : 17) : 0);
+  const lineH = (clefMode === 'change' ? (compact ? 108 : 130) : (compact ? 140 : 170)) + (syllables ? 22 : 0);
   // a treble clef with a small 8 below (tenor voice: sung an octave lower)
   const homeAnn = exercise.info.clefAnnotation || undefined;
   const annFor = (c) => (c === exercise.info.clef ? homeAnn : undefined);
@@ -159,15 +158,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
         if (!syl) continue;
         const note = noteObjs[gi];
         const w = ctx.measureText(syl).width;
-        const cx = note.getAbsoluteX() + note.getGlyphWidth() / 2;
-        ctx.fillText(syl, cx - w / 2, y);
-        if (letters) {
-          // the letter name (with its accidental) on a second line, like a second verse
-          ctx.setFont('Arial', compact ? 10 : 12, 'normal', 'normal');
-          const nm = noteName(glyphs[gi].notes[0]);
-          ctx.fillText(nm, cx - ctx.measureText(nm).width / 2, y + (compact ? 13 : 16));
-          ctx.setFont('Arial', compact ? 11 : 13, 'normal', 'italic');
-        }
+        ctx.fillText(syl, note.getAbsoluteX() + note.getGlyphWidth() / 2 - w / 2, y);
       }
       ctx.restore();
     }

@@ -52,7 +52,7 @@ export const DEFAULT_SETTINGS = {
   vibrato: false,
   hint: false,
   solfege: 'movable', // singing: 'movable' (minor on Do), 'movableLa' (minor on La) or 'fixed'
-  solfegeLetters: false, // singing: letter names under the sol-fa in the score
+  solfegeLetters: false, // singing: letter names with the sol-fa on the tuner gauge
 };
 
 export const SOLFEGE_SYSTEMS = { movable: 'Movable Do (minor keys on Do)', movableLa: 'Movable Do (minor keys on La)', fixed: 'Fixed Do (C is Do)' };

@@ -315,7 +315,7 @@ function drawScore() {
   rendered = { arrowTargets: [] };
   if (!window.Vex) { scoreEl.textContent = ''; return; }
   try {
-    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables, letters: !!syllables && settings.solfegeLetters });
+    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables });
     else if (settings.display === 'keysig') rendered = renderKeySignature(scoreEl, exercise);
     else scoreEl.innerHTML = '';
   } catch (err) {
@@ -393,21 +393,28 @@ function labelNote(n, octave = true) {
   return syllables ? `${name} · ${syllables(n)}` : name;
 }
 
+/** Name on the tuner gauge: when singing, the syllable – with the letter name if that option is on. */
+function gaugeNote(n) {
+  if (!syllables) return noteName(n, { octave: true });
+  return settings.solfegeLetters ? `${syllables(n)} · ${noteName(n, { octave: true })}` : syllables(n);
+}
+
 function liveNoteName(midiSounding) {
   const written = Math.round(midiSounding) - exercise.info.transpose;
   const ev = seq.events[arrowIndex];
   if (ev) {
     const k = ev.writtenMidis.indexOf(written);
-    if (k >= 0) return labelNote(ev.notes[k]);
+    if (k >= 0) return gaugeNote(ev.notes[k]);
   }
-  return labelNote(spellMidi(written, exercise.fifths < 0 ? 'flat' : 'sharp'));
+  return gaugeNote(spellMidi(written, exercise.fifths < 0 ? 'flat' : 'sharp'));
 }
 
 function hintText() {
   if (!settings.hint || settings.display === 'score') return '';
   const ev = seq.events[arrowIndex];
   if (!ev) return '';
-  return syllables ? `Next: ${syllables(ev.notes[0])} (${noteName(ev.notes[0])})` : `Next: ${ev.notes.map((n) => noteName(n)).join(' + ')}`;
+  if (syllables) return `Next: ${syllables(ev.notes[0])}${settings.solfegeLetters ? ` (${noteName(ev.notes[0])})` : ''}`;
+  return `Next: ${ev.notes.map((n) => noteName(n)).join(' + ')}`;
 }
 
 function colourNote(k, cents) {
@@ -565,7 +572,7 @@ $('playBtn').addEventListener('click', async () => {
       onEvent: (k) => {
         placeArrow(k);
         const ev = seq.events[k];
-        meter.setReadout(ev.notes.map((n) => labelNote(n)).join(' + '), '', '');
+        meter.setReadout(ev.notes.map((n) => gaugeNote(n)).join(' + '), '', '');
       },
       onEnd: () => { $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
     });
