@@ -384,7 +384,8 @@ export class PracticeSession {
     this.a4 = applied.a4;          // includes any pitch correction from calibration
     this.segOpts = applied.segmenter;
     this.segmenter = null;
-    this.follower = new Follower(o.seq.events, { pitchless: this.doubleStop });
+    // notes heard at an octave still move the arrow, unless the exercise steps by octaves
+    this.follower = new Follower(o.seq.events, { pitchless: this.doubleStop, fold: !this.doubleStop && !hasOctaveSteps(o.seq.events) });
     this.metronome = null;
     this.t0 = null;
     this.startT = null;
@@ -442,8 +443,9 @@ export class PracticeSession {
       repeatPitches: repeatPitches(this.o.seq),
       onOnset: (n) => {
         this.anyNote = true;
-        this.curMatch = this.follower.onset(n.nominal);
-        this.log.onsets.push({ t: +n.onset.toFixed(3), heard: n.nominal, matched: this.curMatch });
+        const jumpsBefore = this.follower.jumps;
+        this.curMatch = this.follower.onset(n.nominal, n.onset);
+        this.log.onsets.push({ t: +n.onset.toFixed(3), heard: n.nominal, matched: this.curMatch, ...(this.follower.jumps > jumpsBefore ? { refound: true } : {}) });
         this.on.arrow(this.follower.arrow);
       },
       onNote: (n) => {
@@ -475,6 +477,11 @@ export class PracticeSession {
 
   frame(f) {
     if (this.stopped) return;
+    // the arrow stuck in one place for too long: find where the player is from the last notes heard
+    if (this.follower && this.follower.tick(f.t)) {
+      this.log.onsets.push({ t: +f.t.toFixed(3), refound: true, matched: this.follower.arrow });
+      this.on.arrow(this.follower.arrow);
+    }
     if (this.startT == null) this.startT = f.t;
     this.frames.push(f);
     if (!this.segmenter) {

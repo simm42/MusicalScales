@@ -436,7 +436,9 @@ function colourNote(k, cents) {
   markNote(rendered.arrowTargets, k, scoreClass(score));
 }
 
+/** After the analysis: every note coloured by its final result (replacing the live colours). */
 function colourAll(result) {
+  rendered.arrowTargets.forEach((_, k) => markNote(rendered.arrowTargets, k, null));
   for (const r of result.perNote) markNote(rendered.arrowTargets, r.event, r.status === 'missing' ? 'n-missing' : scoreClass(r.intonation));
 }
 
