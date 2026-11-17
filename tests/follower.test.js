@@ -73,3 +73,23 @@ test('stuck for much longer than the tempo suggests: the arrow catches up', () =
   assert(f.tick(6.5), 'stuck: moves on');
   eq(f.arrow, firstOf(ev, 45) + 1);
 });
+
+test('a note heard an octave up does not send the arrow an octave ahead (cello, F major)', () => {
+  const ev = buildSequence(buildExercise({ instrument: 'cello', type: 'scale', key: 'F', range: '2', rhythm: 'q2r' })).events;
+  const f = new Follower(ev, { fold: true });
+  // as heard in a real run: F F, a stray F♯, G G G, then G3 (the G heard an octave up), then A A
+  const heard = [[41, 1.66], [42, 2.43], [41, 3.59], [43, 4.03], [43, 4.73], [43, 4.85], [55, 6.2], [55, 6.43], [45, 6.49], [45, 7.32], [46, 8.88]];
+  const got = heard.map(([m, t]) => { const k = f.onset(m, t); f.release(); return k; });
+  eq(f.jumps, 0, 'no jump');
+  eq(got.slice(-3), [firstOf(ev, 45), firstOf(ev, 45) + 1, firstOf(ev, 46)], 'A A B♭ in the first octave');
+});
+
+test('the top note sounding twice does not skip it on the way down', () => {
+  const ev = buildSequence(buildExercise({ instrument: 'cello', type: 'scale', key: 'F', range: '2', rhythm: 'q2r' })).events;
+  const f = new Follower(ev, { fold: true });
+  const top = ev.findIndex((e) => e.midis[0] === 65); // F4: two quavers, then back down to E
+  f.pos = top; f.matches.push({ event: top - 1, t: 33 }); // just played the second E on the way up
+  eq(f.onset(64, 34.9), -1, 'the E again (a bounce) is not the E on the way down');
+  f.release();
+  eq(f.onset(65, 38.6), top, 'the top F is still where the arrow goes next');
+});

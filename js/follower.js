@@ -20,6 +20,7 @@ export const FOLLOW = {
   minFit: 3,         // heard notes that must fit to jump (fewer early in a run)
   stuckFactor: 2.5,  // stuck: on one place this many times longer than expected…
   stuckMinSec: 1.5,  // …and at least this long
+  maxBeatsUnknown: 6, // furthest jump (in beats) before the player's tempo is known
 };
 
 export class Follower {
@@ -37,11 +38,11 @@ export class Follower {
     this.jumps = 0;
   }
 
-  /** Does a heard nominal pitch fit an event (allowing for a harmonic when folding)? */
-  fits(nominal, k) {
+  /** Does a heard nominal pitch fit an event (with `harmonic`, also an octave or so out)? */
+  fits(nominal, k, harmonic = false) {
     const e = this.events[k];
     if (!e) return false;
-    const shifts = this.fold ? SHIFTS : [0];
+    const shifts = harmonic && this.fold ? SHIFTS : [0];
     return e.midis.some((m) => shifts.some((s) => m + s === nominal));
   }
 
@@ -63,9 +64,21 @@ export class Follower {
     this.heard.push(entry);
     if (this.heard.length > FOLLOW.history) this.heard.shift();
     const [from, to] = this.window();
-    for (let k = from; k < to; k++) if (this.fits(nominal, k)) { entry.matched = true; return this.moveTo(k, t); }
+    // the note just played, sounding again (a bounce, a re-bow): it may be its next repeat, but not a
+    // later return to the same pitch past a note that was never heard (E F E: the F must be heard first)
+    const lastEv = this.matches.length ? this.events[this.matches[this.matches.length - 1].event] : null;
+    const isLast = (k) => lastEv && this.events[k].midis.length === lastEv.midis.length && this.events[k].midis.every((m, i) => m === lastEv.midis[i]);
+    const reachable = (k) => {
+      if (!lastEv || !isLast(k)) return true;
+      for (let q = from; q < k; q++) if (!isLast(q)) return false;
+      return true;
+    };
+    // the exact note nearby first; only then the same note heard an octave (or so) out
+    for (const harmonic of [false, true]) {
+      for (let k = from; k < to; k++) if (this.fits(nominal, k, harmonic) && reachable(k)) { entry.matched = true; return this.moveTo(k, t); }
+    }
     // doesn't fit nearby: perhaps the arrow has fallen behind
-    const k = this.refind();
+    const k = this.refind(t);
     if (k >= 0) { this.jumps++; entry.matched = true; return this.moveTo(k, t); }
     this.provisionalExtras++;
     return -1;
@@ -81,33 +94,49 @@ export class Follower {
   }
 
   /**
-   * Where do the last notes heard fit best, from here on? From each candidate
-   * place, walk back through the music: the heard notes should appear in the
-   * same order (gaps allowed – notes can go unheard, repeats run together).
-   * At least two notes not yet placed must fit, and at least three of the
-   * last five overall, so one stray note never makes the arrow jump.
+   * Where is the player, judging by the last notes heard? From each candidate
+   * place ahead, walk back through the music: the heard notes should appear in
+   * the same order (gaps allowed – notes can go unheard, repeats run
+   * together). To jump:
+   *  - at least two heard notes not placed yet must fit at or beyond the arrow
+   *    (notes already placed, or that fit where the arrow already was, are no
+   *    evidence of moving on);
+   *  - at least three of the last five must fit overall;
+   *  - exact pitches only – a note heard an octave out is never a reason to jump;
+   *  - no further than the time since the last matched note allows at the
+   *    player's tempo.
+   * The nearest place that passes is taken.
    * @returns event index, or -1 if nowhere fits well enough
    */
-  refind() {
+  refind(t = null) {
     const h = this.heard;
     if (h.length < 2) return -1;
     const need = Math.min(FOLLOW.minFit, h.length);
-    let best = -1, bestFit = 0;
-    for (let k = this.pos; k < Math.min(this.events.length, this.pos + FOLLOW.searchAhead); k++) {
+    const ev = this.events;
+    // how far on the player can have got since the last matched note
+    const last = this.matches[this.matches.length - 1];
+    const spb = this.secondsPerBeat();
+    const here = ev[Math.min(this.pos, ev.length - 1)];
+    const maxBeats = last && last.t != null && t != null
+      ? (spb ? 1.5 * (t - last.t) / spb + 2 : FOLLOW.maxBeatsUnknown)
+      : FOLLOW.maxBeatsUnknown;
+    for (let k = this.pos; k < Math.min(ev.length, this.pos + FOLLOW.searchAhead); k++) {
+      if (here && ev[k].onsetBeat != null && here.onsetBeat != null && ev[k].onsetBeat - here.onsetBeat > maxBeats) break;
       const newest = h[h.length - 1];
       if (!this.fits(newest.nominal, k)) continue; // the newest note must be this one
-      let fit = 1, fresh = newest.matched ? 0 : 1, j = k - 1;
+      let fit = 1, ahead = 1, j = k - 1;
       for (let i = h.length - 2; i >= 0 && j >= 0; i--) {
         let found = -1;
         for (let q = j; q >= Math.max(0, j - 6); q--) if (this.fits(h[i].nominal, q)) { found = q; break; }
         if (found < 0) continue; // a stray note: try the next one back
         fit++;
-        if (!h[i].matched) fresh++;
+        // evidence of moving on: a note not placed yet that fits at or beyond the arrow
+        if (found >= this.pos && !h[i].matched) ahead++;
         j = found - 1;
       }
-      if (fresh >= 2 && fit >= need && fit > bestFit) { bestFit = fit; best = k; }
+      if (ahead >= 2 && fit >= need) return k; // the nearest place that fits
     }
-    return best;
+    return -1;
   }
 
   /** The player's tempo: seconds per beat between recent matched notes (null until known). */
@@ -140,7 +169,7 @@ export class Follower {
     if (t - this.lastMoveT < limit) return false;
     // only move on if something was heard after the arrow last moved
     if (!this.heard.some((x) => x.t != null && x.t > this.lastMoveT)) return false;
-    const k = this.refind();
+    const k = this.refind(t);
     if (k < 0 || k <= this.arrow) { this.lastMoveT = t; return false; } // nothing better: check again later
     this.jumps++;
     this.heard.forEach((x) => { x.matched = true; });
