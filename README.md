@@ -27,6 +27,8 @@ A free web page that helps students practise scales and arpeggios on the **violi
 
 **Microphone:** by default the app opens the microphone when it starts, so the browser asks for permission once and **Start** begins straight away. The phone's microphone indicator stays on while the app is open. Sound is only analysed during a run, the tuner or calibration, and it is never recorded or sent anywhere. This can be switched off in Config → Listening; the microphone is then opened at each Start and closed afterwards. To stop the question appearing each time on iPhone in Safari, tap **aA** → **Website Settings** → **Microphone** → **Allow**. An app added to the iPhone home screen may still ask again after it has been closed.
 
+**Screen stays on:** while the app is listening or making sound (a run, Play, the tuner, calibration, the metronome) and for 2 minutes afterwards, it asks the browser to keep the screen on (Screen Wake Lock), so the phone doesn't lock mid-scale. This works in iPhone Safari from iOS 16.4, in Home Screen apps from iOS 18.4, and in Chrome, Edge and on Android. Elsewhere it does nothing, and a longer Auto-Lock setting is the workaround.
+
 **Privacy:** everything runs in the browser. No sound, scores or settings are sent anywhere. If visit counting is switched on (see below), only anonymous page loads are counted, with no cookies. Lists and scores are saved only in that browser on that device. Use *Export everything* / *Import everything* in Config to move to another device.
 
 ---

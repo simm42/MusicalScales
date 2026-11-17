@@ -1,6 +1,8 @@
 // Audio engine: microphone (or a synthetic test performance) → AudioWorklet →
 // analysis worker → frames delivered to the page. Everything stays local.
 
+import { hold, release } from '../wakelock.js';
+
 const HOP = 512;
 const STALL_MS = 3000; // no sound analysed for this long: the audio has stopped
 
@@ -259,6 +261,7 @@ export class AudioEngine {
     this.node.connect(sink);
     if (o.source !== 'mic') this.source.start(ctx.currentTime + 0.05);
     this.running = true;
+    hold('listening'); // keep the screen on while listening (a locked phone stops the microphone)
     this.lastFrameAt = performance.now();
     clearInterval(this.watchdog);
     this.watchdog = setInterval(() => {
@@ -299,6 +302,7 @@ export class AudioEngine {
   setPeaks(on) { if (this.worker) this.worker.postMessage({ type: 'config', peaks: on }); }
 
   async stop() {
+    if (this.running) release('listening');
     this.running = false;
     clearInterval(this.watchdog);
     try { if (this.source && this.source.stop) this.source.stop(); } catch { /* not started */ }

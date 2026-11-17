@@ -30,6 +30,7 @@ import { MetronomeCard } from './ui/metronomeCard.js';
 import { noteIcon, RHYTHM_ICONS } from './ui/noteIcons.js';
 import { startAnalytics, ANALYTICS_ON } from './analytics.js';
 import { setupPwa } from './pwa.js';
+import { hold as holdAwake, release as releaseAwake } from './wakelock.js';
 import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
 import {
@@ -561,6 +562,7 @@ function stopSession(silent = false) {
 function stopPlayback() {
   if (!player.playing) return;
   player.stop();
+  releaseAwake('play');
   $('playBtn').textContent = '▶ Play';
   $('arrow').hidden = true;
   meter.clear();
@@ -572,6 +574,7 @@ $('playBtn').addEventListener('click', async () => {
   if (!exercise.ok) return;
   stopSession(true);
   player.prime(); // must happen inside the tap (iOS)
+  holdAwake('play'); // keep the screen on while it plays
   hideTabBar();
   $('playBtn').textContent = '■ Stop';
   setStatus('Preparing the sound…');
@@ -586,11 +589,12 @@ $('playBtn').addEventListener('click', async () => {
         const ev = seq.events[k];
         meter.setReadout(ev.notes.map((n) => gaugeNote(n)).join(' + '), '', '');
       },
-      onEnd: () => { $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
+      onEnd: () => { releaseAwake('play'); $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
     });
     await playing;
     if (player.playing) setStatus(isVoice() ? `Playing the exercise at ♩ = ${settings.bpm}…` : `Playing the exercise at ♩ = ${settings.bpm} on the ${/^[A-Z][a-z ]*$/.test(instName(settings.instrument)) ? instName(settings.instrument).toLowerCase() : instName(settings.instrument)}…`);
   } catch (e) {
+    releaseAwake('play');
     $('playBtn').textContent = '▶ Play';
     setStatus('Could not play: ' + (e && e.message));
   }

@@ -15,7 +15,7 @@ const APP_FILES = [
   './js/align.js', './js/analytics.js', './js/backup.js', './js/calibration.js', './js/doublestop.js', './js/exercises.js', './js/follower.js',
   './js/instruments.js', './js/main.js', './js/metronome.js', './js/notation.js', './js/pdf.js', './js/pitch.js', './js/playback.js',
   './js/practice.js', './js/practiceList.js', './js/precision.js', './js/profiles.js', './js/pwa.js', './js/results.js', './js/scoring.js',
-  './js/segmenter.js', './js/sequence.js', './js/settingsText.js', './js/solfege.js', './js/theory.js', './js/version.js',
+  './js/segmenter.js', './js/sequence.js', './js/settingsText.js', './js/solfege.js', './js/theory.js', './js/version.js', './js/wakelock.js',
   './js/audio/capture-worklet.js', './js/audio/mic.js', './js/audio/pitch-worker.js', './js/audio/synth.js', './js/audio/timbre.js', './js/audio/wav.js',
   './js/ui/calibrationWizard.js', './js/ui/charts.js', './js/ui/meter.js', './js/ui/metronomeCard.js', './js/ui/noteIcons.js',
   './js/ui/resultsPage.js', './js/ui/summary.js', './js/ui/surface3d.js', './js/ui/tunerPage.js',

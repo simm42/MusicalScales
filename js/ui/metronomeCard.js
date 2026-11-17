@@ -2,6 +2,7 @@
 // and a flashing beat light. Uses the same tempo as the Practice page.
 
 import { Metronome } from '../metronome.js';
+import { hold, release } from '../wakelock.js';
 
 export class MetronomeCard {
   constructor({ engine, getBpm, setBpm }) {
@@ -64,6 +65,7 @@ export class MetronomeCard {
     const ctx = await this.engine.ensureContext();
     if (!this.metro || this.metro.ctx !== ctx) this.metro = new Metronome(ctx);
     this.restart();
+    hold('metronome');
     this.el.start.textContent = '■ Stop';
     this.el.start.classList.add('primary');
   }
@@ -83,6 +85,7 @@ export class MetronomeCard {
 
   stop() {
     if (this.metro) this.metro.stop();
+    release('metronome');
     this.engine.holdMediaSession(false);
     this.el.start.textContent = '▶ Start metronome';
     this.el.start.classList.remove('primary');
