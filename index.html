@@ -29,6 +29,7 @@
     <button role="tab" id="tabBtnConfig" aria-selected="false" data-tab="config">Config</button>
     <button role="tab" id="tabBtnResults" aria-selected="false" data-tab="results">Results</button>
     <button role="tab" id="tabBtnTuner" aria-selected="false" data-tab="tuner">Tuner</button>
+    <button role="tab" id="tabBtnGames" aria-selected="false" data-tab="games">Games</button>
   </nav>
   <div class="spacer"></div>
   <button class="icon-btn" id="helpBtn" title="Help" aria-label="Help">?<span class="theme-label"> Help</span></button>
@@ -233,6 +234,11 @@
     </div>
   </section>
 
+  <!-- ================= GAMES ================= -->
+  <section id="tab-games" role="tabpanel" aria-labelledby="tabBtnGames" hidden>
+    <div class="card stage games" id="gamesRoot"></div>
+  </section>
+
   <!-- ================= HELP ================= -->
   <section id="tab-help" role="tabpanel" aria-labelledby="helpBtn" hidden>
     <div class="card stage help">
@@ -258,6 +264,7 @@
           <li><b>Config</b> – choose exercises, build your syllabus, and change how things look and how strictly you are marked.</li>
           <li><b>Results</b> – charts of how you are getting on, and a PDF to send to your teacher.</li>
           <li><b>Tuner</b> – tune your instrument, use the metronome, and set up the microphone.</li>
+          <li><b>Games</b> – train your ear and your voice to recognise and find notes.</li>
         </ul>
         <p>On a very wide screen, Practice and Config are shown side by side.</p>
       </details>
@@ -374,6 +381,27 @@
           <li>Stay quiet for a few seconds, then bow each open string when asked – long, steady and at your normal volume.</li>
         </ol>
         <p>The app then tells you if anything needs attention, such as being too far from the microphone.</p>
+      </details>
+
+      <details>
+        <summary>Games: train your ear and your voice</summary>
+        <p>On the <b>Games</b> tab there are two games. Each level is a short round of questions. Score <b>70%</b> or more to open the next level, and try for three stars: ★ 50%, ★★ 70%, ★★★ 90%. Your best score for each level is saved.</p>
+        <p><b>🎧 Name the note</b> – press <b>▶ Start</b> to hear a note, then tap its name from the four choices. <b>▶ Play again</b> plays it as often as you like.</p>
+        <ul>
+          <li>Levels 1–2: the key is shown (level 1 also plays the key first), so you can work the note out from the key note.</li>
+          <li>Levels 3–4: two notes in the same key – choose the first, then the second.</li>
+          <li>Levels 5–6: no key at all – the hardest. Notes a semitone or a tone apart are offered, so listen carefully.</li>
+          <li>The notes are played in the sound of the instrument chosen on the Config tab.</li>
+        </ul>
+        <p><b>🎤 Sing the note</b> – press <b>🎤 Start</b>, then sing the note shown and hold it steadily. The bar shows if you're sharp or flat; when you've held it in tune for half a second it turns green. Any octave is fine.</p>
+        <ul>
+          <li>Level 1: you hear the key and the note – just sing it back.</li>
+          <li>Levels 2–3: only the note's name is shown (as <b>Do, Re, Mi…</b> with the letter name underneath), with the key played or just shown.</li>
+          <li>Levels 4–6: two or three notes to sing in a row.</li>
+          <li>Level 7: no key – sing the named note from memory.</li>
+          <li><b>▶ Hear the key</b> plays the key again; <b>Skip</b> moves on. You have 10 seconds for each note.</li>
+          <li>The notes are chosen for your voice: measure your range on the Tuner tab first (choose <b>Voice</b> as the instrument).</li>
+        </ul>
       </details>
 
       <details>

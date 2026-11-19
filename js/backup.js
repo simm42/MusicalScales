@@ -13,6 +13,7 @@ export const BACKUP_KEYS = {
   calibration: 'scales.calibration.v1',
   theme: 'scales.theme',
   metroBeats: 'scales.metroBeats',
+  games: 'scales.games.v1', // best scores and levels opened in the games
 };
 const RAW = new Set(['theme', 'metroBeats']); // stored as plain strings, not JSON
 

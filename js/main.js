@@ -30,6 +30,7 @@ import { MetronomeCard } from './ui/metronomeCard.js';
 import { noteIcon, RHYTHM_ICONS } from './ui/noteIcons.js';
 import { startAnalytics, ANALYTICS_ON } from './analytics.js';
 import { setupPwa } from './pwa.js';
+import { GamesPage } from './ui/gamesPage.js';
 import { hold as holdAwake, release as releaseAwake } from './wakelock.js';
 import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
@@ -908,6 +909,7 @@ const isWide = () => wideQuery.matches;
 let resultsPage = null;
 
 let tunerPage = null;
+let gamesPage = null;
 let calWizard = null;
 let metroCard = null;
 function setTab(tab) {
@@ -925,6 +927,11 @@ function setTab(tab) {
   $('tab-results').hidden = tab !== 'results';
   $('tab-tuner').hidden = tab !== 'tuner';
   $('tab-help').hidden = tab !== 'help';
+  $('tab-games').hidden = tab !== 'games';
+  if (tab === 'games') {
+    if (!gamesPage) gamesPage = new GamesPage({ root: $('gamesRoot'), engine, player: new Player(), getInstrument: () => settings.instrument, getA4: a4 });
+    gamesPage.show();
+  } else if (gamesPage) gamesPage.stop();
   $('helpBtn').setAttribute('aria-pressed', String(tab === 'help'));
   if (tab === 'help') window.scrollTo(0, 0);
   if (tab !== 'practice') { stopSession(true); stopPlayback(); }
@@ -1203,7 +1210,7 @@ function init() {
   syncForm();
   updateExercise();
   renderList();
-  setTab(['practice', 'config', 'results', 'tuner'].includes(prefs.tab) ? prefs.tab : (list.length ? 'practice' : 'config'));
+  setTab(['practice', 'config', 'results', 'tuner', 'games'].includes(prefs.tab) ? prefs.tab : (list.length ? 'practice' : 'config'));
   if (location.hash.startsWith('#help')) setTab('help');
   checkShareLink();
 }
