@@ -74,13 +74,22 @@ test('singing is judged in any octave, within the level\'s tolerance', () => {
   eq(sungMatches(67.2, 67, 40).ok, true);
   near(sungMatches(55.2, 67, 40).cents, 20, 1e-9); // an octave down counts
   eq(sungMatches(67.6, 67, 40).ok, false);
-  const j = new HoldJudge(67, { tolerance: 40, holdSec: 0.5 });
+  const j = new HoldJudge(67, { tolerance: 40, holdSec: 0.5, gapSec: 0.25 });
   let done = null;
   for (let t = 0; t <= 0.3; t += 0.01) done = j.push(t, 67.05);
   eq(done, null, 'not held long enough yet');
-  eq(j.push(0.31, null), null); // a break starts again
-  for (let t = 0.32; t <= 0.9 && done == null; t += 0.01) done = j.push(t, 66.9);
+  for (let t = 0.31; t <= 0.7; t += 0.01) j.push(t, null); // a long break starts again
+  for (let t = 0.71; t <= 1.5 && done == null; t += 0.01) done = j.push(t, 66.9);
   near(done, -10, 1e-6);
+  // a short breath or wobble in the middle does not
+  const k = new HoldJudge(67, { tolerance: 40, holdSec: 0.5, gapSec: 0.25 });
+  let d2 = null, at = null;
+  for (let t = 0; t <= 1 && d2 == null; t += 0.01) {
+    const m = t > 0.2 && t < 0.3 ? null : t >= 0.3 && t < 0.35 ? 69 : 67.1;
+    d2 = k.push(t, m);
+    if (d2 != null) at = t;
+  }
+  assert(d2 != null && at < 0.55, 'held through a 0.15 s gap: done at ' + at);
 });
 
 test('a round of 70% or more opens the next level; best scores and stars kept', () => {

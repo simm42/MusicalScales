@@ -88,10 +88,24 @@ export class GamesPage {
   playSounds(reference, notes) {
     this.player.prime();
     const inst = this.getInstrument();
+    const seq = soundSeq(reference, notes);
+    // how long it should take (100 beats a minute, plus the lead-in and tail)
+    const expectMs = (seq.events.reduce((a, e) => a + e.beats, 0) * 0.6 + 1.2) * 1000;
     return new Promise((resolve) => {
+      let done = false;
+      let guard = null;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        clearTimeout(guard);
+        this.playing = false;
+        this.quietUntil = performance.now() + 400; // the room still rings for a moment
+        resolve();
+      };
+      // never wait for ever: some phones don't say when a sound has finished
+      guard = setTimeout(finish, expectMs + 1500);
       this.playing = true;
-      this.player.play(soundSeq(reference, notes), { bpm: 100, a4: this.getA4(), instrument: inst === 'voice' ? 'voice' : inst, onEnd: () => { this.playing = false; this.quietUntil = performance.now() + 400; resolve(); } })
-        .catch(() => { this.playing = false; resolve(); });
+      this.player.play(seq, { bpm: 100, a4: this.getA4(), instrument: inst === 'voice' ? 'voice' : inst, onEnd: finish }).catch(finish);
     });
   }
 
@@ -225,6 +239,7 @@ export class GamesPage {
       <p class="game-ask">${q.notes.length > 1 ? 'Sing these notes in order – hold each one until it turns green:' : 'Sing this note and hold it until it turns green:'}</p>
       <div class="sing-targets">${q.notes.map(target).join('<span class="muted">→</span>')}</div>
       <div class="sing-meter tuner big" id="singMeter"></div>
+      <p class="small sing-hint" role="status"></p>
       <div class="row">
         ${this.listening ? '' : '<button type="button" class="btn primary big" data-act="start">🎤 Start</button>'}
         ${q.hearKey ? '<button type="button" class="btn" data-act="key">▶ Hear the key</button>' : ''}
@@ -254,6 +269,9 @@ export class GamesPage {
     try {
       await this.engine.start({ source: 'mic', minFreq: 60, maxFreq: 1400, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
       this.listening = true;
+      this.lastFrameAt = this.lastVoicedAt = performance.now();
+      clearInterval(this.checker);
+      this.checker = setInterval(() => this.checkHearing(), 1000);
       if (btn) btn.remove();
       this.beginQuestion();
     } catch (e) {
@@ -266,6 +284,28 @@ export class GamesPage {
     if (this.listening) this.engine.stop();
     this.listening = false;
     clearTimeout(this.noteTimer);
+    clearInterval(this.checker);
+  }
+
+  /** The app went into the background, or the microphone stopped: stop, and offer Start again. */
+  pause(message = 'Paused – press 🎤 Start to carry on.') {
+    if (this.view !== 'sing' || !this.listening) return;
+    this.stopListening();
+    this.player.stop();
+    this.playing = false;
+    const R = this.round;
+    if (R && !R.done) { this.renderSing(); this.say(message); }
+  }
+
+  /** Every second while listening: say so if nothing is being heard. */
+  checkHearing() {
+    if (this.view !== 'sing' || !this.listening || this.playing || !this.round || this.round.done) return;
+    const now = performance.now();
+    if (now - this.lastFrameAt > 2500) { this.pause('The microphone stopped sending sound – press 🎤 Start again.'); return; }
+    if (this.judge && now - this.lastVoicedAt > 3500 && now > (this.quietUntil || 0) + 3500) {
+      const hint = this.root.querySelector('.sing-hint');
+      if (hint) hint.textContent = 'Can\u2019t hear you – sing a little louder, or come closer to the microphone.';
+    }
   }
 
   /** Play what the level allows, then listen for the first note. */
@@ -299,24 +339,32 @@ export class GamesPage {
 
   /** A pitch reading from the microphone. */
   frame(f) {
-    if (this.view !== 'sing' || !this.round || this.round.done || !this.judge) return;
-    if (this.playing || performance.now() < (this.quietUntil || 0)) return; // don't hear the app's own sound
-    const voiced = f.freq > 0 && f.clarity >= 0.8 && f.rms >= 0.002;
+    if (this.view !== 'sing' || !this.round || !this.meter) return;
+    this.lastFrameAt = performance.now();
+    // the app's own sound (the key, the note) is not listened to
+    if (this.playing || performance.now() < (this.quietUntil || 0)) { this.smooth = []; return; }
+    const voiced = f.freq > 0 && f.clarity >= GAME.singClarity && f.rms >= GAME.singRms;
     let midi = null;
     if (voiced) {
+      this.lastVoicedAt = performance.now();
+      const hint = this.root.querySelector('.sing-hint');
+      if (hint && hint.textContent) hint.textContent = '';
+      this.smooth = this.smooth || [];
       this.smooth.push(freqToMidi(f.freq, this.getA4()));
       if (this.smooth.length > 5) this.smooth.shift();
       const s = this.smooth.slice().sort((a, b) => a - b);
       midi = s[Math.floor(s.length / 2)];
     } else this.smooth = [];
-    if (midi == null) { this.meter.clear(''); }
+    // the bar always shows what is being sung (against the note asked for, in any octave)
+    const target = this.round.q.notes[Math.min(this.round.j || 0, this.round.q.notes.length - 1)].midi;
+    if (midi == null) this.meter.clear('');
     else {
-      const target = this.round.q.notes[this.round.j].midi;
       let c = (midi - target) * 100;
-      c = ((c % 1200) + 1800) % 1200 - 600; // against the nearest octave of the target
+      c = ((c % 1200) + 1800) % 1200 - 600;
       this.meter.setBar(0, c, { fullCents: 20, zeroCents: 60 });
       this.meter.setReadout(noteName(spellMidi(Math.round(midi), this.round.q.key.pref)), fmtCents(c), '');
     }
+    if (!this.judge || this.round.done) return;
     const done = this.judge.push(f.t, midi);
     if (done != null) this.noteResult(done);
   }

@@ -1188,6 +1188,7 @@ document.addEventListener('visibilitychange', () => {
   if (tunerPage && tunerPage.running) tunerPage.stop();
   if (calWizard && calWizard.running) calWizard.cancel('Calibration stopped because the app went into the background. Start it again.');
   if (metroCard && metroCard.running) metroCard.stop();
+  if (gamesPage) gamesPage.pause();
   engine.sleep();
 });
 
@@ -1197,6 +1198,7 @@ engine.onStall = () => {
   if (session) { stopSession(true); $('micError').textContent = msg; $('micError').hidden = false; }
   if (tunerPage && tunerPage.running) { tunerPage.stop(); tunerPage.el.error.textContent = msg; tunerPage.el.error.hidden = false; }
   if (calWizard && calWizard.running) calWizard.cancel(msg.replace('Tap Start', 'Start calibrating'));
+  if (gamesPage) gamesPage.pause(msg.replace('Tap Start again', 'Press 🎤 Start again'));
   engine.sleep();
 };
 

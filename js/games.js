@@ -37,6 +37,9 @@ export const GAME = {
   singHoldSec: 0.5,    // hold the note this long…
   singCents: [50, 50, 40, 40, 40, 35, 35], // …within this many cents (by level)
   singTimeoutSec: 10,  // per note
+  singGapSec: 0.25,    // a breath or a wobble this short doesn't start the hold again
+  singClarity: 0.6,    // a sung vowel is accepted as pitched from this clarity…
+  singRms: 0.0015,     // …and this loudness
 };
 
 const EASY_KEYS = ['C', 'G', 'D', 'A', 'F', 'Bb', 'Eb'];
@@ -160,16 +163,21 @@ export function sungMatches(midi, target, toleranceCents) {
  * octave) for long enough. push() each pitch reading.
  */
 export class HoldJudge {
-  constructor(target, { tolerance = 50, holdSec = GAME.singHoldSec } = {}) {
-    this.target = target; this.tolerance = tolerance; this.holdSec = holdSec;
-    this.since = null; this.readings = [];
+  constructor(target, { tolerance = 50, holdSec = GAME.singHoldSec, gapSec = GAME.singGapSec } = {}) {
+    this.target = target; this.tolerance = tolerance; this.holdSec = holdSec; this.gapSec = gapSec;
+    this.since = null; this.lastOk = null; this.readings = [];
   }
   /** @param {number|null} midi a voiced reading, or null for silence/noise. @returns cents when done, else null */
   push(t, midi) {
-    if (midi == null) { this.since = null; this.readings = []; return null; }
-    const m = sungMatches(midi, this.target, this.tolerance);
-    if (!m.ok) { this.since = null; this.readings = []; return null; }
+    const m = midi == null ? null : sungMatches(midi, this.target, this.tolerance);
+    if (!m || !m.ok) {
+      // a short gap (a breath, a wobble, a stray reading) doesn't start again
+      if (this.since != null && t - this.lastOk <= this.gapSec) return null;
+      this.since = null; this.readings = [];
+      return null;
+    }
     if (this.since == null) this.since = t;
+    this.lastOk = t;
     this.readings.push(m.cents);
     if (t - this.since >= this.holdSec) {
       const s = this.readings.slice().sort((a, b) => a - b);

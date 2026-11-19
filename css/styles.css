@@ -411,3 +411,4 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   .choices { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .sing-target { font-size: 22px; min-width: 60px; }
 }
+.sing-hint { min-height: 1.3em; margin: 2px 0 6px; color: var(--warn); font-weight: 600; }
