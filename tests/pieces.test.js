@@ -163,6 +163,7 @@ test('pieces: notes an octave or more away from the clef are pointed out', () =>
   assert(/above the bass clef staff/.test(high[0].message) && /G,, B,, D, F, A,/.test(high[0].message), high[0].message);
   eq(checks(head('C clef=bass', '3/4') + 'C,,2 E,,2 G,,2 | C,2 G,,2 E,,2 | C,,6 |]\n'), [], 'the cello C string');
   eq(checks(head('G clef=treble') + 'G A B c d e f g |]\n'), []);
+  eq(checks(head('G clef=treble') + 'G, A, B, C D C B, A, |]\n'), [], 'a tune on the violin G string');
   eq(checks(head('C') + 'C,, D,, E,, F,, |]\n'), [], 'no clef written: nothing is assumed');
 });
 

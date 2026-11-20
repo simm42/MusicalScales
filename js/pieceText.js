@@ -344,7 +344,7 @@ function checkRegister(P) {
   if (m.length < 4) return [];
   const median = m[m.length >> 1];
   const off = median - CLEF_MIDDLE[clef];
-  if (Math.abs(off) < 12) return [];
+  if (Math.abs(off) <= 12) return []; // a tune low on the violin's G string sits an octave below the middle line
   return [{
     line: P.tokens.find((t) => t.kind === 'note').line, check: true,
     message: `Most notes are written more than an octave ${off > 0 ? 'above' : 'below'} the ${clef} clef staff, so the octave is probably wrong. On a ${clef} clef staff the five lines from the bottom are ${CLEF_LINES[clef]}`,
