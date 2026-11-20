@@ -288,7 +288,9 @@ export function refineNotes(notes, seq, { doubleStop = false, cost, scrapes: kee
     // short octave slips at a change of note (the detector's mistakes, not the player's: not counted);
     // longer ones are kept – which of the two is the real note is decided against the music below
     out = dropOctaveBlips(out);
-    const b = findShortBlips(out);
+    // music with staccato or tenuto (a piece) has short notes on purpose: only very short blips are scrapes
+    const detached = seq.events.some((e) => e.articulation);
+    const b = findShortBlips(out, detached ? { cap: 0.06 } : undefined);
     out = b.kept;
     // bow-change scrapes count as (part) errors, more strictly at higher precision; not for singers (consonants)
     if (keepScrapes) scrapes = b.scrapes;

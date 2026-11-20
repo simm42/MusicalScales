@@ -7,6 +7,7 @@ import { instrumentInfo, detectionRange } from '../js/instruments.js';
 import { renderPerformance } from '../js/audio/synth.js';
 import { analyseSignal } from '../js/pitch.js';
 import { segmentFrames } from '../js/segmenter.js';
+import { refineNotes, repeatPitches } from '../js/practice.js';
 import { align } from '../js/align.js';
 import { scoreRun } from '../js/scoring.js';
 import { precisionAt } from '../js/precision.js';
@@ -241,15 +242,27 @@ test('pieces: Play leaves a gap after a staccato note under a slur, then goes on
   assert(Math.sqrt(s / (0.1 * sr)) > 0.05, 'legato: no gap');
 });
 
-test('pieces: repeated staccato notes under a slur are each heard', () => {
-  const P = parsePiece(head('C clef=bass', '3/4') + 'C,,2 (.C,2 .C,2) | (.G,,2 .G,,2 .G,,2) | C,,6 |]\n');
-  const seq = pieceSequence(P, cello);
-  const perf = renderPerformance(seq, { bpm: 72, detune: () => 0, timbre: 'cello', noise: 0.002 });
+// as a live run: segment, then the same clean-up (octave slips, bow-change scrapes, repeats) and scoring
+function hearPiece(body, bpm) {
+  const seq = pieceSequence(parsePiece(head('C clef=bass', '3/4') + body), cello);
+  const perf = renderPerformance(seq, { bpm, detune: () => 0, timbre: 'cello', noise: 0.002 });
   const { minFreq, maxFreq } = detectionRange('cello');
   const frames = analyseSignal(perf.signal, 48000, { minFreq, maxFreq });
-  const heard = segmentFrames(frames, { a4: 440, minFreq, maxFreq });
-  const alignment = align(heard, seq.events);
-  const result = scoreRun({ expected: seq.events, detected: heard, alignment, prec: precisionAt(2) });
+  const heard = segmentFrames(frames, { a4: 440, minFreq, maxFreq, repeats: seq.events.some((e) => e.sameAsPrev), repeatPitches: repeatPitches(seq) });
+  const refined = refineNotes(heard, seq, {});
+  return scoreRun({ expected: seq.events, detected: refined.notes, alignment: refined.alignment, prec: precisionAt(2), scrapes: refined.scrapes, fold: refined.fold });
+}
+
+test('pieces: repeated staccato notes under a slur are each heard', () => {
+  const result = hearPiece('C,,2 (.C,2 .C,2) | (.G,,2 .G,,2 .G,,2) | C,,6 |]\n', 72);
   eq(result.missing, 0, 'every note heard');
+  assert(result.total > 90, 'total ' + result.total);
+});
+
+test('pieces: short staccato notes in legato music are notes, not bow-change scrapes', () => {
+  // mostly crotchets, so a short note touching a long one would otherwise be taken for a scrape
+  const result = hearPiece('C,2 E,2 G,2 | C2 G,2 E,2 | C,2 E,2 G,2 | C,3 (.E,/ .F,/) G,2 | A,2 G,2 F,2 | C,4 .E, z | E,6 |]\n', 80);
+  eq(result.missing, 0, 'every note heard');
+  eq((result.scrapes || []).length, 0, 'no scrapes');
   assert(result.total > 90, 'total ' + result.total);
 });

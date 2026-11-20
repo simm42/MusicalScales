@@ -195,7 +195,7 @@ export class PiecesPage {
     this.view = 'photo';
     this.root.innerHTML = `
       <div class="game-head"><button type="button" class="btn" data-act="back">← Pieces</button><b>Decode music from a photo</b></div>
-      <p>Claude (an AI assistant) reads a photo of your music and writes it as text; you paste that text back here. You need a Claude account – a free one works.</p>
+      <p>Claude (an AI assistant) reads a photo of your music and writes it as text; you paste that text back here. You need a Claude account.</p>
       <div class="notice photo-why">
         <b>Why you do this step yourself:</b> reading a photo needs an AI service, and those cost money to run. Doing it in Claude yourself keeps Scale Practice free.<br>
         <b>Copyright:</b> sheet music is usually protected by copyright. You are responsible for the music you photograph and decode this way – only use music you are allowed to copy, such as your own copy, for your own practice. Your photo goes to Claude, not to Scale Practice.
@@ -203,10 +203,10 @@ export class PiecesPage {
       <ol class="photo-steps">
         <li><b>Open Claude</b> – it opens in a new window with the instructions already filled in. Sign in if asked, then send the instructions; Claude asks for a photo – take one with your camera or choose one from your photos. Hold the phone straight above the page, in good light, one page at a time.
           <div class="row"><button type="button" class="btn primary" data-act="open">🎼 Decode music with Claude</button></div>
-          <p class="small"><b>Choose Sonnet or Opus</b> in the model menu next to the message box before you send, if you can (Opus is the most accurate; Haiku misreads more notes). If Claude offers extended thinking, turn it on.</p>
-          <details class="small"><summary>The instructions didn't appear in Claude?</summary>
-            <p>Copy them and paste them into a new Claude chat yourself.</p>
-            <div class="row"><button type="button" class="btn" data-act="copy">📋 Copy the instructions</button> <span class="small muted" id="phCopied" role="status"></span></div>
+          <p class="small"><b>Use Sonnet or Opus:</b> before you send, choose one of them in Claude's model menu if it's available – they read music more accurately than the smaller models.</p>
+          <p class="small">The instructions didn't appear in Claude? Copy them and paste them into a new Claude chat yourself:</p>
+          <div class="row"><button type="button" class="btn" data-act="copy">📋 Copy the instructions</button> <span class="small muted" id="phCopied" role="status"></span></div>
+          <details class="small"><summary>Show the instructions</summary>
             <pre class="prompt-text">${esc(AI_PROMPT)}</pre></details>
         </li>
         <li><b>Copy Claude's answer</b> (tap Copy on the box it writes the music in), come back here and paste it below.
