@@ -335,3 +335,13 @@ test('pieces: the instructions write a whole-piece repeat once', () => {
 test('pieces: the Pieces page code loads', () => {
   assert(typeof PiecesPage === 'function' && typeof PiecesPage.prototype.share === 'function' && typeof PiecesPage.prototype.pasteLink === 'function');
 });
+
+test('pieces: Play waits for rests (also a rest at the start and a whole-bar rest)', () => {
+  const seq = pieceSequence(parsePiece(head('C', '4/4') + 'z2 C2 z2 D2 | E4 z4 | Z | F2 z2 G4 |]\n'), violin);
+  const perf = renderPerformance(seq, { sampleRate: 8000, bpm: 60, detune: () => 0, noise: 0, leadIn: 0.5, tail: 0.2 });
+  const on = perf.truth.map((x) => Math.round((x.onset - 0.5) * 100) / 100);
+  // in beats (one a second): C at 1, D at 3, E at 4, F at 12 (after a bar of rests), G at 14
+  eq(on, [1, 3, 4, 12, 14]);
+  near(perf.truth[0].end - perf.truth[0].onset, 1, 1e-6, 'C sounds for its own length, then the rest is silent');
+  near(perf.truth[2].end - perf.truth[2].onset, 2, 1e-6);
+});

@@ -49,14 +49,20 @@ export function renderPerformance(seq, o = {}) {
   const events = seq.events;
   // onset times with jitter
   const truth = [];
-  let t = leadIn;
-  for (const e of events) {
+  // a rest at the start is waited for too
+  let t = leadIn + (events.length && events[0].onsetBeat > 0 ? events[0].onsetBeat * spb : 0);
+  for (let k = 0; k < events.length; k++) {
+    const e = events[k];
     const g = seq.glyphs[e.glyphIndex];
-    const dur = e.beats * spb * (1 + jitter * gauss(r));
+    // from this note to the next, rests included (a note's own length is how long it sounds)
+    const next = events[k + 1];
+    const gap = next && e.onsetBeat != null && next.onsetBeat != null && next.onsetBeat > e.onsetBeat ? next.onsetBeat - e.onsetBeat : e.beats;
+    const dur = gap * spb * (1 + jitter * gauss(r));
+    const stretch = dur / (gap * spb); // the jitter, applied to the sounding length too
     const cents = detune ? detune(e.index) : detuneSd * gauss(r);
     // staccato is let go after about half its length; tenuto (a line) just before the next note
     const held = e.articulation === 'staccato' ? 0.5 : e.articulation === 'tenuto' ? 0.85 : 1;
-    truth.push({ index: e.index, onset: t, end: t + Math.max(0.08, held * g.beats * spb * (dur / (e.beats * spb))), dur, midis: e.midis, cents, slurred: e.slurred, art: e.articulation || null, missing: missing.includes(e.index) });
+    truth.push({ index: e.index, onset: t, end: t + Math.max(0.08, held * Math.min(g.beats, e.beats) * spb * stretch), dur, midis: e.midis, cents, slurred: e.slurred, art: e.articulation || null, missing: missing.includes(e.index) });
     t += dur;
   }
   const total = t + tail;
