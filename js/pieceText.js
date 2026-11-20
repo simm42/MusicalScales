@@ -19,7 +19,7 @@
 //   Changes in the middle:  [K:D] [M:3/4] [L:1/16] [Q:120] or a K:/M:/L: line
 //   Ignored:   % comments, "chord names", !decorations!, grace notes {…}, w: lyrics, ~ . u v
 
-import { parsePc, keyFifths, keySigAccidental } from './theory.js';
+import { parsePc, keyFifths, keySigAccidental, midiOf } from './theory.js';
 
 const MODE_SHIFT = { '': 0, maj: 0, major: 0, ion: 0, ionian: 0, m: -3, min: -3, minor: -3, aeo: -3, aeolian: -3, mix: -1, mixolydian: -1, dor: -2, dorian: -2, phr: -4, phrygian: -4, lyd: 1, lydian: 1, loc: -5, locrian: -5 };
 const CLEFS = ['treble', 'bass', 'alto', 'tenor'];
@@ -294,10 +294,59 @@ export function parsePiece(text) {
     }
   }
   if (!P.tokens.some((t) => t.kind === 'note')) err(0, 0, 'No notes were found.');
+  if (!errors.length) warnings.push(...checkBars(P), ...checkRegister(P));
   P.unit = P.unit ?? unitOrDefault();
   P.clef = P.clef || null;
   P.errors = errors;
   P.warnings = warnings;
   P.ok = errors.length === 0;
   return P;
+}
+
+// ---------------------------------------------------------------- checks on music that can be read
+// Likely misreadings of a photo. They are warnings ({ check: true }): the piece can still be practised.
+
+/** Bars that don't add up to the time signature (a short first or last bar is allowed). */
+function checkBars(P) {
+  const bars = [];
+  let meter = P.meter, cur = null;
+  for (const t of P.tokens) {
+    if (t.repeated) continue; // a repeat written out by the reader – its bars were checked the first time
+    if (t.kind === 'meter') { meter = t.meter; continue; }
+    if (t.kind === 'bar') { if (cur && cur.beats > 0) bars.push(cur); cur = null; continue; }
+    if (t.kind !== 'note' && t.kind !== 'rest') continue;
+    if (!cur) cur = { beats: 0, line: t.line, meter };
+    cur.beats += t.beats;
+  }
+  if (cur && cur.beats > 0) bars.push(cur);
+  const out = [];
+  bars.forEach((b, i) => {
+    if (!b.meter) return;
+    const want = (b.meter.num * 4) / b.meter.den;
+    const short = b.beats < want - 1e-6, long = b.beats > want + 1e-6;
+    if (long || (short && i > 0 && i < bars.length - 1)) {
+      const have = Math.round(((b.beats * b.meter.den) / 4) * 100) / 100;
+      out.push({ line: b.line, check: true, message: `Bar ${i + 1} adds up to ${have}/${b.meter.den}, but the time signature is ${b.meter.text} – a note length or a note is probably wrong` });
+    }
+  });
+  return out.slice(0, 6);
+}
+
+// the note on the middle line of each clef (MIDI)
+const CLEF_MIDDLE = { treble: 71, alto: 60, tenor: 57, bass: 50 };
+const CLEF_LINES = { treble: 'E G B d f', alto: 'F, A, C E G', tenor: 'D, F, A, C E', bass: 'G,, B,, D, F, A,' };
+
+/** Most notes far above or below the staff of the clef: the octave was probably written wrongly. */
+function checkRegister(P) {
+  const clef = P.clef;
+  if (!clef || !(clef in CLEF_MIDDLE)) return [];
+  const m = P.tokens.filter((t) => t.kind === 'note' && !t.repeated).map((t) => midiOf(t.notes[0])).sort((a, b) => a - b);
+  if (m.length < 4) return [];
+  const median = m[m.length >> 1];
+  const off = median - CLEF_MIDDLE[clef];
+  if (Math.abs(off) < 12) return [];
+  return [{
+    line: P.tokens.find((t) => t.kind === 'note').line, check: true,
+    message: `Most notes are written more than an octave ${off > 0 ? 'above' : 'below'} the ${clef} clef staff, so the octave is probably wrong. On a ${clef} clef staff the five lines from the bottom are ${CLEF_LINES[clef]}`,
+  }];
 }

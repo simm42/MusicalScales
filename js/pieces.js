@@ -199,20 +199,34 @@ STEP 2 – When the photo arrives, transcribe it into ABC notation. A program re
    M: the time signature, e.g. M: 3/4 (M: C for common time)
    L: 1/8   (always 1/8)
    Q: the metronome mark, e.g. Q: 1/4=96 (leave the line out if none is printed)
-   K: the key from the key signature, e.g. K: G, K: Bb, K: Em. If the clef is not treble, add it: K: D clef=bass (or clef=alto, clef=tenor)
-3. Pitches: C D E F G A B are the octave starting on middle C; c d e f g a b the octave above; c' d' … one higher; C, D, … one lower; C,, D,, … two lower. Middle C is C, the C below it is C, (with a comma) and the C above it is c.
+   K: the key from the key signature, e.g. K: G, K: Bb, K: Em. Then the clef of the top staff: K: G clef=treble, K: D clef=bass, K: C clef=alto, K: F clef=tenor. Look at the clef sign itself – a bass clef has two dots either side of the fourth line; a treble clef curls round the second line; an alto or tenor (C) clef is centred on the middle or fourth line. Cello, double bass and bassoon music is usually in bass clef, viola in alto clef.
+3. Pitches. In ABC the octave is shown ONLY by the letter case and by commas and apostrophes:
+   C, D, E, F, G, A, B,  = the octave below middle C (one comma)
+   C D E F G A B  = the octave from middle C up
+   c d e f g a b  = the octave above that
+   C,, D,, … B,, = two octaves below middle C (two commas); c' d' … = two octaves above middle C
+   A number after a note is ONLY its length, never its octave: C2 means middle C held for a quarter note – it is not the note "C2". The cello's lowest note (its open C string) is C,, and its open strings are C,, G,, D, A,.
+   Find each note by its place on the staff, counting lines and spaces from the bottom:
+   - Bass clef: ledger lines below: C,, (2nd ledger line) D,, E,, (1st ledger line) F,, | lines from the bottom: G,, B,, D, F, A, | spaces from the bottom: A,, C, E, G, | above: B, then C (middle C, 1st ledger line above) D E (2nd ledger line)
+   - Treble clef: below: C (middle C, 1st ledger line below) D | lines from the bottom: E G B d f | spaces from the bottom: F A c e | above: g a (1st ledger line above) b c' (2nd ledger line)
+   - Alto clef: below: B,, (2nd ledger line) C, D, (1st ledger line) E, (just below) | lines from the bottom: F, A, C E G | spaces from the bottom: G, B, D F | above: A B (1st ledger line above) c
+   - Tenor clef: below: G,, (2nd ledger line) A,, B,, (1st ledger line) C, (just below) | lines from the bottom: D, F, A, C E | spaces from the bottom: E, G, B, D | above: F G (1st ledger line above)
+   A note on a line has the line through the middle of its head; a note in a space sits between two lines. Most notes in bass clef music have commas; if yours have none, you have the octave wrong.
 4. Lengths are multiples of an eighth note: A = eighth, A2 = quarter, A3 = dotted quarter, A4 = half, A6 = dotted half, A8 = whole, A/2 = sixteenth, A3/2 = dotted eighth, A/4 = thirty-second. Rests: z with the same lengths (z2 = quarter rest, z8 = whole-bar rest in 4/4).
 5. Accidentals: the key signature applies automatically – do not write it on every note. Write ^ (sharp), _ (flat) or = (natural) before a note only where an accidental is printed; it lasts to the end of the bar, as in printed music.
-6. End every bar with | and the last bar with |]. Each bar must add up exactly to the time signature (a pickup bar at the start may be shorter).
-7. Write repeats out in full: no repeat signs, no first/second-time endings, no D.C., D.S. or coda – just every note in the order it is played.
+6. End every bar with | and the last bar with |]. Each bar must add up exactly to the time signature, counting a note without a number as 1: in 3/4 the numbers in every bar add up to 6, in 4/4 to 8, in 6/8 to 6, in 2/4 to 4. Only a pickup bar at the start (and the last bar after it) may be shorter.
+7. Repeats: copy the repeat signs as printed – |: at the start of the repeated section and :| at its end (a :| with no |: before it repeats from the beginning). First and second-time endings, D.C., D.S. and coda can't be read: write those out in full, every note in the order it is played.
 8. Ties: A2-A2. Slurs: (A B c). Triplets: (3ABc. Two notes played together (double stops): [DA].
 9. Leave out everything else: dynamics, fingering, bowing marks, articulation, ornaments, grace notes, lyrics, chord symbols, bar numbers.
 10. Never add notes that are not printed. If a note is unclear, write your best guess and add a comment line such as: % bar 5: second note unclear
 11. If the photo is not sheet music, or is too unclear to read, answer with a code block containing only: % not readable – <reason>
 
-Before answering, check every bar against rules 5 and 6.
-
-STEP 3 – Answer with the ABC inside one code block (three backticks), with no explanation before it. After the code block, add only this line:
+STEP 3 – Answer in this order:
+a) Under the heading "Reading", one short line per bar giving each note's place on the staff and its ABC, and the bar's total, for example:
+   Bar 1: bottom line G,,2 · 2nd line B,,2 · middle line D,2 (2+2+2 = 6)
+   Read the photo again for any bar whose total is wrong, and for any note that looks a step too high or low.
+b) The ABC inside one code block (three backticks).
+c) After the code block, only this line:
 "Now tap Copy on the box above, go back to the Scale Practice app, paste it into the box under ‘Paste the answer here’ and tap Read the music."
 
 An example of the code block:
@@ -222,8 +236,8 @@ T: Example
 M: 3/4
 L: 1/8
 Q: 1/4=90
-K: D
-A2 d2 f2 | e4 d2 | (c d e2) A2 | d6 |]
+K: G clef=bass
+G,,2 B,,2 D,2 | G,4 F,2 | (E, D, C,2) A,,2 | G,,6 |]
 \`\`\``;
 
 /** A follow-up for the AI when its answer couldn't be read. */
@@ -234,6 +248,9 @@ export function chatGptLink(prompt = AI_PROMPT) {
 }
 
 export function fixPrompt(errors) {
-  const list = errors.slice(0, 12).map((e) => `- line ${e.line}, column ${e.col}: ${e.message}`).join('\n');
-  return `The app could not read your ABC. Please fix these problems and send the whole piece again, following the same rules, in one code block, then the same line about copying it back into the app:\n${list}`;
+  const list = errors.slice(0, 12).map((e) => `- line ${e.line}${e.col ? `, column ${e.col}` : ''}: ${e.message}`).join('\n');
+  const intro = errors.every((e) => e.check)
+    ? 'The app checked your ABC and found these likely mistakes. Please look at the photo again, correct them'
+    : 'The app could not read your ABC. Please fix these problems';
+  return `${intro} and send the whole piece again, following the same rules: the Reading lines, the ABC in one code block, then the same line about copying it back into the app.\n${list}`;
 }

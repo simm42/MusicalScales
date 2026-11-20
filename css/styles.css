@@ -425,6 +425,7 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 .piece-main b { overflow-wrap: anywhere; }
 .piece-acts { display: flex; flex-wrap: wrap; gap: 6px; }
 .pieces-page .bad, .piece-problems .bad { color: var(--bad); }
+.pieces-page p.warn, .piece-problems .warn { color: var(--warn); font-weight: 600; }
 .pieces-page .good { color: var(--good); }
 .piece-edit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 8px 0; }
 @media (min-width: 900px) { .piece-edit { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }

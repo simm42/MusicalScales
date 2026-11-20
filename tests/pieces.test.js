@@ -145,6 +145,41 @@ test('pieces: joining A + B keeps both keys and times and can be read', () => {
   assert(/% ---- Two ----/.test(j.text));
 });
 
+test('pieces: bars that do not add up are pointed out', () => {
+  const checks = (t) => parsePiece(t).warnings.filter((w) => w.check);
+  // a short pickup and a short last bar are fine
+  eq(checks(head('C', '3/4') + 'G2 | c2 d2 e2 | f4 |]\n'), []);
+  const w = checks(head('C', '3/4') + 'c2 d2 e2 | f2 g2 a2 b2 | c6 | d2 e2 | c6 |]\n');
+  eq(w.map((x) => x.message.slice(0, 26)), ['Bar 2 adds up to 4/4, but ', 'Bar 4 adds up to 2/4, but ']);
+  // a repeat played twice is checked once; a time change is followed
+  eq(checks(head('C', '2/4') + '|: c2 d2 :| [M:3/4] e2 f2 g2 |]\n'), []);
+});
+
+test('pieces: notes an octave or more away from the clef are pointed out', () => {
+  const checks = (t) => parsePiece(t).warnings.filter((w) => w.check);
+  // bass clef written without commas: two octaves too high
+  const high = checks(head('C clef=bass', '3/4') + 'C2 E2 G2 | c2 G2 E2 | C6 |]\n');
+  eq(high.length, 1);
+  assert(/above the bass clef staff/.test(high[0].message) && /G,, B,, D, F, A,/.test(high[0].message), high[0].message);
+  eq(checks(head('C clef=bass', '3/4') + 'C,,2 E,,2 G,,2 | C,2 G,,2 E,,2 | C,,6 |]\n'), [], 'the cello C string');
+  eq(checks(head('G clef=treble') + 'G A B c d e f g |]\n'), []);
+  eq(checks(head('C') + 'C,, D,, E,, F,, |]\n'), [], 'no clef written: nothing is assumed');
+});
+
+test('pieces: the instructions explain octaves by staff position, and the example is right', () => {
+  assert(/ONLY its length, never its octave/.test(AI_PROMPT));
+  assert(/Bass clef:.*lines from the bottom: G,, B,, D, F, A,/.test(AI_PROMPT));
+  assert(/Treble clef:.*lines from the bottom: E G B d f/.test(AI_PROMPT));
+  assert(/Reading/.test(AI_PROMPT));
+  const example = AI_PROMPT.split('```')[1];
+  const P = parsePiece(example);
+  assert(P.ok, JSON.stringify(P.errors));
+  eq(P.warnings, [], 'the example has no warnings');
+  eq(P.clef, 'bass');
+  assert(/^The app checked/.test(fixPrompt([{ line: 6, check: true, message: 'Bar 7 adds up to 5/4' }])));
+  assert(/line 6: Bar 7/.test(fixPrompt([{ line: 6, check: true, message: 'Bar 7 adds up to 5/4' }])));
+});
+
 test('pieces: the practice exercise and saved pieces', () => {
   const p = newPiece('Mine', head('D', '3/4') + 'Q: 1/4=90\nD2 F2 A2 | d6 |]\n');
   const { ok, exercise, seq } = pieceExercise(p, violin, {});

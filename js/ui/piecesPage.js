@@ -158,7 +158,7 @@ export class PiecesPage {
     const { exercise, seq, parsed } = pieceExercise(piece, info, {});
     const items = [
       ...parsed.errors.map((e) => `<li class="bad" data-line="${e.line}"><b>Line ${e.line}</b>, column ${e.col}: ${esc(e.message)}</li>`),
-      ...parsed.warnings.map((w) => `<li class="muted" data-line="${w.line}">Line ${w.line}: ${esc(w.message)}</li>`),
+      ...parsed.warnings.map((w) => `<li class="${w.check ? 'warn' : 'muted'}" data-line="${w.line}">Line ${w.line}: ${esc(w.message)}</li>`),
     ];
     if (exercise.outside) items.push(`<li class="muted">${exercise.outside} note${exercise.outside === 1 ? ' is' : 's are'} outside the range of the ${esc(info.name.toLowerCase())}.</li>`);
     probs.innerHTML = items.join('');
@@ -231,6 +231,20 @@ export class PiecesPage {
     if (/^\s*%\s*not readable/i.test(text)) { out.innerHTML = `<p class="bad">ChatGPT could not read the photo: ${esc(text.replace(/^\s*%\s*/, ''))}. Try a clearer photo.</p>`; return; }
     const P = parsePiece(text);
     const notes = P.tokens.filter((t) => t.kind === 'note').length;
+    const checks = P.warnings.filter((w) => w.check);
+    if (P.ok && checks.length) {
+      const piece = newPiece(P.title || 'Untitled', text + '\n');
+      out.innerHTML = `<p class="warn">Read “${esc(piece.name)}”: ${notes} notes – but ${checks.length === 1 ? 'something looks' : `${checks.length} things look`} wrong:</p>
+        <ul class="piece-problems">${checks.map((w) => `<li>${esc(w.message)}.</li>`).join('')}</ul>
+        <p class="small">Send ChatGPT a correction request (paste it into the same conversation), or check it yourself in the editor.</p>
+        <div class="row"><button type="button" class="btn primary" data-act="fix">📋 Copy a correction request</button>
+          <button type="button" class="btn" data-act="open">Open in the editor</button> <span class="small muted" id="phFixCopied" role="status"></span></div>`;
+      this.wire({
+        fix: async () => { this.root.querySelector('#phFixCopied').textContent = (await copyText(fixPrompt(checks))) ? 'Copied – paste it into the same ChatGPT conversation.' : ''; },
+        open: () => this.edit(piece, true),
+      }, out);
+      return;
+    }
     if (P.ok) {
       const piece = newPiece(P.title || 'Untitled', text + '\n');
       out.innerHTML = `<p class="good">✓ Read “${esc(piece.name)}”: ${notes} notes. Check it against your music in the editor, then save it.</p>
