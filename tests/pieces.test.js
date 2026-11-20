@@ -289,3 +289,22 @@ test('pieces: the instructions copy fingering and trust it as printed', () => {
   const P = parsePiece(AI_PROMPT.split('```')[1]);
   assert(notes(P).some((t) => t.notes[0].f === 4), 'the example has fingering');
 });
+
+test('pieces: a clef change on its own keeps the key', () => {
+  const P = parsePiece(head('D clef=bass', '2/4') + 'D,2 F,2 | [K: clef=tenor] F2 A2 | [K:G] F2 G2 |]\n');
+  assert(P.ok, JSON.stringify(P.errors));
+  eq(midis(P).map((m) => m[0]), [50, 54, 66, 69, 66, 67], 'F sharp before and after the clef change');
+  const seq = pieceSequence(P, cello);
+  const g = seq.glyphs.filter((x) => x.kind === 'note');
+  eq(g.map((x) => x.clef), ['bass', 'bass', 'tenor', 'tenor', 'tenor', 'tenor']);
+  eq(g.filter((x) => x.keyChange != null).length, 1, 'only the real key change is drawn');
+  eq(parseKey('clef=alto').fifths, null);
+  eq(P.warnings, [], 'the octave check follows the clef change');
+});
+
+test('pieces: the instructions are for every instrument, not one', () => {
+  for (const w of ['violin', 'viola', 'cello', 'double bass', 'singer']) assert(AI_PROMPT.toLowerCase().includes(w), w);
+  assert(/violin G, D A e; viola C, G, D A; cello C,, G,, D, A,; double bass E,, A,, D, G,/.test(AI_PROMPT), 'open strings of each');
+  assert(!/the cello's/i.test(AI_PROMPT), 'nothing only about the cello');
+  assert(AI_PROMPT.length < 14000);
+});

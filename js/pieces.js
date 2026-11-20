@@ -49,7 +49,7 @@ export function pieceSequence(P, info) {
       continue;
     }
     if (t.kind === 'meter') { if (t.meter) meter = t.meter; continue; }
-    if (t.kind === 'key') { fifths = t.fifths; pendingKey = t.fifths; if (t.clef) pendingClef = t.clef; continue; }
+    if (t.kind === 'key') { if (t.fifths != null) { fifths = t.fifths; pendingKey = t.fifths; } if (t.clef) pendingClef = t.clef; continue; }
     if (t.kind === 'tempo') continue;
     if (t.kind !== 'note' && t.kind !== 'rest') continue;
 
@@ -193,8 +193,8 @@ STEP 1 - If a photo of sheet music is already attached, go straight to step 2. O
 
 STEP 2 - When the photo arrives, transcribe it into ABC notation. A program reads your answer, so follow these rules exactly:
 
-1. One part only: the top staff of each system. Music with an accompaniment is fine (for example cello and piano, or a solo with a second part underneath).
-   - First find the systems: staves joined at the left edge by a bracket, a brace or a line, and played at the same time, form one system; a new system starts after the gap below the last staff of a group. For example, cello with piano has three staves per system, and a solo with one accompanying part has two (staves 1 and 2, then 3 and 4, and so on).
+1. One part only: the top staff of each system. Music with an accompaniment is fine (for example violin, viola, cello, double bass or a singer with piano, or a solo with a second part underneath).
+   - First find the systems: staves joined at the left edge by a bracket, a brace or a line, and played at the same time, form one system; a new system starts after the gap below the last staff of a group. For example, a solo instrument or voice with piano has three staves per system, and a solo with one accompanying part has two (staves 1 and 2, then 3 and 4, and so on).
    - Transcribe only the top staff of every system (the solo part - also when it is printed in smaller notes above the piano), and ignore every staff below it. With two staves per system that means staves 1, 3, 5 ...; with three, staves 1, 4, 7 ....
    - Join those top staves in order, as one continuous part.
 2. Header lines, one per line, in this order:
@@ -203,28 +203,28 @@ STEP 2 - When the photo arrives, transcribe it into ABC notation. A program read
    M: the time signature, e.g. M: 3/4 (M: C for common time)
    L: 1/8   (always 1/8)
    Q: the metronome mark, e.g. Q: 1/4=96 (leave the line out if none is printed)
-   K: the key from the key signature, e.g. K: G, K: Bb, K: Em. Then the clef of the top staff: K: G clef=treble, K: D clef=bass, K: C clef=alto, K: F clef=tenor. Look at the clef sign itself - a bass clef has two dots either side of the fourth line; a treble clef curls round the second line; an alto or tenor (C) clef is centred on the middle or fourth line. Cello, double bass and bassoon music is usually in bass clef, viola in alto clef.
+   K: the key from the key signature, e.g. K: G, K: Bb, K: Em. Then the clef of the top staff: K: G clef=treble, K: D clef=bass, K: C clef=alto, K: F clef=tenor. Look at the clef sign itself - a bass clef has two dots either side of the fourth line; a treble clef curls round the second line; an alto or tenor (C) clef is centred on the middle or fourth line. Violin music is in treble clef; viola mostly in alto clef; cello mostly in bass clef (tenor or treble clef for high passages); double bass in bass clef; singers in treble or bass clef. If the clef changes in the middle, write the new clef where it changes, e.g. [K: clef=tenor] (the key stays the same). Write every note as printed, also for double bass and tenor voice, which sound an octave lower than written.
 3. Pitches. In ABC the octave is shown ONLY by the letter case and by commas and apostrophes:
    C, D, E, F, G, A, B,  = the octave below middle C (one comma)
    C D E F G A B  = the octave from middle C up
    c d e f g a b  = the octave above that
    C,, D,, ... B,, = two octaves below middle C (two commas); c' d' ... = two octaves above middle C
-   A number after a note is ONLY its length, never its octave: C2 means middle C held for a quarter note - it is not the note "C2". The cello's lowest note (its open C string) is C,, and its open strings are C,, G,, D, A,.
+   A number after a note is ONLY its length, never its octave: C2 means middle C held for a quarter note - it is not the note "C2". For reference, the open strings as written: violin G, D A e; viola C, G, D A; cello C,, G,, D, A,; double bass E,, A,, D, G,.
    Find each note by its place on the staff, counting lines and spaces from the bottom:
    - Bass clef: ledger lines below: C,, (2nd ledger line) D,, E,, (1st ledger line) F,, | lines from the bottom: G,, B,, D, F, A, | spaces from the bottom: A,, C, E, G, | above: B, then C (middle C, 1st ledger line above) D E (2nd ledger line)
    - Treble clef: below: C (middle C, 1st ledger line below) D | lines from the bottom: E G B d f | spaces from the bottom: F A c e | above: g a (1st ledger line above) b c' (2nd ledger line)
    - Alto clef: below: B,, (2nd ledger line) C, D, (1st ledger line) E, (just below) | lines from the bottom: F, A, C E G | spaces from the bottom: G, B, D F | above: A B (1st ledger line above) c
    - Tenor clef: below: G,, (2nd ledger line) A,, B,, (1st ledger line) C, (just below) | lines from the bottom: D, F, A, C E | spaces from the bottom: E, G, B, D | above: F G (1st ledger line above)
-   A note on a line has the line through the middle of its head; a note in a space sits between two lines. Most notes in bass clef music have commas; if yours have none, you have the octave wrong.
+   A note on a line has the line through the middle of its head; a note in a space sits between two lines. Most notes in bass clef music have commas, and most notes in treble clef music have none; if yours don't fit the clef, you have the octave wrong.
 4. Lengths are multiples of an eighth note: A = eighth, A2 = quarter, A3 = dotted quarter, A4 = half, A6 = dotted half, A8 = whole, A/2 = sixteenth, A3/2 = dotted eighth, A/4 = thirty-second. Rests: z with the same lengths (z2 = quarter rest, z8 = whole-bar rest in 4/4).
 5. Accidentals: the key signature applies automatically - do not write it on every note. Write ^ (sharp), _ (flat) or = (natural) before a note only where an accidental is printed; it lasts to the end of the bar, as in printed music.
 6. End every bar with | and the last bar with |]. Each bar must add up exactly to the time signature, counting a note without a number as 1: in 3/4 the numbers in every bar add up to 6, in 4/4 to 8, in 6/8 to 6, in 2/4 to 4. Only a pickup bar at the start (and the last bar after it) may be shorter.
 7. Repeats: copy the repeat signs as printed - |: at the start of the repeated section and :| at its end (a :| with no |: before it repeats from the beginning). First and second-time endings, D.C., D.S. and coda can't be read: write those out in full, every note in the order it is played.
 8. Ties: A2-A2. Slurs: (A B c). Triplets: (3ABc. Two notes played together (double stops): [DA].
-9. Staccato dots and tenuto lines: copy them onto every note that has one. A staccato dot is a . before the note: .A2. A tenuto line (a short dash above or below the head) is !tenuto! before the note: !tenuto!A2. Keep them inside slurs too: dots or dashes under a slur mean the notes are separated within one bow, so a slur over two dotted notes is (.C,2 .C,2) and over two dashed notes is (!tenuto!A2 !tenuto!B2). The dot after a note head that lengthens it (a dotted note) is not a staccato dot - write it as a length (A3, A6).
-10. Fingering: copy every fingering number printed above or below a note (0 = open string, 1 to 4 = fingers) as !0! to !4! before the note, together with any staccato dot or tenuto line: !0!G,,2 !2!.C,2 (!1!D, !3!F,). In a double stop put each number with its own note inside the brackets: [!1!D!3!A]. A number at the start of a line above the clef is a bar number, and a 3 over a group of notes is a triplet - neither is fingering.
-   These are practice pieces, so trust the fingering exactly as printed. It is often chosen on purpose to practise a particular position, string or shift, and may be quite different from the usual fingering - that is expected, not a mistake. Do not correct it, do not add fingering where none is printed, do not leave any out, and do not spend time checking whether it is a sensible fingering. Never use the fingering to decide or change a note: read every pitch only from its place on the staff.
-11. Leave out everything else: dynamics, up-bow and down-bow signs, accents, ornaments, grace notes, lyrics, chord symbols, bar numbers, and any other signs.
+9. Staccato dots and tenuto lines: copy them onto every note that has one. A staccato dot is a . before the note: .A2. A tenuto line (a short dash above or below the head) is !tenuto! before the note: !tenuto!A2. Keep them inside slurs too: dots or dashes under a slur mean the notes are separated within one bow (or one breath), so a slur over two dotted notes is (.C,2 .C,2) and over two dashed notes is (!tenuto!A2 !tenuto!B2). The dot after a note head that lengthens it (a dotted note) is not a staccato dot - write it as a length (A3, A6).
+10. Fingering: copy every fingering number printed above or below a note as !0! to !5! before the note (on string instruments 0 = open string and 1 to 4 = fingers), together with any staccato dot or tenuto line: !0!G,,2 !2!.C,2 (!1!D, !3!F,). In a double stop put each number with its own note inside the brackets: [!1!D!3!A]. A number at the start of a line above the clef is a bar number, and a 3 over a group of notes is a triplet - neither is fingering.
+   These are practice pieces, so trust the fingering exactly as printed. It is often chosen on purpose to practise a particular position, string, shift or hand shape, and may be quite different from the usual fingering - that is expected, not a mistake. Do not correct it, do not add fingering where none is printed, do not leave any out, and do not spend time checking whether it is a sensible fingering. Never use the fingering to decide or change a note: read every pitch only from its place on the staff.
+11. Leave out everything else: dynamics, up-bow and down-bow signs, breath marks, accents, ornaments, grace notes, lyrics, chord symbols, bar numbers, and any other signs.
 12. Never add notes that are not printed. If a note is unclear, write your best guess and add a comment line such as: % bar 5: second note unclear
 13. If the photo is not sheet music, or is too unclear to read, answer with a code block containing only: % not readable - <reason>
 

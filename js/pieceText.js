@@ -43,6 +43,7 @@ export function parseKey(v) {
   let rest = v.replace(/\bclef\s*=\s*(\w+)/i, (_, c) => { clef = c.toLowerCase(); return ''; });
   rest = rest.replace(/\b(treble|bass|alto|tenor)\b/i, (m) => { clef = clef || m.toLowerCase(); return ''; }).trim();
   if (clef && !CLEFS.includes(clef)) return { error: `Unknown clef "${clef}" (use treble, bass, alto or tenor)` };
+  if (!rest && clef) return { fifths: null, clef, name: null }; // only a clef: the key stays as it is
   if (!rest || /^none$/i.test(rest)) return { fifths: 0, clef, name: 'C' };
   const m = /^([A-Ga-g])\s*([#b♯♭]?)\s*([A-Za-z]*)/.exec(rest);
   if (!m) return { error: `Can't read the key "${v}"` };
@@ -130,9 +131,9 @@ export function parsePiece(text) {
       case 'K': {
         const k = parseKey(v);
         if (k.error) { err(li, col, k.error); return; }
-        if (!inBody && !inline) { P.key = { fifths: k.fifths, name: k.name }; P.clef = k.clef; }
+        if (!inBody && !inline) { P.key = { fifths: k.fifths ?? 0, name: k.name ?? 'C' }; P.clef = k.clef; }
         else P.tokens.push({ kind: 'key', fifths: k.fifths, name: k.name, clef: k.clef });
-        fifths = k.fifths;
+        if (k.fifths != null) fifths = k.fifths;
         if (k.clef) clef = k.clef;
         inBody = true;
         return;
@@ -358,12 +359,18 @@ const CLEF_LINES = { treble: 'E G B d f', alto: 'F, A, C E G', tenor: 'D, F, A, 
 
 /** Most notes far above or below the staff of the clef: the octave was probably written wrongly. */
 function checkRegister(P) {
+  if (!P.clef || !(P.clef in CLEF_MIDDLE)) return [];
+  // each note against the clef in force where it is written (the clef may change in the middle)
+  let cur = P.clef;
+  const offs = [];
+  for (const t of P.tokens) {
+    if (t.kind === 'key' && t.clef in CLEF_MIDDLE) cur = t.clef;
+    if (t.kind === 'note' && !t.repeated) offs.push(midiOf(t.notes[0]) - CLEF_MIDDLE[cur]);
+  }
+  if (offs.length < 4) return [];
+  offs.sort((a, b) => a - b);
+  const off = offs[offs.length >> 1];
   const clef = P.clef;
-  if (!clef || !(clef in CLEF_MIDDLE)) return [];
-  const m = P.tokens.filter((t) => t.kind === 'note' && !t.repeated).map((t) => midiOf(t.notes[0])).sort((a, b) => a - b);
-  if (m.length < 4) return [];
-  const median = m[m.length >> 1];
-  const off = median - CLEF_MIDDLE[clef];
   if (Math.abs(off) <= 12) return []; // a tune low on the violin's G string sits an octave below the middle line
   return [{
     line: P.tokens.find((t) => t.kind === 'note').line, check: true,
