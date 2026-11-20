@@ -1,6 +1,6 @@
 // Pieces: any music to practise with the arrow, the tuner bar and scoring.
 // Saved on this device; joined (A + B); and the instructions given to an AI
-// (ChatGPT or any other) to turn a photo of sheet music into the text format.
+// (Claude) to turn a photo of sheet music into the text format.
 // No DOM access (apart from localStorage for the saved pieces).
 
 import { parsePiece } from './pieceText.js';
@@ -76,6 +76,7 @@ export function pieceSequence(P, info) {
       if (pendingKey != null) { g.keyChange = pendingKey; pendingKey = null; }
       if (pendingClef) { g.clefChange = pendingClef; clef = pendingClef; g.clef = clef; pendingClef = null; }
       if (t.kind === 'note' && slurOpen) g.slurGroup = slurId;
+      if (t.art && k === 0) g.articulation = t.art;
       if (k < parts.length - 1) g.tieNext = true;
       glyphs.push(g);
       beat += b;
@@ -94,6 +95,8 @@ export function pieceSequence(P, info) {
           onsetBeat: glyphs[first].onsetBeat, beats: t.beats, stepIndex: bar,
           slurred: slurOpen && !t.slurStart,
         };
+        // staccato / tenuto: the note is let go early, so even under a slur there is a gap before the next
+        if (t.art) e.articulation = t.art;
         glyphs[first].eventIndex = e.index;
         glyphs[first].beats = t.beats;
         events.push(e);
@@ -217,17 +220,18 @@ STEP 2 - When the photo arrives, transcribe it into ABC notation. A program read
 6. End every bar with | and the last bar with |]. Each bar must add up exactly to the time signature, counting a note without a number as 1: in 3/4 the numbers in every bar add up to 6, in 4/4 to 8, in 6/8 to 6, in 2/4 to 4. Only a pickup bar at the start (and the last bar after it) may be shorter.
 7. Repeats: copy the repeat signs as printed - |: at the start of the repeated section and :| at its end (a :| with no |: before it repeats from the beginning). First and second-time endings, D.C., D.S. and coda can't be read: write those out in full, every note in the order it is played.
 8. Ties: A2-A2. Slurs: (A B c). Triplets: (3ABc. Two notes played together (double stops): [DA].
-9. Leave out everything else: dynamics, fingering, bowing marks, articulation, ornaments, grace notes, lyrics, chord symbols, bar numbers.
-10. Never add notes that are not printed. If a note is unclear, write your best guess and add a comment line such as: % bar 5: second note unclear
-11. If the photo is not sheet music, or is too unclear to read, answer with a code block containing only: % not readable - <reason>
+9. Staccato dots and tenuto lines: copy them onto every note that has one. A staccato dot is a . before the note: .A2. A tenuto line (a short dash above or below the head) is !tenuto! before the note: !tenuto!A2. Keep them inside slurs too: dots or dashes under a slur mean the notes are separated within one bow, so a slur over two dotted notes is (.C,2 .C,2) and over two dashed notes is (!tenuto!A2 !tenuto!B2). The dot after a note head that lengthens it (a dotted note) is not a staccato dot - write it as a length (A3, A6).
+10. Leave out everything else: dynamics, fingering, up-bow and down-bow signs, accents, ornaments, grace notes, lyrics, chord symbols, bar numbers.
+11. Never add notes that are not printed. If a note is unclear, write your best guess and add a comment line such as: % bar 5: second note unclear
+12. If the photo is not sheet music, or is too unclear to read, answer with a code block containing only: % not readable - <reason>
 
 STEP 3 - Answer in this order:
-a) Under the heading "Reading", one short line per bar giving each note's place on the staff and its ABC, and the bar's total, for example:
-   Bar 1: bottom line G,,2 ; 2nd line B,,2 ; middle line D,2 (2+2+2 = 6)
-   Read the photo again for any bar whose total is wrong, and for any note that looks a step too high or low.
+a) Under the heading "Reading", one short line per bar giving each note's place on the staff and its ABC (with any slur, staccato dot or tenuto line), and the bar's total, for example:
+   Bar 1: bottom line G,,2 ; 2nd line B,,2 (slur starts, dot) ; 2nd line B,,2 (dot, slur ends) (2+2+2 = 6)
+   Read the photo again for any bar whose total is wrong, for any note that looks a step too high or low, and for dots or dashes you may have missed.
 b) The ABC inside one code block (three backticks).
 c) After the code block, only this line:
-"Now tap Copy on the box above, go back to the Scale Practice app, paste it into the box under 'Paste the answer here' and tap Read the music."
+"Now tap Copy on the box above (or the copy icon under it), go back to the Scale Practice app, paste it into the box under 'Paste the answer here' and tap Read the music."
 
 An example of the code block:
 
@@ -237,15 +241,16 @@ M: 3/4
 L: 1/8
 Q: 1/4=90
 K: G clef=bass
-G,,2 B,,2 D,2 | G,4 F,2 | (E, D, C,2) A,,2 | G,,6 |]
+G,,2 (.B,,2 .B,,2) | G,4 F,2 | (E, D, C,2) A,,2 | G,,6 |]
 \`\`\``;
 
-/** A follow-up for the AI when its answer couldn't be read. */
-/** ChatGPT, opened with the instructions already filled in. */
-export const CHATGPT_URL = 'https://chatgpt.com/';
-export function chatGptLink(prompt = AI_PROMPT) {
-  return `${CHATGPT_URL}?q=${encodeURIComponent(prompt)}`;
+/** Claude, opened in a new chat with the instructions already filled in (q is cut at about 14,000 characters). */
+export const CLAUDE_URL = 'https://claude.ai/new';
+export function claudeLink(prompt = AI_PROMPT) {
+  return `${CLAUDE_URL}?q=${encodeURIComponent(prompt)}`;
 }
+
+/** A follow-up for the AI when its answer couldn't be read, or looks wrong. */
 
 export function fixPrompt(errors) {
   const list = errors.slice(0, 12).map((e) => `- line ${e.line}${e.col ? `, column ${e.col}` : ''}: ${e.message}`).join('\n');

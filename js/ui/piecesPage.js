@@ -1,9 +1,9 @@
 // Pieces tab: saved pieces of music to practise with the arrow and tuner bar.
 // A list, an editor (text on one side, the score drawn as you type), joining
-// two pieces, and turning a photo into a piece with ChatGPT.
+// two pieces, and turning a photo into a piece with Claude.
 
 import { parsePiece, extractPieceText } from '../pieceText.js';
-import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, chatGptLink } from '../pieces.js';
+import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, claudeLink } from '../pieces.js';
 import { instrumentInfo } from '../instruments.js';
 import { renderScore } from '../notation.js';
 
@@ -24,6 +24,7 @@ const FORMAT_HELP = `
 <tr><td><code>z2</code></td><td>a crotchet rest</td></tr>
 <tr><td><code>|</code> <code>|]</code></td><td>bar line, final bar line</td></tr>
 <tr><td><code>A2-A2</code> &nbsp; <code>(ABc)</code> &nbsp; <code>(3ABc</code> &nbsp; <code>[DA]</code></td><td>tie, slur, triplet, two notes together</td></tr>
+<tr><td><code>.A2</code> &nbsp; <code>!tenuto!A2</code> &nbsp; <code>(.A2 .A2)</code></td><td>staccato dot, tenuto line; under a slur, a short gap in the same bow</td></tr>
 <tr><td><code>% a note to yourself</code></td><td>a comment (ignored)</td></tr>
 </table>`;
 
@@ -78,7 +79,7 @@ export class PiecesPage {
         <button type="button" class="btn" data-act="photo">📷 Decode music from a photo</button>
         <button type="button" class="btn" data-act="join" ${list.length >= 2 ? '' : 'disabled'} title="Join two pieces into one">⧉ Join two pieces</button>
       </div>
-      ${list.length ? `<ul class="pieces">${list.map(card).join('')}</ul>` : '<p class="empty">No pieces yet. Start a <b>new piece</b> and type the music, or <b>decode a photo</b> of sheet music with ChatGPT.</p>'}
+      ${list.length ? `<ul class="pieces">${list.map(card).join('')}</ul>` : '<p class="empty">No pieces yet. Start a <b>new piece</b> and type the music, or <b>decode a photo</b> of sheet music with Claude.</p>'}
       <p class="small muted">For simple music for one instrument: one line of music (with double stops). Pieces with a piano or other accompaniment work too – only the top part is used. Orchestral scores, piano music for two hands and other multi-part music can't be practised here.</p>`;
     this.wire({
       new: () => this.edit(newPiece('My piece', STARTER), true),
@@ -189,36 +190,36 @@ export class PiecesPage {
     });
   }
 
-  // ---------------------------------------------------------------- from a photo, with ChatGPT
+  // ---------------------------------------------------------------- from a photo, with Claude
   photo() {
     this.view = 'photo';
     this.root.innerHTML = `
       <div class="game-head"><button type="button" class="btn" data-act="back">← Pieces</button><b>Decode music from a photo</b></div>
-      <p>ChatGPT reads a photo of your music and writes it as text; you paste that text back here. No account is needed.</p>
+      <p>Claude (an AI assistant) reads a photo of your music and writes it as text; you paste that text back here. You need a Claude account – a free one works.</p>
       <div class="notice photo-why">
-        <b>Why you do this step yourself:</b> reading a photo needs an AI service, and those cost money to run. Doing it in ChatGPT yourself keeps Scale Practice free.<br>
-        <b>Copyright:</b> sheet music is usually protected by copyright. You are responsible for the music you photograph and decode this way – only use music you are allowed to copy, such as your own copy, for your own practice. Your photo goes to ChatGPT, not to Scale Practice.
+        <b>Why you do this step yourself:</b> reading a photo needs an AI service, and those cost money to run. Doing it in Claude yourself keeps Scale Practice free.<br>
+        <b>Copyright:</b> sheet music is usually protected by copyright. You are responsible for the music you photograph and decode this way – only use music you are allowed to copy, such as your own copy, for your own practice. Your photo goes to Claude, not to Scale Practice.
       </div>
       <ol class="photo-steps">
-        <li><b>Open ChatGPT</b> – it opens in a new window with the instructions already filled in. Send them if it hasn't, and ChatGPT asks for a photo: take one with your camera or choose one from your photos. Hold the phone straight above the page, in good light, one page at a time.
-          <div class="row"><button type="button" class="btn primary" data-act="open">🎼 Decode music with ChatGPT</button></div>
-          <p class="small muted">If ChatGPT asks you to sign in before you can send a photo, a free account is enough.</p>
-          <details class="small"><summary>The instructions didn't appear in ChatGPT?</summary>
-            <p>Copy them and paste them into ChatGPT yourself.</p>
+        <li><b>Open Claude</b> – it opens in a new window with the instructions already filled in. Sign in if asked, then send the instructions; Claude asks for a photo – take one with your camera or choose one from your photos. Hold the phone straight above the page, in good light, one page at a time.
+          <div class="row"><button type="button" class="btn primary" data-act="open">🎼 Decode music with Claude</button></div>
+          <p class="small"><b>Choose Sonnet or Opus</b> in the model menu next to the message box before you send, if you can (Opus is the most accurate; Haiku misreads more notes). If Claude offers extended thinking, turn it on.</p>
+          <details class="small"><summary>The instructions didn't appear in Claude?</summary>
+            <p>Copy them and paste them into a new Claude chat yourself.</p>
             <div class="row"><button type="button" class="btn" data-act="copy">📋 Copy the instructions</button> <span class="small muted" id="phCopied" role="status"></span></div>
             <pre class="prompt-text">${esc(AI_PROMPT)}</pre></details>
         </li>
-        <li><b>Copy ChatGPT's answer</b> (tap Copy on the box it writes the music in), come back here and paste it below.
+        <li><b>Copy Claude's answer</b> (tap Copy on the box it writes the music in), come back here and paste it below.
           <textarea id="phAnswer" rows="8" spellcheck="false" autocapitalize="off" placeholder="Paste the answer here"></textarea>
           <div class="row"><button type="button" class="btn primary" data-act="read">Read the music</button></div>
           <div id="phResult"></div>
         </li>
       </ol>
-      <p class="small muted">Works best for simple music for one instrument. With a piano or other accompaniment, only the top part of each group of staves is used. Always check the result against your music – ChatGPT can misread notes; you can correct anything in the editor.</p>`;
+      <p class="small muted">Works best for simple music for one instrument. With a piano or other accompaniment, only the top part of each group of staves is used. Always check the result against your music – Claude can misread notes; you can correct anything in the editor.</p>`;
     this.wire({
       back: () => this.list(),
-      open: () => { window.open(chatGptLink(), '_blank', 'noopener'); },
-      copy: async () => { this.root.querySelector('#phCopied').textContent = (await copyText(AI_PROMPT)) ? 'Copied – now paste it into ChatGPT.' : 'Select the instructions below and copy them.'; },
+      open: () => { window.open(claudeLink(), '_blank', 'noopener'); },
+      copy: async () => { this.root.querySelector('#phCopied').textContent = (await copyText(AI_PROMPT)) ? 'Copied – now paste it into a new Claude chat.' : 'Select the instructions below and copy them.'; },
       read: () => this.readAnswer(),
     });
   }
@@ -227,8 +228,8 @@ export class PiecesPage {
     const raw = this.root.querySelector('#phAnswer').value;
     const out = this.root.querySelector('#phResult');
     const text = extractPieceText(raw);
-    if (!text.trim()) { out.innerHTML = '<p class="bad">Paste ChatGPT’s answer first.</p>'; return; }
-    if (/^\s*%\s*not readable/i.test(text)) { out.innerHTML = `<p class="bad">ChatGPT could not read the photo: ${esc(text.replace(/^\s*%\s*/, ''))}. Try a clearer photo.</p>`; return; }
+    if (!text.trim()) { out.innerHTML = '<p class="bad">Paste Claude’s answer first.</p>'; return; }
+    if (/^\s*%\s*not readable/i.test(text)) { out.innerHTML = `<p class="bad">Claude could not read the photo: ${esc(text.replace(/^\s*%\s*/, ''))}. Try a clearer photo.</p>`; return; }
     const P = parsePiece(text);
     const notes = P.tokens.filter((t) => t.kind === 'note').length;
     const checks = P.warnings.filter((w) => w.check);
@@ -236,11 +237,11 @@ export class PiecesPage {
       const piece = newPiece(P.title || 'Untitled', text + '\n');
       out.innerHTML = `<p class="warn">Read “${esc(piece.name)}”: ${notes} notes – but ${checks.length === 1 ? 'something looks' : `${checks.length} things look`} wrong:</p>
         <ul class="piece-problems">${checks.map((w) => `<li>${esc(w.message)}.</li>`).join('')}</ul>
-        <p class="small">Send ChatGPT a correction request (paste it into the same conversation), or check it yourself in the editor.</p>
+        <p class="small">Send Claude a correction request (paste it into the same conversation), or check it yourself in the editor.</p>
         <div class="row"><button type="button" class="btn primary" data-act="fix">📋 Copy a correction request</button>
           <button type="button" class="btn" data-act="open">Open in the editor</button> <span class="small muted" id="phFixCopied" role="status"></span></div>`;
       this.wire({
-        fix: async () => { this.root.querySelector('#phFixCopied').textContent = (await copyText(fixPrompt(checks))) ? 'Copied – paste it into the same ChatGPT conversation.' : ''; },
+        fix: async () => { this.root.querySelector('#phFixCopied').textContent = (await copyText(fixPrompt(checks))) ? 'Copied – paste it into the same Claude chat.' : ''; },
         open: () => this.edit(piece, true),
       }, out);
       return;
@@ -255,11 +256,11 @@ export class PiecesPage {
     const piece = newPiece(P.title || 'Untitled', text + '\n');
     out.innerHTML = `<p class="bad">The answer has ${P.errors.length} problem${P.errors.length === 1 ? '' : 's'}:</p>
       <ul class="piece-problems">${P.errors.slice(0, 8).map((e) => `<li class="bad">Line ${e.line}, column ${e.col}: ${esc(e.message)}</li>`).join('')}</ul>
-      <p class="small">Send ChatGPT a correction request (paste it into the same conversation), or fix it yourself in the editor.</p>
+      <p class="small">Send Claude a correction request (paste it into the same conversation), or fix it yourself in the editor.</p>
       <div class="row"><button type="button" class="btn primary" data-act="fix">📋 Copy a correction request</button>
         <button type="button" class="btn" data-act="open">Fix it myself</button> <span class="small muted" id="phFixCopied" role="status"></span></div>`;
     this.wire({
-      fix: async () => { this.root.querySelector('#phFixCopied').textContent = (await copyText(fixPrompt(P.errors))) ? 'Copied – paste it into the same ChatGPT conversation.' : ''; },
+      fix: async () => { this.root.querySelector('#phFixCopied').textContent = (await copyText(fixPrompt(P.errors))) ? 'Copied – paste it into the same Claude chat.' : ''; },
       open: () => this.edit(piece, true),
     }, out);
   }

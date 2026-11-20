@@ -54,7 +54,9 @@ export function renderPerformance(seq, o = {}) {
     const g = seq.glyphs[e.glyphIndex];
     const dur = e.beats * spb * (1 + jitter * gauss(r));
     const cents = detune ? detune(e.index) : detuneSd * gauss(r);
-    truth.push({ index: e.index, onset: t, end: t + Math.max(0.08, g.beats * spb * (dur / (e.beats * spb))), dur, midis: e.midis, cents, slurred: e.slurred, missing: missing.includes(e.index) });
+    // staccato is let go after about half its length; tenuto (a line) just before the next note
+    const held = e.articulation === 'staccato' ? 0.5 : e.articulation === 'tenuto' ? 0.85 : 1;
+    truth.push({ index: e.index, onset: t, end: t + Math.max(0.08, held * g.beats * spb * (dur / (e.beats * spb))), dur, midis: e.midis, cents, slurred: e.slurred, art: e.articulation || null, missing: missing.includes(e.index) });
     t += dur;
   }
   const total = t + tail;
@@ -72,7 +74,10 @@ export function renderPerformance(seq, o = {}) {
     const tr = truth[k];
     if (tr.missing) continue;
     const next = truth[k + 1];
-    const legatoNext = !!(next && next.slurred && !next.missing);
+    // slurred into the next note – unless this one is staccato or tenuto (a gap in the same bow)
+    const legatoNext = !!(next && next.slurred && !next.missing && !tr.art);
+    const prev = truth[k - 1];
+    const afterGap = !!(tr.slurred && prev && prev.art && !prev.missing); // starts again in the same bow
     const start = Math.round(tr.onset * sampleRate);
     const soundEnd = legatoNext ? next.onset : tr.end;
     const end = Math.round(soundEnd * sampleRate);
@@ -105,7 +110,7 @@ export function renderPerformance(seq, o = {}) {
         // bow envelope: attack unless slurred; release before a bow change/rest
         let env = vibratoAmDb ? Math.pow(10, (vibratoAmDb * vib) / 20) : 1; // vibrato also swells the level
         if (SUNG) env *= Math.min(1, dipFloor + Math.max(0, tt - SUNG.consonantSec) / attack);
-        else if (!tr.slurred) env *= Math.min(1, dipFloor + tt / attack);
+        else if (!tr.slurred || afterGap) env *= Math.min(1, dipFloor + tt / attack);
         const toEnd = (end - i) / sampleRate;
         if (!legatoNext) env *= Math.min(1, dipFloor + toEnd / release);
         if (isExtra) { const te = (i - extraFrom) / sampleRate; env *= Math.min(1, 0.15 + te / 0.02); }

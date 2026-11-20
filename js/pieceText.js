@@ -15,9 +15,10 @@
 //   Rests:     z (with a length like a note), Z = a whole bar's rest
 //   Bars:      |   ||   |]   repeats |: … :| (played twice)
 //   Ties:      A2-A   Slurs: (ABc)   Double stops: [DA] or [D2A2]
+//   Staccato:  .A (a dot)   Tenuto: !tenuto!A (a line) – under a slur, a little gap before the next note
 //   Triplets:  (3abc   Dotted pairs: A>B (= A3/2 B/2)   A<B
 //   Changes in the middle:  [K:D] [M:3/4] [L:1/16] [Q:120] or a K:/M:/L: line
-//   Ignored:   % comments, "chord names", !decorations!, grace notes {…}, w: lyrics, ~ . u v
+//   Ignored:   % comments, "chord names", other !decorations!, grace notes {…}, w: lyrics, ~ u v
 
 import { parsePc, keyFifths, keySigAccidental, midiOf } from './theory.js';
 
@@ -92,6 +93,7 @@ export function parsePiece(text) {
   let tupletLeft = 0, tupletFactor = 1, tupletId = 0, curTuplet = null;
   let slurDepth = 0, pendingSlurStart = 0;
   let pendingBroken = null;        // factor for the next note after > or <
+  let pendingArt = null;           // 'staccato' (.) or 'tenuto' (!tenuto!) for the next note
   let repeatFrom = 0;              // token index where the current repeat starts
   let sawVoice = false;
   const err = (line, col, message) => errors.push({ line: line + 1, col: col + 1, message });
@@ -160,9 +162,16 @@ export function parsePiece(text) {
       const col = i;
       if (ch === ' ' || ch === '\t' || ch === '`' || ch === '\\' || ch === '$') { i++; continue; }
       if (ch === '"') { const j = s.indexOf('"', i + 1); i = j < 0 ? s.length : j + 1; continue; } // chord names
-      if (ch === '!' || ch === '+') { const j = s.indexOf(ch, i + 1); i = j < 0 ? s.length : j + 1; continue; } // decorations
+      if (ch === '!' || ch === '+') { // decorations: staccato and tenuto are kept, the rest ignored
+        const j = s.indexOf(ch, i + 1);
+        const name = j < 0 ? '' : s.slice(i + 1, j).toLowerCase();
+        if (name === 'staccato' || name === 'tenuto') pendingArt = name;
+        i = j < 0 ? s.length : j + 1;
+        continue;
+      }
       if (ch === '{') { const j = s.indexOf('}', i + 1); i = j < 0 ? s.length : j + 1; continue; } // grace notes
-      if ('.~HLMOPSTuvJR'.includes(ch)) { i++; continue; } // one-letter decorations
+      if (ch === '.') { pendingArt = 'staccato'; i++; continue; }
+      if ('~HLMOPSTuvJR'.includes(ch)) { i++; continue; } // other one-letter decorations
       // inline field [K:..]
       if (ch === '[' && /^[A-Za-z]:/.test(s.slice(i + 1, i + 3))) {
         const j = s.indexOf(']', i);
@@ -287,6 +296,8 @@ export function parsePiece(text) {
         ? { kind: 'rest', beats, nominal, line: li + 1, col: col + 1, tuplet }
         : { kind: 'note', notes, beats, nominal, tie: false, slurStart: pendingSlurStart > 0, slurEnd: false, line: li + 1, col: col + 1, tuplet };
       if (!restKind && pendingSlurStart) { slurDepth += pendingSlurStart; pendingSlurStart = 0; }
+      if (!restKind && pendingArt) tok.art = pendingArt;
+      pendingArt = null;
       if (tok.kind === 'note' && s[j] === '-') { tok.tie = true; j++; }
       if (tupletLeft === 0) curTuplet = null;
       P.tokens.push(tok);

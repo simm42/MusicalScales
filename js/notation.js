@@ -175,6 +175,16 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
       gid = g.kind === 'note' ? g.beamGroup : null;
     }
     flush();
+    // staccato dots and tenuto lines, on the notehead side (the stems are known once beamed)
+    if (piece) {
+      for (const gi of line) {
+        const g = glyphs[gi];
+        if (g.kind !== 'note' || !g.articulation) continue;
+        const note = noteObjs[gi];
+        const below = note.getStemDirection() === V.Stem.UP;
+        note.addModifier(new V.Articulation(g.articulation === 'staccato' ? 'a.' : 'a-').setPosition(below ? V.Modifier.Position.BELOW : V.Modifier.Position.ABOVE), 0);
+      }
+    }
 
     new V.Formatter().joinVoices([voice]).format([voice], staveW + 5 - stave.getNoteStartX() - 25);
     voice.draw(ctx, stave);

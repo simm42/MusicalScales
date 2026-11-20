@@ -2,8 +2,14 @@
 // (Short made-up tunes only – no published music.)
 import { test, eq, assert, near } from './harness.js';
 import { parsePiece, extractPieceText, parseKey } from '../js/pieceText.js';
-import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, chatGptLink } from '../js/pieces.js';
-import { instrumentInfo } from '../js/instruments.js';
+import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, claudeLink } from '../js/pieces.js';
+import { instrumentInfo, detectionRange } from '../js/instruments.js';
+import { renderPerformance } from '../js/audio/synth.js';
+import { analyseSignal } from '../js/pitch.js';
+import { segmentFrames } from '../js/segmenter.js';
+import { align } from '../js/align.js';
+import { scoreRun } from '../js/scoring.js';
+import { precisionAt } from '../js/precision.js';
 import { midiOf } from '../js/theory.js';
 
 const head = (k = 'C', m = '4/4') => `T: Test\nM: ${m}\nL: 1/8\nK: ${k}\n`;
@@ -195,9 +201,55 @@ test('pieces: the practice exercise and saved pieces', () => {
   eq(loadPieces({ getItem: () => 'not json' }), []);
   assert(parsePiece(STARTER).ok, 'the example piece can be read');
   assert(/top staff/i.test(AI_PROMPT) && /one code block/i.test(AI_PROMPT));
-  const link = chatGptLink();
-  assert(link.startsWith('https://chatgpt.com/?q='), 'opens ChatGPT');
+  const link = claudeLink();
+  assert(link.startsWith('https://claude.ai/new?q='), 'opens a new Claude chat');
+  assert(AI_PROMPT.length < 14000, 'short enough for the link');
   eq(decodeURIComponent(link.split('?q=')[1]), AI_PROMPT, 'with the instructions filled in');
   assert(/send me a photo/i.test(AI_PROMPT) && /go back to the Scale Practice app/i.test(AI_PROMPT), 'asks for the photo and says how to come back');
   assert(/line 3/i.test(fixPrompt([{ line: 3, col: 1, message: 'x' }])));
+});
+
+// ---------------------------------------------------------------- staccato and tenuto (also under a slur)
+
+test('pieces: staccato dots and tenuto lines are read, also inside slurs', () => {
+  const P = parsePiece(head('C clef=bass', '3/4') + 'C,,2 (.C,2 .C,2) | (!tenuto!G,,2 !tenuto!A,,2) B,,2 | .C,6 |]\n');
+  assert(P.ok, JSON.stringify(P.errors));
+  eq(notes(P).map((t) => t.art || null), [null, 'staccato', 'staccato', 'tenuto', 'tenuto', null, 'staccato']);
+  eq(notes(P).map((t) => t.beats), [1, 1, 1, 1, 1, 1, 3], 'a staccato dot is not a dotted note');
+  const seq = pieceSequence(P, cello);
+  eq(seq.events.map((e) => e.articulation || null), [null, 'staccato', 'staccato', 'tenuto', 'tenuto', null, 'staccato']);
+  eq(seq.events.map((e) => !!e.slurred), [false, false, true, false, true, false, false], 'still slurred (one bow)');
+  eq(seq.glyphs.filter((g) => g.articulation).length, 5, 'drawn on the score');
+  eq(P.warnings, []);
+});
+
+test('pieces: Play leaves a gap after a staccato note under a slur, then goes on in the same bow', () => {
+  const P = parsePiece(head('C clef=bass', '3/4') + '(.C,2 .C,2) C,2 |]\n');
+  const seq = pieceSequence(P, cello);
+  const sr = 48000;
+  const perf = renderPerformance(seq, { sampleRate: sr, bpm: 60, detune: () => 0, noise: 0, timbre: 'cello', leadIn: 0.2, tail: 0.3 });
+  const [a, b] = perf.truth;
+  near(a.end - a.onset, 0.5, 1e-6, 'staccato: half its length');
+  const rms = (t0, t1) => { let s = 0, n = 0; for (let i = Math.round(t0 * sr); i < Math.round(t1 * sr); i++) { s += perf.signal[i] ** 2; n++; } return Math.sqrt(s / n); };
+  assert(rms(a.end + 0.1, b.onset - 0.1) < 0.02 * rms(a.onset + 0.1, a.end - 0.1), 'silence before the next note');
+  assert(rms(b.onset + 0.1, b.onset + 0.4) > 0.5 * rms(a.onset + 0.1, a.end - 0.1), 'the next note sounds');
+  // without the dots the slurred repeat is one continuous sound
+  const legato = pieceSequence(parsePiece(head('C clef=bass', '3/4') + '(C,2 C,2) C,2 |]\n'), cello);
+  const lp = renderPerformance(legato, { sampleRate: sr, bpm: 60, detune: () => 0, noise: 0, timbre: 'cello', leadIn: 0.2, tail: 0.3 });
+  const mid = lp.truth[0].onset + 0.75;
+  let s = 0; for (let i = Math.round(mid * sr); i < Math.round((mid + 0.1) * sr); i++) s += lp.signal[i] ** 2;
+  assert(Math.sqrt(s / (0.1 * sr)) > 0.05, 'legato: no gap');
+});
+
+test('pieces: repeated staccato notes under a slur are each heard', () => {
+  const P = parsePiece(head('C clef=bass', '3/4') + 'C,,2 (.C,2 .C,2) | (.G,,2 .G,,2 .G,,2) | C,,6 |]\n');
+  const seq = pieceSequence(P, cello);
+  const perf = renderPerformance(seq, { bpm: 72, detune: () => 0, timbre: 'cello', noise: 0.002 });
+  const { minFreq, maxFreq } = detectionRange('cello');
+  const frames = analyseSignal(perf.signal, 48000, { minFreq, maxFreq });
+  const heard = segmentFrames(frames, { a4: 440, minFreq, maxFreq });
+  const alignment = align(heard, seq.events);
+  const result = scoreRun({ expected: seq.events, detected: heard, alignment, prec: precisionAt(2) });
+  eq(result.missing, 0, 'every note heard');
+  assert(result.total > 90, 'total ' + result.total);
 });
