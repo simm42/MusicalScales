@@ -2,7 +2,7 @@
 // (Short made-up tunes only – no published music.)
 import { test, eq, assert, near } from './harness.js';
 import { parsePiece, extractPieceText, parseKey } from '../js/pieceText.js';
-import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, claudeLink } from '../js/pieces.js';
+import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, claudeLink, pieceShareLink, readPieceShare, addSharedPiece } from '../js/pieces.js';
 import { instrumentInfo, detectionRange } from '../js/instruments.js';
 import { renderPerformance } from '../js/audio/synth.js';
 import { analyseSignal } from '../js/pitch.js';
@@ -12,6 +12,7 @@ import { align } from '../js/align.js';
 import { scoreRun } from '../js/scoring.js';
 import { precisionAt } from '../js/precision.js';
 import { midiOf } from '../js/theory.js';
+import { PiecesPage } from '../js/ui/piecesPage.js'; // loads (a mistake in the page's code fails these tests)
 
 const head = (k = 'C', m = '4/4') => `T: Test\nM: ${m}\nL: 1/8\nK: ${k}\n`;
 const notes = (P) => P.tokens.filter((t) => t.kind === 'note');
@@ -307,4 +308,30 @@ test('pieces: the instructions are for every instrument, not one', () => {
   assert(/violin G, D A e; viola C, G, D A; cello C,, G,, D, A,; double bass E,, A,, D, G,/.test(AI_PROMPT), 'open strings of each');
   assert(!/the cello's/i.test(AI_PROMPT), 'nothing only about the cello');
   assert(AI_PROMPT.length < 14000);
+});
+
+test('pieces: a share link carries the piece and adds it once', () => {
+  const p = newPiece('Été – Duet ♩', head('G') + '% fingering: !1!G\n!0!G2 (.B2 .B2) d4 |]\n');
+  const link = pieceShareLink(p, 'https://example.org/app/');
+  assert(/^https:\/\/example\.org\/app\/#piece=[A-Za-z0-9_-]+$/.test(link), link);
+  const code = link.split('#piece=')[1];
+  eq(readPieceShare(code), { name: p.name, text: p.text });
+  let threw = false;
+  try { readPieceShare(code.slice(0, code.length >> 1)); } catch { threw = true; }
+  assert(threw, 'a link cut short is refused');
+  const store = { v: {}, getItem(k) { return this.v[k] ?? null; }, setItem(k, v) { this.v[k] = String(v); } };
+  const a = addSharedPiece(readPieceShare(code), store);
+  assert(a.added && a.piece.id !== p.id, 'added with its own id');
+  const b = addSharedPiece(readPieceShare(code), store);
+  assert(!b.added && b.piece.id === a.piece.id, 'the same piece is not added twice');
+  eq(loadPieces(store).length, 1);
+});
+
+test('pieces: the instructions write a whole-piece repeat once', () => {
+  assert(/whole piece is repeated/.test(AI_PROMPT) && /write the piece only once/.test(AI_PROMPT));
+  assert(/If only part of the piece is repeated, copy the repeat signs/.test(AI_PROMPT));
+});
+
+test('pieces: the Pieces page code loads', () => {
+  assert(typeof PiecesPage === 'function' && typeof PiecesPage.prototype.share === 'function' && typeof PiecesPage.prototype.pasteLink === 'function');
 });

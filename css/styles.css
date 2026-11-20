@@ -424,6 +424,10 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 .piece-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
 .piece-main b { overflow-wrap: anywhere; }
 .piece-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.piece-share { flex: 1 1 100%; min-width: 0; }
+.piece-share p { margin: 4px 0; }
+.piece-share input { width: 100%; box-sizing: border-box; font: 13px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); color: var(--fg); }
+.piece-share .share-warning { color: var(--warn); }
 .pieces-page .bad, .piece-problems .bad { color: var(--bad); }
 .pieces-page p.warn, .piece-problems .warn { color: var(--warn); font-weight: 600; }
 .pieces-page .good { color: var(--good); }

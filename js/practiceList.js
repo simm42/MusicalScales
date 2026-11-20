@@ -40,13 +40,13 @@ export function saveList(list) {
 
 
 // ---- share / export -----------------------------------------------------
-function b64urlEncode(str) {
+export function b64urlEncode(str) {
   const bytes = new TextEncoder().encode(str);
   let bin = '';
   bytes.forEach((b) => { bin += String.fromCharCode(b); });
   return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
-function b64urlDecode(s) {
+export function b64urlDecode(s) {
   const b64 = s.replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((s.length + 3) % 4);
   const bin = atob(b64);
   return new TextDecoder().decode(Uint8Array.from(bin, (c) => c.charCodeAt(0)));

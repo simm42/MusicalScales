@@ -3,7 +3,7 @@
 // two pieces, and turning a photo into a piece with Claude.
 
 import { parsePiece, extractPieceText } from '../pieceText.js';
-import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, claudeLink } from '../pieces.js';
+import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, claudeLink, pieceShareLink, readPieceShare, addSharedPiece } from '../pieces.js';
 import { instrumentInfo } from '../instruments.js';
 import { renderScore } from '../notation.js';
 
@@ -68,17 +68,21 @@ export class PiecesPage {
         <div class="piece-acts">
           <button type="button" class="btn primary" data-act="practise" ${P.ok ? '' : 'disabled'}>▶ Practise</button>
           <button type="button" class="btn" data-act="edit" title="Edit">✎ Edit</button>
+          <button type="button" class="btn" data-act="share" title="Send a link to this piece">🔗 Share</button>
           <button type="button" class="btn" data-act="copy" title="Make a copy">⧉</button>
           <button type="button" class="btn" data-act="delete" title="Delete" aria-label="Delete">🗑</button>
-        </div></li>`;
+        </div>
+        <div class="piece-share" hidden></div></li>`;
     };
     this.root.innerHTML = `
       <h2>Pieces</h2>
+      <div id="pcFlash"></div>
       <p class="muted">Any music to practise with the arrow, the tuner bar and scoring – saved on this device, so you can take your music with you.</p>
       <div class="row">
         <button type="button" class="btn primary" data-act="new">＋ New piece</button>
         <button type="button" class="btn" data-act="photo">📷 Decode music from a photo</button>
         <button type="button" class="btn" data-act="join" ${list.length >= 2 ? '' : 'disabled'} title="Join two pieces into one">⧉ Join two pieces</button>
+        <button type="button" class="btn" data-act="paste" title="Add a piece someone sent you as a link">📥 Paste a shared link</button>
       </div>
       ${list.length ? `<ul class="pieces">${list.map(card).join('')}</ul>` : '<p class="empty">No pieces yet. Start a <b>new piece</b> and type the music, or <b>decode a photo</b> of sheet music with Claude.</p>'}
       <p class="small muted">For simple music for one instrument: one line of music (with double stops). Pieces with a piano or other accompaniment work too – only the top part is used. Orchestral scores, piano music for two hands and other multi-part music can't be practised here.</p>`;
@@ -86,16 +90,66 @@ export class PiecesPage {
       new: () => this.edit(newPiece('My piece', STARTER), true),
       photo: () => this.photo(),
       join: () => this.join(),
+      paste: () => this.pasteLink(),
     });
     this.root.querySelectorAll('.piece').forEach((li) => {
       const p = list.find((x) => x.id === li.dataset.id);
       this.wire({
         practise: () => this.practise(p),
         edit: () => this.edit(p),
+        share: () => this.share(p, li),
         copy: () => { const c = newPiece(`${p.name} (copy)`, p.text); this.store([...this.pieces(), c]); this.list(); },
         delete: () => { if (confirm(`Delete “${p.name}”? This can't be undone.`)) { this.store(this.pieces().filter((x) => x.id !== p.id)); this.list(); } },
       }, li);
     });
+  }
+
+  /** A link that adds this piece to someone else's pieces when they open it. */
+  async share(p, li) {
+    const box = li.querySelector('.piece-share');
+    const url = pieceShareLink(p, location.origin + location.pathname);
+    let how = '';
+    // phones: the share sheet (Messages, WhatsApp, email…); otherwise copy the link
+    const touch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    if (touch && navigator.share) {
+      try { await navigator.share({ title: p.name, text: `“${p.name}” – a piece to practise in Scale Practice. Open the link to add it to your pieces:`, url }); how = 'Shared.'; }
+      catch (e) { if (e && e.name === 'AbortError') how = ''; }
+    }
+    if (!how) { try { await navigator.clipboard.writeText(url); how = 'Link copied – paste it into a message.'; } catch { how = 'Copy this link and send it:'; } }
+    box.innerHTML = `<p class="small">${esc(how)} Whoever opens it gets “${esc(p.name)}” added to their pieces.</p>
+      <input type="text" readonly value="${esc(url)}" aria-label="Link to this piece">
+      <p class="small share-warning">⚠ Only share music you are allowed to share. Most published sheet music is protected by copyright – don't use these links to pass on copies of it. Share your own music, music that is out of copyright, or music you have permission to share. You are responsible for what you send.</p>`;
+    box.hidden = false;
+    box.querySelector('input').addEventListener('click', (e) => e.target.select());
+  }
+
+  /** A shared link pasted in (e.g. on iPhone, where a link opens in Safari, not the Home Screen app). */
+  pasteLink() {
+    const el = this.root.querySelector('#pcFlash');
+    el.innerHTML = `<div class="notice"><label for="pcLink">Paste the link someone sent you:</label>
+      <input type="text" id="pcLink" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="https://…#piece=…" style="width:100%;box-sizing:border-box;margin:6px 0">
+      <div class="row"><button type="button" class="btn primary" data-act="add">Add the piece</button> <button type="button" class="btn" data-act="cancel">Cancel</button></div></div>`;
+    el.querySelector('#pcLink').focus();
+    this.wire({
+      add: () => {
+        const m = /piece=([A-Za-z0-9_-]+)/.exec(el.querySelector('#pcLink').value);
+        if (!m) { el.querySelector('label').textContent = 'That isn’t a link to a piece – paste the whole link:'; return; }
+        let result;
+        try { result = { ok: true, ...addSharedPiece(readPieceShare(m[1])) }; } catch { result = { ok: false }; }
+        this.sharedArrived(result);
+      },
+      cancel: () => { el.innerHTML = ''; },
+    }, el);
+  }
+
+  /** After opening a shared link: say what happened (the list is shown). */
+  sharedArrived({ ok, piece, added }) {
+    this.list();
+    const el = this.root.querySelector('#pcFlash');
+    if (!ok) { el.innerHTML = '<p class="notice error">The shared piece could not be read – the link may have been cut short when it was sent. Ask for it again.</p>'; return; }
+    el.innerHTML = `<div class="notice"><p>${added ? `Added “${esc(piece.name)}” from a shared link.` : `“${esc(piece.name)}” from the shared link is already in your pieces.`}</p>
+      <div class="row"><button type="button" class="btn primary" data-act="practise">▶ Practise it</button> <button type="button" class="btn" data-act="edit">✎ Look at it</button></div></div>`;
+    this.wire({ practise: () => this.practise(piece), edit: () => this.edit(piece) }, el);
   }
 
   // ---------------------------------------------------------------- editor

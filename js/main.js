@@ -32,7 +32,7 @@ import { startAnalytics, ANALYTICS_ON } from './analytics.js';
 import { setupPwa } from './pwa.js';
 import { GamesPage } from './ui/gamesPage.js';
 import { PiecesPage } from './ui/piecesPage.js';
-import { pieceExercise, loadPieces } from './pieces.js';
+import { pieceExercise, loadPieces, readPieceShare, addSharedPiece } from './pieces.js';
 import { hold as holdAwake, release as releaseAwake } from './wakelock.js';
 import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
@@ -892,6 +892,18 @@ function addImported(items, source) {
   $('shareMsg').textContent = `Added ${items.length} exercise${items.length === 1 ? '' : 's'}.`;
 }
 
+/** A shared piece link (#piece=…): add the piece to this device's pieces and show it. */
+function checkPieceLink() {
+  const m = /[#&]piece=([A-Za-z0-9_-]+)/.exec(location.hash);
+  if (!m) return;
+  history.replaceState(null, '', location.pathname + location.search);
+  let result;
+  try { result = { ok: true, ...addSharedPiece(readPieceShare(m[1])) }; } catch { result = { ok: false }; }
+  setTab('pieces');
+  piecesPage.sharedArrived(result);
+}
+window.addEventListener('hashchange', checkPieceLink);
+
 function checkShareLink() {
   const m = /[#&]list=([A-Za-z0-9_-]+)/.exec(location.hash);
   if (!m) return;
@@ -1292,6 +1304,7 @@ function init() {
   setTab(['practice', 'config', 'results', 'tuner', 'games', 'pieces'].includes(prefs.tab) ? prefs.tab : (list.length ? 'practice' : 'config'));
   if (location.hash.startsWith('#help')) setTab('help');
   checkShareLink();
+  checkPieceLink();
 }
 
 if (window.Vex) init();

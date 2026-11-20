@@ -4,6 +4,7 @@
 // No DOM access (apart from localStorage for the saved pieces).
 
 import { parsePiece } from './pieceText.js';
+import { b64urlEncode, b64urlDecode } from './practiceList.js';
 import { midiOf } from './theory.js';
 
 // ---------------------------------------------------------------- notes the app can draw, play and follow
@@ -151,6 +152,33 @@ export function newPiece(name, text) {
   return { id: uid(), name: String(name || 'Untitled').slice(0, 120), text: String(text || ''), updated: Date.now() };
 }
 
+// ---------------------------------------------------------------- share links
+// The piece travels after the '#' of the link, which browsers never send to a server:
+// opening the link adds the piece to the other person's pieces on their device.
+
+export function pieceShareCode(p) {
+  return b64urlEncode(JSON.stringify({ v: 1, n: p.name, t: p.text }));
+}
+/** The link to send: this app's address with the piece after #piece= */
+export function pieceShareLink(p, base) {
+  return `${base}#piece=${pieceShareCode(p)}`;
+}
+/** @returns {{ name, text }} – throws if the code isn't a piece (e.g. cut short when sent) */
+export function readPieceShare(code) {
+  const d = JSON.parse(b64urlDecode(String(code || '')));
+  if (!d || typeof d.t !== 'string' || !d.t.trim() || d.t.length > 100000) throw new Error('Not a piece');
+  return { name: String(d.n || 'Shared piece').slice(0, 120), text: d.t };
+}
+/** Save a shared piece – unless exactly the same piece is already saved. */
+export function addSharedPiece(shared, storage = typeof localStorage !== 'undefined' ? localStorage : null) {
+  const list = loadPieces(storage);
+  const same = list.find((x) => x.name === shared.name && x.text === shared.text);
+  if (same) return { piece: same, added: false };
+  const piece = newPiece(shared.name, shared.text);
+  if (!savePieces([...list, piece], storage)) throw new Error('Could not save');
+  return { piece, added: true };
+}
+
 /** Header (up to and including the first K: line) and the music after it. */
 export function splitHeader(text) {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
@@ -219,7 +247,7 @@ STEP 2 - When the photo arrives, transcribe it into ABC notation. A program read
 4. Lengths are multiples of an eighth note: A = eighth, A2 = quarter, A3 = dotted quarter, A4 = half, A6 = dotted half, A8 = whole, A/2 = sixteenth, A3/2 = dotted eighth, A/4 = thirty-second. Rests: z with the same lengths (z2 = quarter rest, z8 = whole-bar rest in 4/4).
 5. Accidentals: the key signature applies automatically - do not write it on every note. Write ^ (sharp), _ (flat) or = (natural) before a note only where an accidental is printed; it lasts to the end of the bar, as in printed music.
 6. End every bar with | and the last bar with |]. Each bar must add up exactly to the time signature, counting a note without a number as 1: in 3/4 the numbers in every bar add up to 6, in 4/4 to 8, in 6/8 to 6, in 2/4 to 4. Only a pickup bar at the start (and the last bar after it) may be shorter.
-7. Repeats: copy the repeat signs as printed - |: at the start of the repeated section and :| at its end (a :| with no |: before it repeats from the beginning). First and second-time endings, D.C., D.S. and coda can't be read: write those out in full, every note in the order it is played.
+7. Repeats: if the whole piece is repeated (a :| at the very end with no |: before it, or |: at the very start and :| at the very end), leave the repeat signs out and write the piece only once - the student is practising it, so one playthrough is enough. If only part of the piece is repeated, copy the repeat signs as printed - |: at the start of the repeated section and :| at its end. First and second-time endings, D.C., D.S. and coda can't be read: write those out in full, every note in the order it is played (but never the whole piece twice).
 8. Ties: A2-A2. Slurs: (A B c). Triplets: (3ABc. Two notes played together (double stops): [DA].
 9. Staccato dots and tenuto lines: copy them onto every note that has one. A staccato dot is a . before the note: .A2. A tenuto line (a short dash above or below the head) is !tenuto! before the note: !tenuto!A2. Keep them inside slurs too: dots or dashes under a slur mean the notes are separated within one bow (or one breath), so a slur over two dotted notes is (.C,2 .C,2) and over two dashed notes is (!tenuto!A2 !tenuto!B2). The dot after a note head that lengthens it (a dotted note) is not a staccato dot - write it as a length (A3, A6).
 10. Fingering: copy every fingering number printed above or below a note as !0! to !5! before the note (on string instruments 0 = open string and 1 to 4 = fingers), together with any staccato dot or tenuto line: !0!G,,2 !2!.C,2 (!1!D, !3!F,). In a double stop put each number with its own note inside the brackets: [!1!D!3!A]. A number at the start of a line above the clef is a bar number, and a 3 over a group of notes is a triplet - neither is fingering.
