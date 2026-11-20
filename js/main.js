@@ -31,6 +31,8 @@ import { noteIcon, RHYTHM_ICONS } from './ui/noteIcons.js';
 import { startAnalytics, ANALYTICS_ON } from './analytics.js';
 import { setupPwa } from './pwa.js';
 import { GamesPage } from './ui/gamesPage.js';
+import { PiecesPage } from './ui/piecesPage.js';
+import { pieceExercise, loadPieces } from './pieces.js';
 import { hold as holdAwake, release as releaseAwake } from './wakelock.js';
 import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
@@ -74,6 +76,10 @@ let session = null;
 let lastResult = null;
 let arrowIndex = 0;
 let syllables = null; // sol-fa syllable per note when singing
+// a saved piece (Pieces tab) being practised instead of a scale
+let currentPiece = prefs.pieceId ? loadPieces().find((p) => p.id === prefs.pieceId) || null : null;
+/** Is the full score on the page? (A piece is always shown as a score.) */
+const scoreShown = () => !!(exercise && exercise.isPiece) || settings.display === 'score';
 
 const engine = new AudioEngine();
 const player = new Player();
@@ -284,7 +290,10 @@ function setGlobal(patch) {
 }
 
 function setSettings(next, { keepActive = false } = {}) {
+  const before = settings;
   settings = normalise(next);
+  // choosing a different scale (not just the instrument) ends practising a piece
+  if (currentPiece && !keepActive && EXERCISE_FIELDS.some((f) => f !== 'instrument' && f !== 'otherSetup' && JSON.stringify(before[f]) !== JSON.stringify(settings[f]))) setPiece(null);
   // everything that reads the device's other instrument follows the exercise's setup
   if (settings.instrument === 'other') setProfile('other', settings.otherSetup);
   prefs.global = pickFields(settings, GLOBAL_FIELDS);
@@ -304,15 +313,27 @@ function setSettings(next, { keepActive = false } = {}) {
 function updateExercise() {
   stopSession(true);
   stopPlayback();
-  exercise = buildExercise(settings);
-  seq = buildSequence(exercise);
-  $('exTitle').textContent = `${instName(settings.instrument)}: ${exercise.title}`;
-  syllables = syllablesFor(exercise);
-  $('exOptions').textContent = describeOptions(settings);
-  // the full score already shows the rhythm, long notes and slurs
-  $('exOptions').hidden = settings.display === 'score';
+  if (currentPiece) {
+    const pe = pieceExercise(currentPiece, instrumentInfo(settings.instrument), pieceSettings());
+    exercise = pe.exercise;
+    seq = pe.seq;
+    $('exTitle').textContent = `${instName(settings.instrument)}: ${exercise.title}`;
+    syllables = syllablesFor(exercise);
+    $('exOptions').textContent = ['Piece', exercise.keyName && `key ${exercise.keyName.replace(/#/, '♯').replace(/(^[A-G])b/, '$1♭')}`, exercise.meterText, `${exercise.bars} bar${exercise.bars === 1 ? '' : 's'}`, exercise.outside ? `${exercise.outside} note${exercise.outside === 1 ? '' : 's'} out of range` : ''].filter(Boolean).join(' · ');
+    $('exOptions').hidden = false;
+  } else {
+    exercise = buildExercise(settings);
+    seq = buildSequence(exercise);
+    $('exTitle').textContent = `${instName(settings.instrument)}: ${exercise.title}`;
+    syllables = syllablesFor(exercise);
+    $('exOptions').textContent = describeOptions(settings);
+    // the full score already shows the rhythm, long notes and slurs
+    $('exOptions').hidden = settings.display === 'score';
+  }
+  $('pieceBar').hidden = !currentPiece;
+  $('rhythmBar').hidden = !!currentPiece;
   $('exInvalid').hidden = exercise.ok;
-  if (!exercise.ok) $('exInvalid').textContent = exercise.reason + ' Choose fewer octaves or a lower starting octave.';
+  if (!exercise.ok) $('exInvalid').textContent = exercise.isPiece ? `This piece needs fixing before it can be practised – ${exercise.reason} (Edit piece).` : exercise.reason + ' Choose fewer octaves or a lower starting octave.';
   $('startBtn').disabled = !exercise.ok;
   $('playBtn').disabled = !exercise.ok;
   lastResult = null;
@@ -329,7 +350,8 @@ function drawScore() {
   rendered = { arrowTargets: [] };
   if (!window.Vex) { scoreEl.textContent = ''; return; }
   try {
-    if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables });
+    if (exercise.isPiece) rendered = seq.events.length ? renderScore(scoreEl, exercise, seq, { clefMode: 'home', compact: isPhoneLandscape(), syllables }) : (scoreEl.innerHTML = '', { arrowTargets: [] });
+    else if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables });
     else if (settings.display === 'keysig') rendered = renderKeySignature(scoreEl, exercise);
     else scoreEl.innerHTML = '';
   } catch (err) {
@@ -343,7 +365,7 @@ function placeArrow(k) {
   arrowIndex = k;
   const a = $('arrow');
   const t = rendered.arrowTargets && rendered.arrowTargets[k];
-  if (!t || settings.display !== 'score') { a.hidden = true; return; }
+  if (!t || !scoreShown()) { a.hidden = true; return; }
   a.hidden = false;
   a.style.left = `${t.x}px`;
   a.style.top = `${t.y}px`;
@@ -377,7 +399,7 @@ const onScoreBoxResize = () => {
   clearTimeout(resizeTimer);
   resizeTimer = setTimeout(() => {
     const w = $('scoreWrap').clientWidth;
-    if (!w || w === lastWidth || settings.display !== 'score') return;
+    if (!w || w === lastWidth || !scoreShown()) return;
     lastWidth = w;
     redrawKeepingColours();
   }, 200);
@@ -424,7 +446,7 @@ function liveNoteName(midiSounding) {
 }
 
 function hintText() {
-  if (!settings.hint || settings.display === 'score') return '';
+  if (!settings.hint || scoreShown()) return '';
   const ev = seq.events[arrowIndex];
   if (!ev) return '';
   if (syllables) return `Next: ${syllables(ev.notes[0])}${settings.solfegeLetters ? ` (${noteName(ev.notes[0])})` : ''}`;
@@ -538,7 +560,7 @@ function finishSession(result) {
   colourAll(result);
   showSummary();
   const item = activeId && list.find((x) => x.id === activeId);
-  if (item && sameSettings(expandSettings(item.settings), settings)) {
+  if (item && !exercise.isPiece && sameSettings(expandSettings(item.settings), settings)) {
     const run = makeRun(result, seq, settings.rhythm, Date.now(), (n) => labelNote(n), scoresAtLevels(result, undefined, (lv) => precisionAt(lv, settings.instrument)));
     run.level = settings.precision;
     // notes per bow, 0 = separate bows; the voice and other instruments say it in a word
@@ -608,6 +630,46 @@ $('startBtn').addEventListener('click', () => {
   else { engine.unlock(DEBUG && $('d-use') && $('d-use').checked ? 'playback' : 'play-and-record'); startSession(); hideTabBar(); }
 });
 
+// ---------------------------------------------------------------- practising a piece (Pieces tab)
+/** Settings for a piece: the global options, with the piece's key for sol-fa. */
+function pieceSettings() {
+  const P = currentPiece && /^([A-G][#b]?)(m?)/.exec((pieceKeyName(currentPiece) || 'C'));
+  return { ...settings, key: P ? P[1] : 'C', mode: P && P[2] ? 'minor' : 'major' };
+}
+function pieceKeyName(p) {
+  const m = /^\s*K:\s*([A-G][#b]?)(m(?:in(?:or)?)?)?(?![a-z])/im.exec(p.text || '');
+  return m ? m[1] + (m[2] ? 'm' : '') : null;
+}
+
+function setPiece(p) {
+  currentPiece = p;
+  prefs.pieceId = p ? p.id : null;
+  savePrefs();
+}
+
+/** Open a piece on the Practice page, at the tempo written in it. */
+function practisePiece(p) {
+  setPiece(p);
+  activeId = null;
+  editingId = null;
+  prefs.activeId = null;
+  const tempo = pieceExercise(p, instrumentInfo(settings.instrument), settings).exercise.tempo;
+  if (tempo) prefs.global = pickFields(normalise({ ...settings, bpm: tempo }), GLOBAL_FIELDS);
+  setSettings({ ...settings, ...prefs.global }, { keepActive: true });
+  setTab('practice');
+}
+
+$('pieceExitBtn').addEventListener('click', () => {
+  setPiece(null);
+  updateExercise();
+  renderList();
+});
+$('pieceEditBtn').addEventListener('click', () => {
+  const p = currentPiece && loadPieces().find((x) => x.id === currentPiece.id);
+  setTab('pieces');
+  if (p) piecesPage.edit(p);
+});
+
 // ---------------------------------------------------------------- practice list
 function sparkline(hist) {
   if (!hist || hist.length < 2) return '';
@@ -657,6 +719,7 @@ function renderList() {
 }
 
 function selectItem(item, goPractise = true) {
+  setPiece(null);
   activeId = item.id;
   editingId = null;
   setSettings({ ...expandSettings(item.settings), ...prefs.global }, { keepActive: true });
@@ -899,7 +962,7 @@ function showSummary() {
   setTimeout(() => { if (isPhoneLandscape() && Math.abs(window.scrollY - top) > 40) window.scrollTo(0, top); }, 600);
 }
 phoneLandscapeQuery.addEventListener('change', () => {
-  if (settings.display === 'score') redrawKeepingColours();
+  if (scoreShown()) redrawKeepingColours();
   setTimeout(hideTabBar, 300);
 });
 
@@ -910,6 +973,7 @@ let resultsPage = null;
 
 let tunerPage = null;
 let gamesPage = null;
+let piecesPage = null;
 let calWizard = null;
 let metroCard = null;
 function setTab(tab) {
@@ -919,6 +983,9 @@ function setTab(tab) {
   const wide = isWide();
   document.querySelector('.tabs [data-tab="config"]').classList.toggle('wide-hidden', wide);
   document.querySelectorAll('.tabs [data-tab]').forEach((b) => b.setAttribute('aria-selected', String(b.dataset.tab === tab)));
+  // on a small phone the tab row scrolls sideways: keep the chosen tab in view
+  const tabsRow = document.querySelector('.tabs'), chosen = tabsRow.querySelector('[aria-selected="true"]');
+  if (chosen && tabsRow.scrollWidth > tabsRow.clientWidth) tabsRow.scrollLeft = Math.max(0, chosen.offsetLeft - tabsRow.offsetLeft - (tabsRow.clientWidth - chosen.offsetWidth) / 2);
   const pc = tab === 'practice' || tab === 'config';
   $('pcLayout').hidden = !pc;
   $('pcLayout').classList.toggle('both', wide);
@@ -928,6 +995,16 @@ function setTab(tab) {
   $('tab-tuner').hidden = tab !== 'tuner';
   $('tab-help').hidden = tab !== 'help';
   $('tab-games').hidden = tab !== 'games';
+  $('tab-pieces').hidden = tab !== 'pieces';
+  if (tab === 'pieces') {
+    if (!piecesPage) piecesPage = new PiecesPage({ root: $('piecesRoot'), getInstrument: () => settings.instrument, onPractise: (p) => practisePiece(p) });
+    piecesPage.show();
+  }
+  // back from the Pieces tab: practise the piece as it is saved now
+  if (tab === 'practice' && currentPiece) {
+    const fresh = loadPieces().find((x) => x.id === currentPiece.id) || null;
+    if (!fresh || fresh.text !== currentPiece.text || fresh.name !== currentPiece.name) { setPiece(fresh); updateExercise(); }
+  }
   if (tab === 'games') {
     if (!gamesPage) gamesPage = new GamesPage({ root: $('gamesRoot'), engine, player: new Player(), getInstrument: () => settings.instrument, getA4: a4 });
     gamesPage.show();
@@ -1212,7 +1289,7 @@ function init() {
   syncForm();
   updateExercise();
   renderList();
-  setTab(['practice', 'config', 'results', 'tuner', 'games'].includes(prefs.tab) ? prefs.tab : (list.length ? 'practice' : 'config'));
+  setTab(['practice', 'config', 'results', 'tuner', 'games', 'pieces'].includes(prefs.tab) ? prefs.tab : (list.length ? 'practice' : 'config'));
   if (location.hash.startsWith('#help')) setTab('help');
   checkShareLink();
 }

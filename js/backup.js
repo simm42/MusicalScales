@@ -14,6 +14,7 @@ export const BACKUP_KEYS = {
   theme: 'scales.theme',
   metroBeats: 'scales.metroBeats',
   games: 'scales.games.v1', // best scores and levels opened in the games
+  pieces: 'scales.pieces.v1', // saved pieces of music
 };
 const RAW = new Set(['theme', 'metroBeats']); // stored as plain strings, not JSON
 

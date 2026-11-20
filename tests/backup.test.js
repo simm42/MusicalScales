@@ -76,5 +76,5 @@ test('the syllabus Import also takes a full backup (its exercises and results)',
 test('backup file name', () => {
   eq(backupFilename('Ann Lee', new Date(2026, 10, 5)), 'scale-practice-backup-Ann-Lee-2026-11-05.json');
   eq(backupFilename('', new Date(2026, 0, 9)), 'scale-practice-backup-2026-01-09.json');
-  eq(Object.keys(BACKUP_KEYS).length, 8);
+  eq(Object.keys(BACKUP_KEYS).length, 9);
 });

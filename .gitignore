@@ -2,3 +2,9 @@
 *.log
 
 debug-recordings/*.wav
+debug-recordings/*.jpg
+debug-recordings/*.jpeg
+debug-recordings/*.png
+debug-recordings/*.heic
+debug-recordings/*.txt
+!debug-recordings/README.txt

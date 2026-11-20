@@ -412,3 +412,32 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   .sing-target { font-size: 22px; min-width: 60px; }
 }
 .sing-hint { min-height: 1.3em; margin: 2px 0 6px; color: var(--warn); font-weight: 600; }
+
+/* ---------- six tabs: on small phones the tab row scrolls sideways ---------- */
+.tabs { min-width: 0; max-width: 100%; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.tabs::-webkit-scrollbar { display: none; }
+.tabs button { flex: none; white-space: nowrap; }
+
+/* ---------- Pieces ---------- */
+.pieces { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+.piece { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; justify-content: space-between; padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+.piece-main { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.piece-main b { overflow-wrap: anywhere; }
+.piece-acts { display: flex; flex-wrap: wrap; gap: 6px; }
+.pieces-page .bad, .piece-problems .bad { color: var(--bad); }
+.pieces-page .good { color: var(--good); }
+.piece-edit { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 8px 0; }
+@media (min-width: 900px) { .piece-edit { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); } }
+.piece-text textarea, .photo-steps textarea { width: 100%; box-sizing: border-box; font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); color: var(--fg); resize: vertical; }
+.piece-score { overflow-x: auto; background: var(--surface); border-radius: 10px; }
+.piece-problems { margin: 0 0 6px; padding-left: 18px; font-size: 14px; }
+.piece-problems [data-line] { cursor: pointer; }
+.fmt { border-collapse: collapse; margin: 6px 0; font-size: 13px; }
+.fmt td { padding: 3px 8px 3px 0; vertical-align: top; }
+.fmt code { white-space: nowrap; }
+.photo-steps { padding-left: 20px; }
+.photo-steps > li { margin: 0 0 14px; }
+.photo-steps .row { margin: 6px 0; flex-wrap: wrap; }
+.prompt-text { white-space: pre-wrap; font-size: 12px; max-height: 260px; overflow: auto; background: var(--surface-2); padding: 8px; border-radius: 8px; }
+.photo-why { font-size: 14px; line-height: 1.5; }
+.piece-bar { margin: 4px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }

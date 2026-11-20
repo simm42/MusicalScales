@@ -29,6 +29,7 @@
     <button role="tab" id="tabBtnConfig" aria-selected="false" data-tab="config">Config</button>
     <button role="tab" id="tabBtnResults" aria-selected="false" data-tab="results">Results</button>
     <button role="tab" id="tabBtnTuner" aria-selected="false" data-tab="tuner">Tuner</button>
+    <button role="tab" id="tabBtnPieces" aria-selected="false" data-tab="pieces">Pieces</button>
     <button role="tab" id="tabBtnGames" aria-selected="false" data-tab="games">Games</button>
   </nav>
   <div class="spacer"></div>
@@ -118,7 +119,7 @@
       </form>
       <hr class="sep">
       <h2 class="sec-title">Move to another device</h2>
-      <p class="small muted" style="margin:0 0 8px">Everything in one file: syllabus, results, settings, student name, voice range and other instrument. On the new device (or in the installed app), use <b>Import everything</b>. Microphone calibrations stay with each device, so calibrate again on the new one.</p>
+      <p class="small muted" style="margin:0 0 8px">Everything in one file: syllabus, results, pieces, settings, student name, voice range and other instrument. On the new device (or in the installed app), use <b>Import everything</b>. Microphone calibrations stay with each device, so calibrate again on the new one.</p>
       <div class="row small">
         <button class="btn" type="button" id="backupBtn">⬇ Export everything</button>
         <button class="btn" type="button" id="restoreBtn">⬆ Import everything</button>
@@ -149,6 +150,7 @@
       <div class="title-row">
         <h2 id="exTitle"></h2>
         <p class="opts" id="exOptions"></p>
+        <p class="piece-bar small" id="pieceBar" hidden><button class="btn" type="button" id="pieceEditBtn">✎ Edit piece</button> <button class="btn" type="button" id="pieceExitBtn">Back to scales</button></p>
       </div>
       </div>
       <div class="notice error" id="exInvalid" hidden></div>
@@ -235,6 +237,10 @@
   </section>
 
   <!-- ================= GAMES ================= -->
+  <section id="tab-pieces" role="tabpanel" aria-labelledby="tabBtnPieces" hidden>
+    <div class="card stage pieces-page" id="piecesRoot"></div>
+  </section>
+
   <section id="tab-games" role="tabpanel" aria-labelledby="tabBtnGames" hidden>
     <div class="card stage games" id="gamesRoot"></div>
   </section>
@@ -258,12 +264,13 @@
       </details>
 
       <details>
-        <summary>The four tabs</summary>
+        <summary>The tabs</summary>
         <ul>
           <li><b>Practice</b> – the music, the tuning bar, Start and Play, and your score.</li>
           <li><b>Config</b> – choose exercises, build your syllabus, and change how things look and how strictly you are marked.</li>
           <li><b>Results</b> – charts of how you are getting on, and a PDF to send to your teacher.</li>
           <li><b>Tuner</b> – tune your instrument, use the metronome, and set up the microphone.</li>
+          <li><b>Pieces</b> – your own pieces of music, to practise with the arrow, the tuning bar and scoring.</li>
           <li><b>Games</b> – train your ear and your voice to recognise and find notes.</li>
         </ul>
         <p>On a very wide screen, Practice and Config are shown side by side.</p>
@@ -381,6 +388,28 @@
           <li>Stay quiet for a few seconds, then bow each open string when asked – long, steady and at your normal volume.</li>
         </ol>
         <p>The app then tells you if anything needs attention, such as being too far from the microphone.</p>
+      </details>
+
+      <details>
+        <summary>Pieces: practise your own music</summary>
+        <p>On the <b>Pieces</b> tab you can keep any number of pieces on this device, so your music goes wherever you take your phone. Tap <b>▶ Practise</b> on a piece and it opens on the Practice page with the arrow, the tuning bar, <b>Play</b> and a score at the end – just like a scale. <b>Back to scales</b> returns to your syllabus. (Results charts are kept for syllabus scales only.)</p>
+        <ul>
+          <li><b>＋ New piece</b> – type the music as text. The score is drawn underneath as you type, and any mistakes are listed with their line – tap one to jump to it. <b>How to write the music</b> under the box explains the letters and signs.</li>
+          <li><b>📷 Decode music from a photo</b> – tap <b>Decode music with ChatGPT</b>. ChatGPT opens in a new window with the instructions already filled in (send them if they haven't gone) and asks for a photo – take one with your camera or choose one from your photos. When it has written the music, tap <b>Copy</b> on its answer, come back, paste it into the box and tap <b>Read the music</b>. Then check it against your music in the editor and save it. If something can't be read, <b>Copy a correction request</b> makes a message to paste back into the same ChatGPT conversation.</li>
+          <li><b>⧉ Join two pieces</b> – makes a new piece from one piece followed by another (for example two movements, or a study and its repeat). Each part keeps its own key and time, and the new piece can be edited like any other.</li>
+          <li><b>✎ Edit</b>, <b>⧉</b> (make a copy) and <b>🗑</b> (delete) are next to each piece. The tempo written in a piece is used when you open it; change it in Config like any other tempo.</li>
+        </ul>
+        <p><b>Why you decode the photo yourself:</b> reading a photo needs an AI service, and those cost money to run. Doing that step in ChatGPT yourself is what keeps Scale Practice free. No ChatGPT account is needed, though ChatGPT may ask you to sign in (a free account is enough) before it accepts a photo.</p>
+        <p><b>Copyright:</b> most printed music is protected by copyright. You are responsible for the music you photograph and decode this way – only use music you are allowed to copy, such as your own copy, for your own practice. Your photo goes to ChatGPT, not to Scale Practice; your saved pieces stay on this device.</p>
+        <p><b>What it can and can't do:</b></p>
+        <ul>
+          <li>It is made for <b>simple music for one instrument</b>: one line of notes, with two-note double stops.</li>
+          <li>Music with a <b>piano or other accompaniment</b> is fine – only the top part of each group of staves (your part) is kept.</li>
+          <li>It <b>can't</b> handle scores with several instruments, orchestral scores or piano music for two hands.</li>
+          <li>Repeats and first/second-time bars are written out in full, so the arrow just follows the notes in the order you play them.</li>
+          <li>ChatGPT can misread notes, especially in a blurred or tilted photo. Always check the result against your music – you can correct anything in the editor.</li>
+          <li>For two notes played together, the app listens for the lower one.</li>
+        </ul>
       </details>
 
       <details>

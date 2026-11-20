@@ -6,7 +6,7 @@ import { vexKeySpec, keySigAccidental, LETTERS, midiOf } from './theory.js';
 const VF = () => window.Vex.Flow;
 const ACC_SYM = { '-2': 'bb', '-1': 'b', 0: 'n', 1: '#', 2: '##' };
 const REST_KEY = { treble: 'b/4', alto: 'c/4', tenor: 'a/3', bass: 'd/3' };
-const GLYPH_W = { w: 54, hd: 50, h: 46, qd: 40, q: 36, 8: 30 };
+const GLYPH_W = { w: 54, hd: 50, h: 46, qd: 40, q: 36, '8d': 34, 8: 30, '16d': 30, 16: 27, 32: 25 };
 
 const vexKey = (n) => `${LETTERS[n.l].toLowerCase()}/${n.o}`;
 
@@ -51,14 +51,22 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   const width = Math.max(200, Math.floor(container.clientWidth || 800));
   const glyphs = seq.glyphs;
 
-  // clef per step (a step's repeated quavers/rests share its clef)
-  const stepIds = [...new Set(glyphs.map((g) => g.stepIndex))];
-  const stepMidi = stepIds.map((si) => midiOf(glyphs.find((g) => g.stepIndex === si).notes[0]));
-  const stepClef = new Map(assignClefs(exercise.info.id, stepMidi, clefMode).map((c, k) => [stepIds[k], c]));
-  const clefs = glyphs.map((g) => stepClef.get(g.stepIndex));
+  // A piece (pieces.js) carries its own clef, key and bars on each glyph; its
+  // lines break only between bars (stepIndex = bar number).
+  const piece = !!exercise.isPiece;
+  let clefs;
+  if (piece) clefs = glyphs.map((g) => g.clef || exercise.info.clef);
+  else {
+    // clef per step (a step's repeated quavers/rests share its clef)
+    const stepIds = [...new Set(glyphs.map((g) => g.stepIndex))];
+    const stepMidi = stepIds.map((si) => midiOf(glyphs.find((g) => g.stepIndex === si).notes[0]));
+    const stepClef = new Map(assignClefs(exercise.info.id, stepMidi, clefMode).map((c, k) => [stepIds[k], c]));
+    clefs = glyphs.map((g) => stepClef.get(g.stepIndex));
+  }
+  const fifthsOf = (gi) => (piece && glyphs[gi].fifths != null ? glyphs[gi].fifths : exercise.fifths);
 
   // line breaking at step boundaries
-  const keyW = 11 * Math.abs(exercise.fifths);
+  const keyW = 11 * Math.max(Math.abs(exercise.fifths), ...(piece ? glyphs.map((g) => Math.abs(g.fifths || 0)) : [0]));
   const startW = 50 + keyW + 10;
   const lines = [];
   const lineUsed = [];
@@ -69,7 +77,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     let j = i;
     while (j + 1 < glyphs.length && glyphs[j + 1].stepIndex === glyphs[i].stepIndex) j++;
     const chunk = glyphs.slice(i, j + 1).map((g, k) => i + k);
-    const w = chunk.reduce((a, gi) => a + GLYPH_W[glyphs[gi].dur] + (glyphs[gi].notes.some((n) => n.a) ? 8 : 0), 0);
+    const w = chunk.reduce((a, gi) => a + (GLYPH_W[glyphs[gi].dur] || 30) + (glyphs[gi].notes.some((n) => n.a) ? 8 : 0), 0) + (piece ? 12 : 0);
     if (cur.length && used + w > width - 20) { lines.push(cur); lineUsed.push(used); cur = []; used = startW; }
     cur.push(...chunk);
     used += w;
@@ -95,16 +103,19 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     const staveW = isLast && lines.length > 1 ? Math.min(width - 12, Math.max(lineUsed[li] * 1.1 + 20, 200)) : width - 12;
     const stave = new V.Stave(5, y, staveW);
     const lineClef = clefs[line[0]];
+    const lineFifths = fifthsOf(line[0]);
     stave.addClef(lineClef, 'default', annFor(lineClef));
-    if (exercise.fifths) stave.addKeySignature(vexKeySpec(exercise.fifths));
+    if (lineFifths) stave.addKeySignature(vexKeySpec(lineFifths));
+    if (piece && li === 0 && exercise.meterText) stave.addTimeSignature(exercise.meterText);
     stave.setEndBarType(li === lines.length - 1 ? V.Barline.type.END : V.Barline.type.SINGLE);
     stave.setContext(ctx).draw();
 
-    // accidental state per letter+octave, reset each line
-    const state = {};
+    // accidental state per letter+octave, reset each line (and, in a piece, each bar)
+    let state = {};
+    let fifths = lineFifths;
     const accFor = (n) => {
       const key = n.l + ':' + n.o;
-      const curAcc = key in state ? state[key] : keySigAccidental(exercise.fifths, n.l);
+      const curAcc = key in state ? state[key] : keySigAccidental(fifths, n.l);
       state[key] = n.a;
       return curAcc === n.a ? null : ACC_SYM[String(n.a)];
     };
@@ -113,6 +124,11 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     let clef = lineClef;
     for (const gi of line) {
       const g = glyphs[gi];
+      if (piece && g.keyChange != null && gi !== line[0]) {
+        tickables.push(new V.KeySigNote(vexKeySpec(g.keyChange), vexKeySpec(fifths)));
+        fifths = g.keyChange;
+        state = {};
+      }
       if (clefs[gi] !== clef) { clef = clefs[gi]; tickables.push(new V.ClefNote(clef, 'small', annFor(clef))); }
       let note;
       if (g.kind === 'rest') {
@@ -125,6 +141,24 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
       noteObjs[gi] = note;
       staveOf[gi] = stave;
       tickables.push(note);
+      // a bar line after it (not at the end of the line, where the stave ends anyway)
+      if (piece && g.barAfter && gi !== line[line.length - 1]) {
+        tickables.push(new V.BarNote(g.barAfter === '||' || g.barAfter === '|]' ? V.Barline.type.DOUBLE : V.Barline.type.SINGLE));
+        state = {};
+      }
+    }
+    // triplets and other tuplets (made before formatting, so the spacing allows for them)
+    const tuplets = [];
+    if (piece) {
+      let run = [], tid = null;
+      const end = () => { if (run.length > 1) { const t = glyphs[run[0]].tuplet; tuplets.push(new V.Tuplet(run.map((gi) => noteObjs[gi]), { num_notes: t.p, notes_occupied: t.q })); } run = []; };
+      for (const gi of line) {
+        const t = glyphs[gi].tuplet;
+        if (t && t.id === tid) run.push(gi);
+        else { end(); if (t) run = [gi]; }
+        tid = t ? t.id : null;
+      }
+      end();
     }
 
     const voice = new V.Voice({ num_beats: 4, beat_value: 4 }).setMode(V.Voice.Mode.SOFT);
@@ -145,6 +179,17 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     new V.Formatter().joinVoices([voice]).format([voice], staveW + 5 - stave.getNoteStartX() - 25);
     voice.draw(ctx, stave);
     beams.forEach((b) => b.setContext(ctx).draw());
+    tuplets.forEach((t) => t.setContext(ctx).draw());
+    // ties: to the next note on the same line, or running off the end of the line
+    if (piece) {
+      for (const gi of line) {
+        const g = glyphs[gi];
+        if (!g.tieNext || g.kind !== 'note') continue;
+        const next = line.includes(gi + 1) ? noteObjs[gi + 1] : null;
+        const idx = g.notes.map((_, k) => k);
+        try { new V.StaveTie({ first_note: noteObjs[gi], last_note: next, first_indices: idx, last_indices: idx }).setContext(ctx).draw(); } catch { /* a tie that can't be drawn is left out */ }
+      }
+    }
 
     // sol-fa syllables on one line under the stave, like the words of a song
     if (syllables) {
@@ -216,7 +261,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   // arrow targets and colourable elements, per event
   const targets = [];
   glyphs.forEach((g, gi) => {
-    if (g.kind !== 'note') return;
+    if (g.kind !== 'note' || g.eventIndex == null) return; // (a tied continuation is not an event)
     const note = noteObjs[gi];
     const stave = staveOf[gi];
     const x = note.getAbsoluteX() + note.getGlyphWidth() / 2;
