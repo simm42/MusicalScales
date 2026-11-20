@@ -266,3 +266,26 @@ test('pieces: short staccato notes in legato music are notes, not bow-change scr
   eq((result.scrapes || []).length, 0, 'no scrapes');
   assert(result.total > 90, 'total ' + result.total);
 });
+
+test('pieces: fingering is kept on its note, also in double stops and with staccato', () => {
+  const P = parsePiece(head('D') + '!0!D2 !4!.E2 (!1!F G) [!1!D!3!A]2 | !2![DA]2 A4- A2 |]\n');
+  assert(P.ok, JSON.stringify(P.errors));
+  const n = notes(P);
+  eq(n.map((t) => t.notes.map((x) => x.f ?? null)), [[0], [4], [1], [null], [1, 3], [2, null], [null], [null]]);
+  eq(n[1].art, 'staccato', 'fingering and a staccato dot together');
+  eq(n.map((t) => t.notes.map(midiOf)[0]).slice(0, 4), [62, 64, 66, 67], 'fingering does not change the notes');
+  eq(P.warnings, []);
+  // a long note written as tied notes: the fingering is drawn once
+  const seq = pieceSequence(parsePiece(head('C', '4/4') + '!3!C5 z3 |]\n'), violin);
+  const parts = seq.glyphs.filter((g) => g.kind === 'note');
+  eq(parts.length, 2);
+  eq(parts.map((g) => !!g.tiedFrom), [false, true]);
+});
+
+test('pieces: the instructions copy fingering and trust it as printed', () => {
+  assert(/Fingering: copy every fingering number/.test(AI_PROMPT));
+  assert(/trust the fingering exactly as printed/.test(AI_PROMPT) && /on purpose/.test(AI_PROMPT));
+  assert(/Never use the fingering to decide or change a note/.test(AI_PROMPT));
+  const P = parsePiece(AI_PROMPT.split('```')[1]);
+  assert(notes(P).some((t) => t.notes[0].f === 4), 'the example has fingering');
+});

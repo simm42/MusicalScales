@@ -184,6 +184,18 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
         const below = note.getStemDirection() === V.Stem.UP;
         note.addModifier(new V.Articulation(g.articulation === 'staccato' ? 'a.' : 'a-').setPosition(below ? V.Modifier.Position.BELOW : V.Modifier.Position.ABOVE), 0);
       }
+      // fingering numbers above the note (as copied from the music – often chosen to practise a position)
+      for (const gi of line) {
+        const g = glyphs[gi];
+        if (g.kind !== 'note' || g.tiedFrom) continue;
+        // above the stave, as printed; in a double stop the upper note's finger on top
+        g.notes.forEach((n, k) => {
+          if (n.f == null) return;
+          const a = new V.Annotation(String(n.f)).setVerticalJustification(V.Annotation.VerticalJustify.TOP);
+          a.setFont('Arial', compact ? 10 : 12, 'bold');
+          noteObjs[gi].addModifier(a, k);
+        });
+      }
     }
 
     new V.Formatter().joinVoices([voice]).format([voice], staveW + 5 - stave.getNoteStartX() - 25);

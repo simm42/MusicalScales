@@ -16,6 +16,7 @@
 //   Bars:      |   ||   |]   repeats |: … :| (played twice)
 //   Ties:      A2-A   Slurs: (ABc)   Double stops: [DA] or [D2A2]
 //   Staccato:  .A (a dot)   Tenuto: !tenuto!A (a line) – under a slur, a little gap before the next note
+//   Fingering: !0!A … !4!A (!5! too); in a double stop [!1!D!3!A]. Kept as note.f and shown above the note
 //   Triplets:  (3abc   Dotted pairs: A>B (= A3/2 B/2)   A<B
 //   Changes in the middle:  [K:D] [M:3/4] [L:1/16] [Q:120] or a K:/M:/L: line
 //   Ignored:   % comments, "chord names", other !decorations!, grace notes {…}, w: lyrics, ~ u v
@@ -94,6 +95,7 @@ export function parsePiece(text) {
   let slurDepth = 0, pendingSlurStart = 0;
   let pendingBroken = null;        // factor for the next note after > or <
   let pendingArt = null;           // 'staccato' (.) or 'tenuto' (!tenuto!) for the next note
+  let pendingFinger = null;        // fingering (!0! … !5!) for the next note
   let repeatFrom = 0;              // token index where the current repeat starts
   let sawVoice = false;
   const err = (line, col, message) => errors.push({ line: line + 1, col: col + 1, message });
@@ -162,10 +164,11 @@ export function parsePiece(text) {
       const col = i;
       if (ch === ' ' || ch === '\t' || ch === '`' || ch === '\\' || ch === '$') { i++; continue; }
       if (ch === '"') { const j = s.indexOf('"', i + 1); i = j < 0 ? s.length : j + 1; continue; } // chord names
-      if (ch === '!' || ch === '+') { // decorations: staccato and tenuto are kept, the rest ignored
+      if (ch === '!' || ch === '+') { // decorations: staccato, tenuto and fingering are kept, the rest ignored
         const j = s.indexOf(ch, i + 1);
         const name = j < 0 ? '' : s.slice(i + 1, j).toLowerCase();
         if (name === 'staccato' || name === 'tenuto') pendingArt = name;
+        else if (/^[0-5]$/.test(name)) pendingFinger = Number(name);
         i = j < 0 ? s.length : j + 1;
         continue;
       }
@@ -250,10 +253,14 @@ export function parsePiece(text) {
       };
       if (ch === '[') {
         j = i + 1;
+        let fingerHere = pendingFinger; // !1![DA]: on the first note
         while (j < s.length && s[j] !== ']') {
           if (s[j] === ' ') { j++; continue; }
+          const fm = /^!([0-5])!/.exec(s.slice(j));
+          if (fm) { fingerHere = Number(fm[1]); j += fm[0].length; continue; }
           const r = readNote(j);
           if (!r) { err(li, j, `Can't read "${s[j]}" inside a double stop [ ]`); j++; continue; }
+          if (fingerHere != null) { r.note.f = fingerHere; fingerHere = null; }
           notes.push(r.note);
           j += r.len;
           const d = /^(\d*)(\/*)(\d*)/.exec(s.slice(j));
@@ -271,6 +278,7 @@ export function parsePiece(text) {
       else {
         const r = readNote(i);
         if (!r) { err(li, col, `Can't read "${ch}"`); i++; continue; }
+        if (pendingFinger != null) r.note.f = pendingFinger;
         notes = [r.note];
         j = i + r.len;
       }
@@ -298,6 +306,7 @@ export function parsePiece(text) {
       if (!restKind && pendingSlurStart) { slurDepth += pendingSlurStart; pendingSlurStart = 0; }
       if (!restKind && pendingArt) tok.art = pendingArt;
       pendingArt = null;
+      pendingFinger = null;
       if (tok.kind === 'note' && s[j] === '-') { tok.tie = true; j++; }
       if (tupletLeft === 0) curTuplet = null;
       P.tokens.push(tok);

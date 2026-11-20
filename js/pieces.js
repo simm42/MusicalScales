@@ -78,6 +78,7 @@ export function pieceSequence(P, info) {
       if (t.kind === 'note' && slurOpen) g.slurGroup = slurId;
       if (t.art && k === 0) g.articulation = t.art;
       if (k < parts.length - 1) g.tieNext = true;
+      if (k > 0) g.tiedFrom = true; // the rest of a long note written as tied notes (fingering only on the first)
       glyphs.push(g);
       beat += b;
     });
@@ -221,14 +222,16 @@ STEP 2 - When the photo arrives, transcribe it into ABC notation. A program read
 7. Repeats: copy the repeat signs as printed - |: at the start of the repeated section and :| at its end (a :| with no |: before it repeats from the beginning). First and second-time endings, D.C., D.S. and coda can't be read: write those out in full, every note in the order it is played.
 8. Ties: A2-A2. Slurs: (A B c). Triplets: (3ABc. Two notes played together (double stops): [DA].
 9. Staccato dots and tenuto lines: copy them onto every note that has one. A staccato dot is a . before the note: .A2. A tenuto line (a short dash above or below the head) is !tenuto! before the note: !tenuto!A2. Keep them inside slurs too: dots or dashes under a slur mean the notes are separated within one bow, so a slur over two dotted notes is (.C,2 .C,2) and over two dashed notes is (!tenuto!A2 !tenuto!B2). The dot after a note head that lengthens it (a dotted note) is not a staccato dot - write it as a length (A3, A6).
-10. Leave out everything else: dynamics, fingering, up-bow and down-bow signs, accents, ornaments, grace notes, lyrics, chord symbols, bar numbers.
-11. Never add notes that are not printed. If a note is unclear, write your best guess and add a comment line such as: % bar 5: second note unclear
-12. If the photo is not sheet music, or is too unclear to read, answer with a code block containing only: % not readable - <reason>
+10. Fingering: copy every fingering number printed above or below a note (0 = open string, 1 to 4 = fingers) as !0! to !4! before the note, together with any staccato dot or tenuto line: !0!G,,2 !2!.C,2 (!1!D, !3!F,). In a double stop put each number with its own note inside the brackets: [!1!D!3!A]. A number at the start of a line above the clef is a bar number, and a 3 over a group of notes is a triplet - neither is fingering.
+   These are practice pieces, so trust the fingering exactly as printed. It is often chosen on purpose to practise a particular position, string or shift, and may be quite different from the usual fingering - that is expected, not a mistake. Do not correct it, do not add fingering where none is printed, do not leave any out, and do not spend time checking whether it is a sensible fingering. Never use the fingering to decide or change a note: read every pitch only from its place on the staff.
+11. Leave out everything else: dynamics, up-bow and down-bow signs, accents, ornaments, grace notes, lyrics, chord symbols, bar numbers, and any other signs.
+12. Never add notes that are not printed. If a note is unclear, write your best guess and add a comment line such as: % bar 5: second note unclear
+13. If the photo is not sheet music, or is too unclear to read, answer with a code block containing only: % not readable - <reason>
 
 STEP 3 - Answer in this order:
-a) Under the heading "Reading", one short line per bar giving each note's place on the staff and its ABC (with any slur, staccato dot or tenuto line), and the bar's total, for example:
-   Bar 1: bottom line G,,2 ; 2nd line B,,2 (slur starts, dot) ; 2nd line B,,2 (dot, slur ends) (2+2+2 = 6)
-   Read the photo again for any bar whose total is wrong, for any note that looks a step too high or low, and for dots or dashes you may have missed.
+a) Under the heading "Reading", one short line per bar giving each note's place on the staff and its ABC (with any fingering, slur, staccato dot or tenuto line), and the bar's total, for example:
+   Bar 1: bottom line !0!G,,2 ; 2nd line !4!B,,2 (slur starts, dot) ; 2nd line B,,2 (dot, slur ends) (2+2+2 = 6)
+   Read the photo again for any bar whose total is wrong, for any note that looks a step too high or low, and for fingering numbers, dots or dashes you may have missed.
 b) The ABC inside one code block (three backticks).
 c) After the code block, only this line:
 "Now tap Copy on the box above (or the copy icon under it), go back to the Scale Practice app, paste it into the box under 'Paste the answer here' and tap Read the music."
@@ -241,7 +244,7 @@ M: 3/4
 L: 1/8
 Q: 1/4=90
 K: G clef=bass
-G,,2 (.B,,2 .B,,2) | G,4 F,2 | (E, D, C,2) A,,2 | G,,6 |]
+!0!G,,2 (!4!.B,,2 .B,,2) | !1!G,4 F,2 | (E, D, C,2) !1!A,,2 | !0!G,,6 |]
 \`\`\``;
 
 /** Claude, opened in a new chat with the instructions already filled in (q is cut at about 14,000 characters). */

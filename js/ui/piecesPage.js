@@ -25,6 +25,7 @@ const FORMAT_HELP = `
 <tr><td><code>|</code> <code>|]</code></td><td>bar line, final bar line</td></tr>
 <tr><td><code>A2-A2</code> &nbsp; <code>(ABc)</code> &nbsp; <code>(3ABc</code> &nbsp; <code>[DA]</code></td><td>tie, slur, triplet, two notes together</td></tr>
 <tr><td><code>.A2</code> &nbsp; <code>!tenuto!A2</code> &nbsp; <code>(.A2 .A2)</code></td><td>staccato dot, tenuto line; under a slur, a short gap in the same bow</td></tr>
+<tr><td><code>!0!A2</code> &nbsp; <code>!3!A2</code> &nbsp; <code>[!1!D!3!A]</code></td><td>fingering (0 = open string), shown above the note</td></tr>
 <tr><td><code>% a note to yourself</code></td><td>a comment (ignored)</td></tr>
 </table>`;
 
