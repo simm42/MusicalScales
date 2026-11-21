@@ -45,7 +45,11 @@ export class PiecesPage {
   /** @returns false if it could not be saved (storage full) – a message is shown */
   store(list) {
     const ok = savePieces(list);
-    if (!ok) { const f = this.root.querySelector('#pcFlash, #pcMsg'); if (f) f.textContent = 'Could not save: this browser’s storage is full or blocked. Export everything (Config) to keep a copy.'; }
+    if (!ok) {
+      const msg = 'Could not save: this browser’s storage is full or blocked. Export everything (Config) to keep a copy.';
+      const f = this.root.querySelector('#pcFlash, #pcMsg');
+      if (f) f.textContent = msg; else alert(msg);
+    }
     return ok;
   }
 
@@ -105,7 +109,7 @@ export class PiecesPage {
         practise: () => this.practise(p),
         edit: () => this.edit(p),
         share: () => this.share(p, li),
-        copy: () => { const c = newPiece(`${p.name} (copy)`, p.text); this.store([...this.pieces(), c]); this.list(); },
+        copy: () => { const c = newPiece(`${p.name} (copy)`, p.text); if (this.store([...this.pieces(), c])) this.list(); },
         delete: () => {
           if (!confirm(`Delete “${p.name}”${this.hasResults(p.id) ? ' and its results' : ''}? This can't be undone.`)) return;
           this.store(this.pieces().filter((x) => x.id !== p.id));
@@ -264,7 +268,7 @@ export class PiecesPage {
         const a = list.find((p) => p.id === this.root.querySelector('#jA').value);
         const b = list.find((p) => p.id === this.root.querySelector('#jB').value);
         const j = joinPieces(a, b);
-        this.store([...this.pieces(), j]);
+        if (!this.store([...this.pieces(), j])) return;
         this.edit(j);
       },
     });

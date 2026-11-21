@@ -111,7 +111,7 @@
               <div class="range-label"><span>Beginner</span><b id="precisionName"></b><span>Expert</span></div></div></div>
           <label class="check"><input type="checkbox" id="o-vibrato" name="vibrato"> I’m using vibrato</label>
           <label class="check"><input type="checkbox" id="o-metronome" name="metronome"> Metronome with one-bar count-in</label>
-          <div class="field" id="f-bpm"><label for="o-bpm" title="Used for the metronome and the Play button">Tempo ♩ =</label><input type="number" id="o-bpm" name="bpm" min="30" max="200" step="1"></div>
+          <div class="field" id="f-bpm"><label for="o-bpm" title="For scales: used for the metronome and the Play button (each piece has its own tempo, on the Practice page)">Tempo ♩ =</label><input type="number" id="o-bpm" name="bpm" min="30" max="200" step="1"></div>
           <div class="field"><label for="o-a4">Tuning A =</label><input type="number" id="o-a4" min="415" max="446" step="1"></div>
           <label class="check"><input type="checkbox" id="o-keepMic"> Keep the microphone on while the app is open <span class="muted small">(asks once; Start then begins straight away)</span></label>
           <p class="small muted" id="calInfo" style="margin:6px 0 0"></p>
@@ -139,7 +139,7 @@
       <div class="rhythm-bar" id="rhythmBar" role="radiogroup" aria-label="Each note"></div>
       <div class="control-row">
         <button class="btn primary" id="startBtn">Start</button>
-        <button class="btn" id="playBtn" title="Hear the exercise played at the tempo set in Config">▶ Play</button>
+        <button class="btn" id="playBtn" title="Hear the music played – a scale at the tempo set in Config, a piece at its own tempo">▶ Play</button>
         <p class="status" id="status" aria-live="polite">Press Start, wait for “Play now”, then play.</p>
         <nav class="list-nav" id="listNav" aria-label="Syllabus" hidden>
           <button class="btn" id="prevBtn" type="button" aria-label="Previous exercise in the syllabus" title="Previous in syllabus">◀</button>
@@ -219,7 +219,7 @@
           <button class="btn" id="mStart" type="button">▶ Start metronome</button>
         </div>
         <div class="m-lights" id="mLights" aria-hidden="true"></div>
-        <p class="small muted" style="margin:0">Uses the same tempo as the Play button and the practice metronome.</p>
+        <p class="small muted" style="margin:0">Uses the same tempo as scales (Tempo in Config, used by Play and the practice metronome). Pieces have their own tempo on the Practice page.</p>
       </div>
     </div>
     <div class="card stage" id="calCard" style="margin-top:16px">
@@ -323,6 +323,7 @@
           <li><b>Total</b> out of 100 is mostly about <b>intonation</b> (playing in tune – 75%) and partly about <b>timing</b> (keeping a steady pulse – 25%).</li>
           <li><b>Errors</b> take points off: extra notes that aren't in the exercise, and scratchy sounds between notes when you change bow. Small scratches only count at the stricter levels.</li>
           <li>A note you didn't play counts as <b>missing</b> and scores nothing; a different note counts as <b>wrong</b>.</li>
+          <li><b>Pieces:</b> playing slower than the tempo written in the piece takes a little off the total – hardly anything just under (95% of the speed costs 0.4%), about 5% at three-quarter speed and 20% at half speed. At the written tempo or faster nothing is taken off. Under the score, <b>Tempo</b> says how fast you played and what it cost. Scales are never marked down for their speed.</li>
           <li>The <b>chart</b> shows each note: bars going up were sharp, bars going down were flat. Green is good, then amber, then red.</li>
           <li><b>Cents</b> measure how far out a note was: 100 cents is a semitone, so 10 cents is a tiny bit out and 50 cents is half way to the next note.</li>
           <li>The notes in the music are coloured the same way after a run.</li>
@@ -342,9 +343,9 @@
         <summary>Tempo and the metronome</summary>
         <ul>
           <li>Without the metronome you play at your own speed – the app judges how steady you are.</li>
-          <li>Tick <b>Metronome with one-bar count-in</b> (Config, Listening) to play along with clicks. Set the speed with <b>Tempo</b>.</li>
+          <li>Tick <b>Metronome with one-bar count-in</b> (Config, Listening) to play along with clicks. For scales, set the speed with <b>Tempo</b> in Config.</li>
           <li>The same tempo is used by <b>▶ Play</b>.</li>
-          <li>Pieces have their own tempo, set on the Practice page while you practise them (see Pieces) – the tempo in Config is for scales.</li>
+          <li><b>Pieces have their own tempo</b>, set with <b>−</b> and <b>+</b> above the music on the Practice page while you practise them – Play and the metronome follow it, and the tempo in Config stays for your scales. See <b>Pieces</b> below.</li>
           <li>There's also a separate metronome on the <b>Tuner</b> tab for any practice, with beats in a bar and a <b>Tap tempo</b> button.</li>
         </ul>
       </details>
@@ -366,6 +367,7 @@
           <li>The <b>3D picture</b> shows your last 10 runs note by note: hills are sharp notes, valleys are flat. Drag it to turn it round.</li>
           <li>The <b>line charts</b> show your scores over the last 2 weeks, the last 6 months, and all time.</li>
           <li><b>Run in detail</b>: choose any of your last 10 runs to see its full result again.</li>
+          <li><b>Recent runs</b> lists how each run was played: for a scale its rhythm and bowing, for a piece the bars played and the tempo (for example <i>whole piece · ♩ = 72 (75%)</i> – 75% of the written tempo). The PDF has the same table.</li>
           <li>The <b>Summary</b> shows one line for each exercise in your syllabus.</li>
           <li><b>Export PDF</b> makes a report to send to your teacher. Put your name in <b>Student name</b> on the Config tab so it's on the report. <b>More PDF options</b> lets you choose which exercises and charts to include.</li>
         </ul>
@@ -399,8 +401,8 @@
           <li><b>＋ New piece</b> – type the music as text. The score is drawn underneath as you type, and any mistakes are listed with their line – tap one to jump to it. <b>How to write the music</b> under the box explains the letters and signs.</li>
           <li><b>📷 Decode music from a photo</b> – tap <b>Decode music with Claude</b>. Claude opens in a new window with the instructions already filled in. Sign in, choose <b>Sonnet</b> or <b>Opus</b> in Claude's model menu if it's available, and send the instructions; Claude asks for a photo – take one with your camera or choose one from your photos. When it has written the music, tap <b>Copy</b> on its answer, come back, paste it into the box and tap <b>Read the music</b>. Then check it against your music in the editor and save it. If something can't be read, <b>Copy a correction request</b> makes a message to paste back into the same Claude chat.</li>
           <li><b>⧉ Join two pieces</b> – makes a new piece from one piece followed by another (for example two movements, or a study and its repeat). Each part keeps its own key and time, and the new piece can be edited like any other.</li>
-          <li><b>✎ Edit</b>, <b>⧉</b> (make a copy) and <b>🗑</b> (delete) are next to each piece. The <b>Tempo</b> in the editor is how fast the piece should go.</li>
-          <li><b>Tempo</b> (on the Practice page) – each piece has its own practice tempo, separate from the scales' tempo in Config. Use <b>−</b> and <b>+</b> (5% of the written tempo each) or type a number; <b>Play</b>, the metronome and the listening all follow it, and it is remembered for each piece. <b>Written tempo</b> goes back to the speed in the music. Practising slower is a good way to learn a piece, but the score is reduced a little when you play slower than written: hardly at all a little under (95% of the speed costs 0.4%), 5% at three-quarter speed, 20% at half speed. Without the metronome the app measures the tempo you actually played. The tempo of every run is saved with its results.</li>
+          <li><b>✎ Edit</b>, <b>⧉</b> (make a copy) and <b>🗑</b> (delete) are next to each piece. In the editor, <b>Tempo</b> is how fast the piece should be played (the speed printed in the music) – it is the <code>Q:</code> line in the text.</li>
+          <li><b>Tempo</b> (on the Practice page) – each piece has its own practice tempo, separate from the scales' tempo in Config. Use <b>−</b> and <b>+</b> (5% of the written tempo each) or type a number; <b>Play</b>, the metronome and the listening all follow it, and it is remembered for each piece. <b>Written tempo</b> goes back to the speed in the music. Changing the tempo stops a run or Play that is going on. Practising slower is a good way to learn a piece, but the score is reduced a little when you play slower than written: hardly at all a little under (95% of the speed costs 0.4%), 5% at three-quarter speed, 20% at half speed. Without the metronome the app measures the tempo you actually played, so setting a slower tempo and then playing at full speed costs nothing. A piece with no written tempo is never marked down. The tempo of every run is saved with its results.</li>
           <li><b>✂ Choose bars</b> (on the Practice page) – practise just part of a piece. Tap <b>✂ Choose bars</b>, then drag across the bars on the score, or tap the first bar and then the last. The chosen bars are shaded; <b>Play</b> plays only them and <b>Start</b> listens for and scores only them. <b>Whole piece</b> goes back to all of it. The bars you chose are remembered for each piece.</li>
           <li><b>Results</b> – every run of a piece is saved and shown on the Results tab and in the results PDF, so you can show your teacher how a piece is coming on. The 3D chart has every note of the piece from left to right: the bars you played in a run are coloured note by note, and bars you didn't play are left blank – so you can see which section you worked on, and which notes keep causing trouble. Deleting a piece deletes its results too.</li>
           <li><b>🔗 Share</b> – makes a link to the piece that you can send in a message or email. When the other person opens it, the piece is added to their pieces straight away (if they already have exactly the same piece, it isn't added twice). The music travels inside the link itself – it is never sent to or stored on a server. Only share music you are allowed to share: most published sheet music is protected by copyright, so don't use links to pass on copies of it. If the link opens in the browser rather than the app you use (on iPhone, links open in Safari, which keeps its own pieces separate from the Home Screen app), copy the link instead, open Pieces in your app and tap <b>📥 Paste a shared link</b>.</li>
