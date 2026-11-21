@@ -22,6 +22,7 @@ export function dateTime(ts) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 export function playedHow(r) {
+  if (r && r.pc) return r.sec ? `bars ${r.sec[0]}–${r.sec[1]}` : 'whole piece';
   if (!r || !r.rhythm) return '';
   const rh = RHYTHMS[r.rhythm] ? RHYTHMS[r.rhythm].label : r.rhythm;
   // voice / other instruments store how they were performed as a word ('sung', 'detached')
@@ -131,7 +132,7 @@ export class ResultsPage {
     if (prefer && ids.has(prefer)) this.current = prefer;
     if (this.current !== 'summary' && !ids.has(this.current)) this.current = 'summary';
     this.sel.innerHTML = '';
-    this.sel.add(new Option('Summary – whole syllabus', 'summary'));
+    this.sel.add(new Option('Summary – syllabus and pieces', 'summary'));
     for (const it of list) this.sel.add(new Option(it.name, it.id));
     this.sel.value = this.current;
     this.render();
@@ -143,16 +144,16 @@ export class ResultsPage {
     const list = this.getList();
     const pal = chartPalette();
     const width = Math.max(320, Math.min(900, this.body.clientWidth || 760));
-    if (!list.length) { this.body.innerHTML = '<p class="muted">Add exercises to the syllabus on the Config tab. Runs of syllabus exercises are saved here.</p>'; return; }
+    if (!list.length) { this.body.innerHTML = '<p class="muted">Add exercises to the syllabus on the Config tab, or pieces on the Pieces tab. Their runs are saved here.</p>'; return; }
     const level = this.getPrecision();
     const levelNote = `<p class="muted small">Scores shown at <b>${esc(precisionAt(level).name)}</b> precision (change it in Config – every run is kept at all five levels).</p>`;
     if (this.current === 'summary') {
       const data = summaryData(store, list, Date.now(), level);
       const svg = summaryChartsSvg(data, pal, width);
       this.body.innerHTML = `${levelNote}
-        <div class="res-block"><h3>Total score per day – past 6 months</h3><p class="muted small">One line for each syllabus exercise (its average on days it was practised). Days without any practice are left out.</p>
+        <div class="res-block"><h3>Total score per day – past 6 months</h3><p class="muted small">One line for each syllabus exercise and piece (its average on days it was practised). Days without any practice are left out.</p>
           ${svg.sixMonths || '<p class="muted">No runs yet.</p>'}</div>
-        ${svg.allTime ? `<div class="res-block"><h3>Total score per month – all history</h3><p class="muted small">One line for each syllabus exercise.</p>${svg.allTime}</div>` : ''}
+        ${svg.allTime ? `<div class="res-block"><h3>Total score per month – all history</h3><p class="muted small">One line for each syllabus exercise and piece.</p>${svg.allTime}</div>` : ''}
         <div class="res-block"><h3>Exercises</h3>${this.summaryTable(store, list)}</div>`;
       this.body.querySelectorAll('[data-item]').forEach((a) => a.addEventListener('click', (e) => { e.preventDefault(); this.current = a.dataset.item; this.sel.value = this.current; this.render(); }));
       return;
@@ -168,7 +169,7 @@ export class ResultsPage {
     this.body.innerHTML = `${levelNote}
       <div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
-        <p class="muted small">Notes of the scale left to right, oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
+        <p class="muted small">${item.piece ? 'Every note of the piece left to right (bar numbers along the front). Each run is a strip with one tile per note, raised if sharp and lowered if flat; bars not played in a run are left blank, so practising some bars shows just those.' : 'Notes of the scale left to right.'} Oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
         <div class="surface-wrap"><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div></div>
       <div class="res-block"><h3>Last 2 weeks – every run</h3>${legendHtml(undefined, true, pal)}${svg.twoWeeks || '<p class="muted">No runs in the last 2 weeks.</p>'}</div>
       <div class="res-block"><h3>Past 6 months – average per day</h3>${legendHtml(undefined, true, pal)}${svg.sixMonths || '<p class="muted">No runs in the past 6 months.</p>'}</div>
@@ -190,7 +191,7 @@ export class ResultsPage {
       show();
     }
     const canvas = this.body.querySelector('#surface');
-    this.surface = new Surface3D(canvas, { runs: plotted, labels, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision(), item.settings.instrument), colors: readPalette() });
+    this.surface = new Surface3D(canvas, { runs: plotted, labels, perNote: !!item.piece, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision(), item.settings.instrument), colors: readPalette() });
   }
 
   /** The same detailed summary as after a run, for a stored run (scored at the precision it was played at). */

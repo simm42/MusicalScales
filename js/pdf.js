@@ -1,4 +1,4 @@
-// PDF report of syllabus results, made entirely in the browser with jsPDF
+// PDF report of syllabus and piece results, made entirely in the browser with jsPDF
 // (vendor/jspdf.umd.min.js, loaded only when a PDF is requested).
 
 import { chartPalette, svgToPng } from './ui/charts.js';
@@ -109,11 +109,12 @@ export async function makePdf(o) {
       const recent = o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10;
       const runs = surfaceRuns(recent); // runs with more than half the notes missing are left out
       text(`Last ${runs.length} runs - how sharp or flat each note was (oldest at the back)`, 11, 'bold');
+      if (item.piece) text('Every note of the piece left to right, with bar numbers along the front. Each run is a strip with one tile per note, coloured by how in tune it was. Bars not played in a run are left blank.', 9, 'normal', [102, 98, 111]);
       if (runs.length < recent.length) text(`${recent.length - runs.length} run${recent.length - runs.length === 1 ? '' : 's'} with more than half the notes missing left out.`, 9, 'normal', [102, 98, 111]);
       const c = document.createElement('canvas');
       c.width = 1200; c.height = 608;
       const labels = (runs.length && runs[runs.length - 1].labels) || [];
-      new Surface3D(c, { runs, labels: labels.map(plain), palette: { ...pal }, interactive: false, prec: precisionAt(o.precision ?? 2, item.settings.instrument) });
+      new Surface3D(c, { runs, labels: labels.map(plain), perNote: !!item.piece, palette: { ...pal }, interactive: false, prec: precisionAt(o.precision ?? 2, item.settings.instrument) });
       need(CW * 608 / 1200 + 2);
       doc.addImage(c.toDataURL('image/jpeg', 0.88), 'JPEG', M, y, CW, CW * 608 / 1200);
       y += CW * 608 / 1200 + 3;

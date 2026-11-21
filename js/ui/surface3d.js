@@ -94,7 +94,20 @@ export class Surface3D {
     }
     // quads, far to near
     const quads = [];
-    for (let j = 0; j < Rr - 1; j++) for (let i = 0; i < N - 1; i++) {
+    if (this.o.perNote) {
+      // a piece: each run is its own strip, one tile per note at that note's height and colour,
+      // so every note played in a run shows and the bars not played stay blank
+      const half = Rr === 1 ? 0.3 : (0.8 / (Rr - 1)) * 0.8;
+      const dx = 1.4 / (N - 1);
+      for (let j = 0; j < R; j++) for (let i = 0; i < N; i++) {
+        const v = val(j, i);
+        if (v == null) continue;
+        const z = R === 1 ? 0 : Z(j), x0 = Math.max(X(0), X(i) - dx), x1 = Math.min(X(N - 1), X(i) + dx);
+        const pts = [proj(x0, Y(v), z - half), proj(x1, Y(v), z - half), proj(x1, Y(v), z + half), proj(x0, Y(v), z + half)];
+        quads.push({ pts, depth: pts.reduce((a, p) => a + p.z, 0) / 4, avg: Math.abs(v) });
+      }
+    }
+    for (let j = 0; j < Rr - 1 && !this.o.perNote; j++) for (let i = 0; i < N - 1; i++) {
       const vs = [val(j, i), val(j, i + 1), val(j + 1, i + 1), val(j + 1, i)];
       if (vs.some((v) => v == null)) continue;
       const pts = [proj(X(i), Y(vs[0]), Z(j)), proj(X(i + 1), Y(vs[1]), Z(j)), proj(X(i + 1), Y(vs[2]), Z(j + 1)), proj(X(i), Y(vs[3]), Z(j + 1))];
@@ -131,9 +144,20 @@ export class Surface3D {
     ctx.fillStyle = palette.fg;
     ctx.textAlign = 'center';
     const every = Math.max(1, Math.ceil(N / 16));
-    for (let i = 0; i < N; i += every) {
-      const p = proj(X(i), -0.62, Z(Rr - 1) + 0.12);
-      ctx.fillText(labels[i] || String(i + 1), p.x, p.y + 12);
+    if (labels.some((l) => l === '')) {
+      // a piece: bar numbers under the first note of each bar, thinned out so they don't overlap
+      let lastAt = -Infinity;
+      for (let i = 0; i < N; i++) {
+        if (!labels[i] || i - lastAt < every) continue;
+        const p = proj(X(i), -0.62, Z(Rr - 1) + 0.12);
+        ctx.fillText(labels[i], p.x, p.y + 12);
+        lastAt = i;
+      }
+    } else {
+      for (let i = 0; i < N; i += every) {
+        const p = proj(X(i), -0.62, Z(Rr - 1) + 0.12);
+        ctx.fillText(labels[i] || String(i + 1), p.x, p.y + 12);
+      }
     }
     ctx.textAlign = 'left';
     ctx.fillStyle = palette.muted;

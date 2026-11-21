@@ -2,7 +2,9 @@
 // (Short made-up tunes only – no published music.)
 import { test, eq, assert, near } from './harness.js';
 import { parsePiece, extractPieceText, parseKey } from '../js/pieceText.js';
-import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, claudeLink, pieceShareLink, readPieceShare, addSharedPiece } from '../js/pieces.js';
+import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, claudeLink, pieceShareLink, readPieceShare, addSharedPiece, barStarts, clampSection, sectionSequence, pieceNoteLabels } from '../js/pieces.js';
+import { makeRun, recordRun } from '../js/results.js';
+import { playedHow } from '../js/ui/resultsPage.js';
 import { instrumentInfo, detectionRange } from '../js/instruments.js';
 import { renderPerformance } from '../js/audio/synth.js';
 import { analyseSignal } from '../js/pitch.js';
@@ -344,4 +346,43 @@ test('pieces: Play waits for rests (also a rest at the start and a whole-bar res
   eq(on, [1, 3, 4, 12, 14]);
   near(perf.truth[0].end - perf.truth[0].onset, 1, 1e-6, 'C sounds for its own length, then the rest is silent');
   near(perf.truth[2].end - perf.truth[2].onset, 2, 1e-6);
+});
+
+test('pieces: a section of bars is practised on its own, numbered back to the whole piece', () => {
+  const seq = pieceSequence(parsePiece(head('C', '2/4') + 'C2 D2 | E2 z2 | z2 F2 | G2 G2 | A4 |]\n'), violin);
+  eq(seq.bars, 5);
+  eq(barStarts(seq), [0, 2, 4, 6, 8, 10]);
+  eq(clampSection({ from: 3, to: 1 }, 5), { from: 1, to: 3 });
+  eq(clampSection({ from: 0, to: 4 }, 5), null, 'all the bars is the whole piece');
+  eq(clampSection({ from: 2, to: 9 }, 5), { from: 2, to: 4 });
+  const sec = sectionSequence(seq, { from: 2, to: 3 });
+  eq(sec.events.map((e) => e.full), [3, 4, 5]);
+  eq(sec.events.map((e) => e.index), [0, 1, 2]);
+  eq(sec.events.map((e) => e.onsetBeat), [1, 2, 3], 'timed from the start of bar 3 (its rest first)');
+  eq(sec.events.map((e) => !!e.sameAsPrev), [false, false, true]);
+  eq(sec.timeline.map((t) => [t.kind, t.beat]), [['rest', 0], ['note', 1], ['note', 2], ['note', 3]]);
+  eq(sec.totalBeats, 4);
+  // Play waits for the rest at the start of the section
+  const perf = renderPerformance(sec, { sampleRate: 8000, bpm: 60, detune: () => 0, noise: 0, leadIn: 0.5, tail: 0.2 });
+  eq(perf.truth.map((x) => Math.round((x.onset - 0.5) * 100) / 100), [1, 2, 3]);
+  // the whole piece as a "section": every note, the rests in the timeline too
+  const all = sectionSequence(seq, null);
+  eq(all.events.length, seq.events.length);
+  eq(all.timeline.filter((t) => t.kind === 'rest').length, 2);
+});
+
+test('pieces: a run of some bars is saved note by note across the whole piece', () => {
+  const seq = pieceSequence(parsePiece(head('C', '2/4') + 'C2 D2 | E2 F2 | G2 A2 | B2 c2 |]\n'), violin);
+  eq(pieceNoteLabels(seq), ['1', '', '2', '', '3', '', '4', '']);
+  const sec = sectionSequence(seq, { from: 1, to: 2 });
+  const perNote = sec.events.map((e, k) => ({ event: k, status: 'ok', cents: [k * 2 - 3], intonation: 90, timing: 90 }));
+  const result = { perNote, total: 90, intonation: 90, timing: 90, errors: 0, extras: [], missing: 0, wrong: 0 };
+  const run = makeRun(result, sec, null, 1000, null);
+  eq(run.steps, [null, null, -3, -1, 1, 3, null, null], 'blank before and after the bars played');
+  eq(playedHow({ pc: 1, sec: [2, 3] }), 'bars 2–3');
+  eq(playedHow({ pc: 1, sec: null }), 'whole piece');
+  // kept when the run is later summarised
+  const store = {};
+  for (let k = 0; k < 12; k++) recordRun(store, 'piece:x', { ...run, d: 1000 + k, pc: 1, sec: [2, 3] }, 2000);
+  assert(store['piece:x'].older.every((o) => o.pc === 1 && o.sec[0] === 2), 'older runs keep the bars played');
 });

@@ -95,6 +95,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
 
   const noteObjs = new Array(glyphs.length);
   const staveOf = new Array(glyphs.length);
+  const staves = [];
 
   lines.forEach((line, li) => {
     const y = topPad + li * lineH - 20;
@@ -102,6 +103,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     // a short final line keeps natural spacing instead of stretching across the page
     const staveW = isLast && lines.length > 1 ? Math.min(width - 12, Math.max(lineUsed[li] * 1.1 + 20, 200)) : width - 12;
     const stave = new V.Stave(5, y, staveW);
+    staves[li] = stave;
     const lineClef = clefs[line[0]];
     const lineFifths = fifthsOf(line[0]);
     stave.addClef(lineClef, 'default', annFor(lineClef));
@@ -280,6 +282,30 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     }
   }
 
+  // every note and rest (the arrow goes over rests too) and, in a piece, each bar's area
+  // on the page (to choose a section by tapping or dragging across bars)
+  const glyphTargets = [];
+  const barBoxes = [];
+  lines.forEach((line, li) => {
+    const stave = staves[li];
+    for (const gi of line) {
+      const note = noteObjs[gi];
+      if (!note) continue;
+      const ys = note.getYs ? note.getYs() : [stave.getYForLine(0)];
+      glyphTargets[gi] = { x: note.getAbsoluteX() + note.getGlyphWidth() / 2, y: Math.min(stave.getYForLine(0), ...ys) - 8, line: li, staveEnd: stave.getX() + stave.getWidth() - 6 };
+    }
+    if (!piece) return;
+    const barsHere = [...new Set(line.map((gi) => glyphs[gi].stepIndex))];
+    const xsOf = (b) => line.filter((gi) => glyphs[gi].stepIndex === b && glyphTargets[gi]).map((gi) => glyphTargets[gi].x);
+    barsHere.forEach((b, k) => {
+      const xs = xsOf(b);
+      const prev = k > 0 ? xsOf(barsHere[k - 1]) : null, next = k < barsHere.length - 1 ? xsOf(barsHere[k + 1]) : null;
+      const x0 = prev ? (Math.max(...prev) + Math.min(...xs)) / 2 + 4 : stave.getNoteStartX() - 6;
+      const x1 = next ? (Math.max(...xs) + Math.min(...next)) / 2 + 4 : stave.getX() + stave.getWidth();
+      barBoxes[b] = { x0, x1, y0: stave.getYForLine(0) - 26, y1: stave.getYForLine(4) + 22, line: li };
+    });
+  });
+
   // arrow targets and colourable elements, per event
   const targets = [];
   glyphs.forEach((g, gi) => {
@@ -292,7 +318,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     if (note.getStemDirection && note.getStemDirection() === 1 && note.hasStem()) top = Math.min(top, Math.min(...ys) - 35);
     targets[g.eventIndex] = { x, y: top - 8, el: note.getSVGElement ? note.getSVGElement() : null };
   });
-  return { arrowTargets: targets };
+  return { arrowTargets: targets, glyphTargets, barBoxes };
 }
 
 /** Add a CSS state class to a rendered event's note. */

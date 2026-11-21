@@ -30,10 +30,12 @@ const FORMAT_HELP = `
 </table>`;
 
 export class PiecesPage {
-  constructor({ root, getInstrument, onPractise }) {
+  constructor({ root, getInstrument, onPractise, onDeleted = () => {}, hasResults = () => false }) {
     this.root = root;
     this.getInstrument = getInstrument;
     this.onPractise = onPractise;
+    this.onDeleted = onDeleted;
+    this.hasResults = hasResults;
     this.view = 'list';
   }
 
@@ -99,7 +101,12 @@ export class PiecesPage {
         edit: () => this.edit(p),
         share: () => this.share(p, li),
         copy: () => { const c = newPiece(`${p.name} (copy)`, p.text); this.store([...this.pieces(), c]); this.list(); },
-        delete: () => { if (confirm(`Delete “${p.name}”? This can't be undone.`)) { this.store(this.pieces().filter((x) => x.id !== p.id)); this.list(); } },
+        delete: () => {
+          if (!confirm(`Delete “${p.name}”${this.hasResults(p.id) ? ' and its results' : ''}? This can't be undone.`)) return;
+          this.store(this.pieces().filter((x) => x.id !== p.id));
+          this.onDeleted(p.id);
+          this.list();
+        },
       }, li);
     });
   }

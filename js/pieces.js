@@ -108,7 +108,56 @@ export function pieceSequence(P, info) {
     } else prevNoteTok = null;
   }
   for (let i = 1; i < events.length; i++) events[i].sameAsPrev = events[i].midis.join() === events[i - 1].midis.join();
-  return { glyphs, events, totalBeats: beat, steps: [], bars: bar + (beat > barStart ? 1 : 0), piece: true };
+  const bars = bar + (beat > barStart ? 1 : 0);
+  // results are kept note by note across the whole piece (resultStep), so a run of a few
+  // bars fills just those notes on the Results page's 3D plot; the rest stay blank
+  events.forEach((e) => { e.resultStep = e.index; });
+  return { glyphs, events, totalBeats: beat, steps: events.map(() => []), bars, piece: true };
+}
+
+/** Labels for the 3D plot's notes: the bar number under the first note of each bar. */
+export function pieceNoteLabels(seq) {
+  return seq.events.map((e, k) => (k === 0 || seq.events[k - 1].stepIndex !== e.stepIndex ? String(e.stepIndex + 1) : ''));
+}
+
+/** The beat each bar starts on (bars counted from 0), and the end of the piece. */
+export function barStarts(seq) {
+  const starts = [];
+  for (const g of seq.glyphs) if (starts[g.stepIndex] == null) starts[g.stepIndex] = g.onsetBeat;
+  starts.push(seq.totalBeats);
+  return starts;
+}
+
+/** A chosen section, kept within the piece: { from, to } bars counted from 0 (or null for the whole piece). */
+export function clampSection(sec, bars) {
+  if (!sec || !(bars > 0)) return null;
+  let from = Math.max(0, Math.min(bars - 1, Math.round(sec.from)));
+  let to = Math.max(0, Math.min(bars - 1, Math.round(sec.to)));
+  if (from > to) [from, to] = [to, from];
+  return from === 0 && to === bars - 1 ? null : { from, to };
+}
+
+/**
+ * Just some bars of a piece, to practise on their own: the notes of those bars,
+ * numbered from 0 and timed from the start of the first bar (so a rest at its start
+ * is waited for). Each note keeps `full`, its number in the whole piece (for the score),
+ * and its bar (stepIndex), so results line up with the whole piece's bars.
+ * `timeline` lists every note and rest of the section with its beat, for the arrow.
+ */
+export function sectionSequence(seq, sec) {
+  const starts = barStarts(seq);
+  const from = sec ? sec.from : 0, to = sec ? sec.to : seq.bars - 1;
+  const base = starts[from] ?? 0, end = starts[to + 1] ?? seq.totalBeats;
+  const events = seq.events
+    .filter((e) => e.stepIndex >= from && e.stepIndex <= to)
+    .map((e, k) => ({ ...e, index: k, full: e.index, onsetBeat: e.onsetBeat - base, slurred: k === 0 ? false : e.slurred }));
+  for (let i = 0; i < events.length; i++) events[i].sameAsPrev = i > 0 && events[i].midis.join() === events[i - 1].midis.join();
+  const timeline = [];
+  seq.glyphs.forEach((g, gi) => {
+    if (g.stepIndex < from || g.stepIndex > to) return;
+    timeline.push({ gi, kind: g.kind, beat: g.onsetBeat - base, beats: g.beats, tied: !!g.tiedFrom });
+  });
+  return { ...seq, events, totalBeats: end - base, section: sec ? { from, to } : null, startBeat: base, timeline };
 }
 
 /**

@@ -446,3 +446,11 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 .prompt-text { white-space: pre-wrap; font-size: 12px; max-height: 260px; overflow: auto; background: var(--surface-2); padding: 8px; border-radius: 8px; }
 .photo-why { font-size: 14px; line-height: 1.5; }
 .piece-bar { margin: 4px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.piece-bar { align-items: center; }
+.section-label { font-weight: 600; }
+#sectionBtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg, #fff); border-color: var(--accent); }
+/* the chosen bars on the score (and, while choosing, the first bar tapped) */
+.section-marks { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
+.section-marks div { position: absolute; border-radius: 6px; background: color-mix(in srgb, var(--accent) 15%, transparent); outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -2px; }
+.section-marks div.pending { background: transparent; outline-style: dashed; }
+#score.choosing { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }

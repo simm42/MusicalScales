@@ -1,4 +1,4 @@
-// Results for syllabus items, kept in this browser only.
+// Results for syllabus items and pieces (id "piece:<piece id>"), kept in this browser only.
 //
 // For each item:
 //   runs   – the newest 10 runs in full (per-note detail, per-scale-note cents)
@@ -62,7 +62,8 @@ export function makeRun(result, seq, rhythm, when = Date.now(), noteName = null,
     if (p.status !== 'ok' || !p.cents) continue;
     const vals = p.cents.filter((c) => c != null);
     if (!vals.length) continue;
-    const si = seq.events[p.event].stepIndex;
+    const ev = seq.events[p.event];
+    const si = ev.resultStep ?? ev.stepIndex; // a piece: its note in the whole piece
     if (si == null || si >= n) continue;
     sum[si] += vals.reduce((a, b) => a + b, 0) / vals.length;
     cnt[si]++;
@@ -132,7 +133,7 @@ export function runDetail(run, labels = null) {
   };
 }
 
-const summaryOf = (r) => ({ d: r.d, lv: levelsOf(r), e: r.e ?? null, rhythm: r.rhythm, slurred: r.slurred });
+const summaryOf = (r) => ({ d: r.d, lv: levelsOf(r), e: r.e ?? null, rhythm: r.rhythm, slurred: r.slurred, ...(r.pc ? { pc: 1, sec: r.sec || null } : {}) });
 
 /** Weighted merge of a run summary or an aggregate into an aggregate (per level). */
 function mergeInto(agg, x) {
@@ -231,7 +232,7 @@ export function runsSince(store, id, since, level = 2) {
   return [...rec.older, ...rec.runs]
     .filter((r) => r.d >= since)
     .sort((a, b) => a.d - b.d)
-    .map((r) => project(r, level, { d: r.d, rhythm: r.rhythm, slurred: r.slurred }));
+    .map((r) => project(r, level, { d: r.d, rhythm: r.rhythm, slurred: r.slurred, pc: r.pc, sec: r.sec }));
 }
 
 function groupDaily(rec, since) {

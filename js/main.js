@@ -32,7 +32,7 @@ import { startAnalytics, ANALYTICS_ON } from './analytics.js';
 import { setupPwa } from './pwa.js';
 import { GamesPage } from './ui/gamesPage.js';
 import { PiecesPage } from './ui/piecesPage.js';
-import { pieceExercise, loadPieces, readPieceShare, addSharedPiece } from './pieces.js';
+import { pieceExercise, loadPieces, readPieceShare, addSharedPiece, sectionSequence, clampSection, pieceNoteLabels } from './pieces.js';
 import { hold as holdAwake, release as releaseAwake } from './wakelock.js';
 import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
@@ -75,6 +75,12 @@ let rendered = { arrowTargets: [] };
 let session = null;
 let lastResult = null;
 let arrowIndex = 0;
+// what is played and listened for: the whole exercise, or (a piece) just the chosen bars.
+// Its notes keep `full`, their number in the whole score, for the arrow and the colours.
+let runSeq = null;
+let section = null; // { from, to } bars counted from 0, or null for the whole piece
+let choosing = null; // choosing bars: null, or { first: bar tapped first, dragFrom, dragTo }
+const toFull = (k) => { const e = runSeq && runSeq.events[k]; return e && e.full != null ? e.full : k; };
 let syllables = null; // sol-fa syllable per note when singing
 // a saved piece (Pieces tab) being practised instead of a scale
 let currentPiece = prefs.pieceId ? loadPieces().find((p) => p.id === prefs.pieceId) || null : null;
@@ -330,6 +336,10 @@ function updateExercise() {
     // the full score already shows the rhythm, long notes and slurs
     $('exOptions').hidden = settings.display === 'score';
   }
+  section = currentPiece && exercise.ok ? clampSection((prefs.pieceSections || {})[currentPiece.id], seq.bars) : null;
+  runSeq = currentPiece && exercise.ok ? sectionSequence(seq, section) : seq;
+  choosing = null;
+  showSection();
   $('pieceBar').hidden = !currentPiece;
   $('rhythmBar').hidden = !!currentPiece;
   $('exInvalid').hidden = exercise.ok;
@@ -359,6 +369,7 @@ function drawScore() {
     scoreEl.innerHTML = '<p class="notice error">Sorry – the score could not be drawn for this exercise.</p>';
   }
   if (lastResult) colourAll(lastResult);
+  drawSectionMarks();
 }
 
 function placeArrow(k) {
@@ -462,7 +473,7 @@ function colourNote(k, cents) {
 /** After the analysis: every note coloured by its final result (replacing the live colours). */
 function colourAll(result) {
   rendered.arrowTargets.forEach((_, k) => markNote(rendered.arrowTargets, k, null));
-  for (const r of result.perNote) markNote(rendered.arrowTargets, r.event, r.status === 'missing' ? 'n-missing' : scoreClass(r.intonation));
+  for (const r of result.perNote) markNote(rendered.arrowTargets, toFull(r.event), r.status === 'missing' ? 'n-missing' : scoreClass(r.intonation));
 }
 
 function synthOptions() {
@@ -496,7 +507,7 @@ async function startSession() {
   const useSynth = DEBUG && $('d-use') && $('d-use').checked;
   const p = prec();
   const s = new PracticeSession({
-    engine, exercise, seq, settings, a4: a4(), prec: p,
+    engine, exercise, seq: runSeq, settings, a4: a4(), prec: p,
     synth: useSynth ? synthOptions() : null,
     capture: DEBUG && $('d-capture') && $('d-capture').checked,
     calibration: loadCalibration(settings.instrument),
@@ -518,8 +529,8 @@ async function startSession() {
         meter.setBar(0, cents, p);
         meter.setReadout(liveNoteName(pv.midi), fmtCents(cents), hintText());
       },
-      arrow: (k) => placeArrow(k),
-      noteDone: (k, cents) => colourNote(k, cents),
+      arrow: (k) => placeArrow(toFull(k)),
+      noteDone: (k, cents) => colourNote(toFull(k), cents),
       done: (result) => finishSession(result),
     },
   });
@@ -556,7 +567,7 @@ function finishSession(result) {
   if (!played) { setStatus(`No notes were heard. Check the microphone and ${verb()} a little louder, or move closer.`); return; }
   setStatus(`Finished – score ${Math.round(result.total)} / 100.`);
   lastResult = result;
-  renderSummary($('summary'), { result, seq, prec: prec(), settings, details: DEBUG, labels: syllables ? seq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
+  renderSummary($('summary'), { result, seq: runSeq, prec: prec(), settings, details: DEBUG, labels: syllables ? runSeq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
   colourAll(result);
   showSummary();
   const item = activeId && list.find((x) => x.id === activeId);
@@ -572,6 +583,20 @@ function finishSession(result) {
     renderList();
     if (resultsPage) resultsPage.invalidate();
     setStatus(`Finished – score ${Math.round(result.total)} / 100. Saved to the results for “${item.name}”.`);
+  }
+  // a piece: every run is kept (with the bars played), note by note across the whole piece
+  if (exercise.isPiece && currentPiece) {
+    const run = makeRun(result, runSeq, null, Date.now(), (n) => labelNote(n), scoresAtLevels(result, undefined, (lv) => precisionAt(lv, settings.instrument)));
+    run.labels = pieceNoteLabels(seq);
+    run.pc = 1;
+    run.sec = section ? [section.from + 1, section.to + 1] : null;
+    run.level = settings.precision;
+    run.vib = !!settings.vibrato;
+    run.met = !!settings.metronome;
+    recordRun(results, 'piece:' + currentPiece.id, run);
+    saveResults(results);
+    if (resultsPage) resultsPage.invalidate();
+    setStatus(`Finished – score ${Math.round(result.total)} / 100${section ? ` for bars ${section.from + 1}–${section.to + 1}` : ''}. Saved to the results for “${currentPiece.name}”.`);
   }
 }
 
@@ -605,15 +630,16 @@ $('playBtn').addEventListener('click', async () => {
   setStatus('Preparing the sound…');
   await new Promise((r) => setTimeout(r, 30)); // let the message show before the sound is rendered
   try {
-    const playing = player.play(seq, {
+    const playing = player.play(runSeq, {
       bpm: settings.bpm,
       a4: a4(),
       instrument: settings.instrument,
       onEvent: (k) => {
-        placeArrow(k);
-        const ev = seq.events[k];
+        placeArrow(toFull(k));
+        const ev = runSeq.events[k];
         meter.setReadout(ev.notes.map((n) => gaugeNote(n)).join(' + '), '', '');
       },
+      onBeat: (b) => restArrow(b),
       onEnd: () => { releaseAwake('play'); $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
     });
     await playing;
@@ -669,6 +695,155 @@ $('pieceEditBtn').addEventListener('click', () => {
   setTab('pieces');
   if (p) piecesPage.edit(p);
 });
+
+/** Pieces on the Results page and in the PDF, next to the syllabus exercises. */
+function pieceItems() {
+  return loadPieces().map((p) => ({ id: 'piece:' + p.id, name: `Piece: ${p.name}`, piece: true, settings: { instrument: settings.instrument } }));
+}
+/** A piece was deleted on the Pieces tab: its results and chosen bars go too. */
+function pieceDeleted(id) {
+  if (results['piece:' + id]) { delete results['piece:' + id]; saveResults(results); if (resultsPage) resultsPage.invalidate(); }
+  if (prefs.pieceSections) { delete prefs.pieceSections[id]; savePrefs(); }
+  if (currentPiece && currentPiece.id === id) { setPiece(null); updateExercise(); }
+}
+
+// ---------------------------------------------------------------- a section of a piece (some bars)
+// "✂ Choose bars", then drag across bars on the score, or tap the first bar and then the last.
+// Play, the run and its score are then for those bars only; the results keep which bars were played.
+
+function setSection(sec) {
+  section = currentPiece ? clampSection(sec, seq.bars) : null;
+  prefs.pieceSections = prefs.pieceSections || {};
+  if (currentPiece) { if (section) prefs.pieceSections[currentPiece.id] = section; else delete prefs.pieceSections[currentPiece.id]; }
+  savePrefs();
+  stopSession(true);
+  stopPlayback();
+  runSeq = currentPiece ? sectionSequence(seq, section) : seq;
+  lastResult = null;
+  $('summary').innerHTML = '';
+  rendered.arrowTargets.forEach((_, k) => markNote(rendered.arrowTargets, k, null));
+  showSection();
+  drawSectionMarks();
+  setStatus(idleStatus());
+}
+
+function showSection() {
+  const on = !!choosing;
+  $('sectionBtn').setAttribute('aria-pressed', String(on));
+  $('sectionBtn').textContent = on ? '✓ Done' : '✂ Choose bars';
+  $('sectionAllBtn').hidden = !section || on;
+  $('sectionLabel').textContent = on
+    ? (choosing.first != null ? `From bar ${choosing.first + 1} – now tap the last bar` : 'Drag across the bars, or tap the first bar')
+    : section ? `Bars ${section.from + 1}–${section.to + 1}` : '';
+  $('score').classList.toggle('choosing', on);
+}
+
+/** Shade the chosen bars (or, while choosing, the bars being picked). */
+function drawSectionMarks() {
+  const el = $('sectionMarks');
+  el.innerHTML = '';
+  const boxes = rendered.barBoxes || [];
+  let from = null, to = null, pending = false;
+  if (choosing && choosing.dragFrom != null) { from = Math.min(choosing.dragFrom, choosing.dragTo); to = Math.max(choosing.dragFrom, choosing.dragTo); }
+  else if (choosing && choosing.first != null) { from = to = choosing.first; pending = true; }
+  else if (section) { from = section.from; to = section.to; }
+  if (from == null || !exercise || !exercise.isPiece) return;
+  // one shaded strip per line of music
+  const rows = new Map();
+  for (let b = from; b <= to; b++) {
+    const bx = boxes[b];
+    if (!bx) continue;
+    const r = rows.get(bx.line);
+    if (!r) rows.set(bx.line, { ...bx }); else { r.x0 = Math.min(r.x0, bx.x0); r.x1 = Math.max(r.x1, bx.x1); }
+  }
+  for (const r of rows.values()) {
+    const d = document.createElement('div');
+    if (pending) d.className = 'pending';
+    Object.assign(d.style, { left: `${r.x0}px`, top: `${r.y0}px`, width: `${r.x1 - r.x0}px`, height: `${r.y1 - r.y0}px` });
+    el.appendChild(d);
+  }
+}
+
+/** The bar under a point on the score (the nearest bar on the nearest line). */
+function barAt(clientX, clientY) {
+  const rect = $('score').getBoundingClientRect();
+  const x = clientX - rect.left, y = clientY - rect.top;
+  const boxes = (rendered.barBoxes || []).map((b, i) => (b ? { ...b, i } : null)).filter(Boolean);
+  if (!boxes.length) return null;
+  const dy = (b) => (y < b.y0 ? b.y0 - y : y > b.y1 ? y - b.y1 : 0);
+  const best = Math.min(...boxes.map(dy));
+  const row = boxes.filter((b) => dy(b) === best);
+  const dx = (b) => (x < b.x0 ? b.x0 - x : x > b.x1 ? x - b.x1 : 0);
+  return row.reduce((a, b) => (dx(b) < dx(a) ? b : a)).i;
+}
+
+$('sectionBtn').addEventListener('click', () => {
+  if (choosing) { choosing = null; showSection(); drawSectionMarks(); return; }
+  if (!exercise.ok || !exercise.isPiece || seq.bars < 2) return;
+  stopSession(true);
+  stopPlayback();
+  choosing = { first: null, dragFrom: null, dragTo: null };
+  showSection();
+  drawSectionMarks();
+});
+$('sectionAllBtn').addEventListener('click', () => setSection(null));
+
+{
+  const score = $('score');
+  let down = null; // { bar, moved }
+  score.addEventListener('pointerdown', (e) => {
+    if (!choosing) return;
+    const b = barAt(e.clientX, e.clientY);
+    if (b == null) return;
+    e.preventDefault();
+    down = { bar: b, moved: false };
+    try { score.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+  });
+  score.addEventListener('pointermove', (e) => {
+    if (!choosing || !down) return;
+    const b = barAt(e.clientX, e.clientY);
+    if (b == null || (b === down.bar && !down.moved)) return;
+    down.moved = true;
+    choosing.dragFrom = down.bar;
+    choosing.dragTo = b;
+    $('sectionLabel').textContent = `Bars ${Math.min(down.bar, b) + 1}–${Math.max(down.bar, b) + 1}`;
+    drawSectionMarks();
+  });
+  score.addEventListener('pointerup', () => {
+    if (!choosing || !down) return;
+    const d = down;
+    down = null;
+    if (d.moved) { const a = choosing.dragFrom, b = choosing.dragTo; choosing = null; setSection({ from: a, to: b }); return; }
+    // a tap: the first bar, then the last (tapping the same bar twice practises just that bar)
+    if (choosing.first == null) { choosing.first = d.bar; showSection(); drawSectionMarks(); return; }
+    const a = choosing.first;
+    choosing = null;
+    setSection({ from: a, to: d.bar });
+  });
+  score.addEventListener('pointercancel', () => { down = null; });
+}
+
+/** During Play: over a rest the arrow moves along it in time (a rest has no note of its own to point at). */
+function restArrow(beat) {
+  const tl = runSeq && runSeq.timeline;
+  if (!tl || !tl.length || !scoreShown()) return;
+  let k = -1;
+  for (let i = 0; i < tl.length && tl[i].beat <= beat + 1e-6; i++) k = i;
+  if (k < 0 || tl[k].kind !== 'rest') return;
+  const r = tl[k];
+  const t = rendered.glyphTargets && rendered.glyphTargets[r.gi];
+  if (!t) return;
+  const frac = Math.max(0, Math.min(1, (beat - r.beat) / (r.beats || 1)));
+  const next = tl[k + 1] && rendered.glyphTargets[tl[k + 1].gi];
+  // towards the next note or rest on the same line, else towards the end of the line
+  const toX = next && next.line === t.line ? t.x + (next.x - t.x) * 0.8 : t.x + Math.max(0, t.staveEnd - t.x) * 0.5;
+  const a = $('arrow');
+  a.hidden = false;
+  a.style.left = `${t.x + (toX - t.x) * frac}px`;
+  a.style.top = `${t.y}px`;
+  followScroll(t);
+}
+
 
 // ---------------------------------------------------------------- practice list
 function sparkline(hist) {
@@ -1009,7 +1184,7 @@ function setTab(tab) {
   $('tab-games').hidden = tab !== 'games';
   $('tab-pieces').hidden = tab !== 'pieces';
   if (tab === 'pieces') {
-    if (!piecesPage) piecesPage = new PiecesPage({ root: $('piecesRoot'), getInstrument: () => settings.instrument, onPractise: (p) => practisePiece(p) });
+    if (!piecesPage) piecesPage = new PiecesPage({ root: $('piecesRoot'), getInstrument: () => settings.instrument, onPractise: (p) => practisePiece(p), onDeleted: (id) => pieceDeleted(id), hasResults: (id) => !!results['piece:' + id] });
     piecesPage.show();
   }
   // back from the Pieces tab: practise the piece as it is saved now
@@ -1028,7 +1203,7 @@ function setTab(tab) {
   if (tab === 'results') {
     if (!resultsPage) {
       resultsPage = new ResultsPage({
-        getList: () => list,
+        getList: () => [...list, ...pieceItems()],
         getResults: () => results,
         getStudentName: () => ($('studentName').value.trim() || prefs.studentName || ''),
         getPrecision: () => settings.precision,
@@ -1044,7 +1219,7 @@ function setTab(tab) {
         setStudentName: (n) => { prefs.studentName = n; savePrefs(); $('studentName').value = n; },
       });
     }
-    resultsPage.show(activeId); // open on the syllabus exercise being practised
+    resultsPage.show(currentPiece ? 'piece:' + currentPiece.id : activeId); // open on what is being practised
   }
   if (tab === 'tuner') {
     stopSession(true);

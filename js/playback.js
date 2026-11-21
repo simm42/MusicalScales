@@ -38,13 +38,14 @@ export class Player {
 
   /**
    * @param {object} seq from buildSequence
-   * @param {object} o { bpm, a4, instrument, onEvent(index), onEnd() }
+   * @param {object} o { bpm, a4, instrument, onEvent(index), onBeat(beat) – the beat now sounding (for rests), onEnd() }
    */
-  async play(seq, { bpm = 60, a4 = 440, instrument = 'violin', onEvent, onEnd } = {}) {
+  async play(seq, { bpm = 60, a4 = 440, instrument = 'violin', onEvent, onBeat, onEnd } = {}) {
     this.stop();
     this.active = true;
+    const leadIn = 0.25;
     const perf = renderPerformance(seq, {
-      sampleRate: RATE, bpm, a4, detune: () => 0, noise: 0, leadIn: 0.25, tail: 0.6, amp: 0.2, dipFloor: 0.05, timbre: instrument,
+      sampleRate: RATE, bpm, a4, detune: () => 0, noise: 0, leadIn, tail: 0.6, amp: 0.2, dipFloor: 0.05, timbre: instrument,
     });
     if (!this.active) return; // stopped while rendering
     // normalise so it is clearly audible on a phone speaker
@@ -74,6 +75,7 @@ export class Player {
       let k = -1;
       for (let i = 0; i < perf.truth.length && perf.truth[i].onset <= t; i++) k = i;
       if (k !== last && k >= 0) { last = k; if (onEvent) onEvent(k); }
+      if (onBeat && t >= leadIn) onBeat(((t - leadIn) * bpm) / 60);
     }, 30);
   }
 

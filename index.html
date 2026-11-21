@@ -150,7 +150,7 @@
       <div class="title-row">
         <h2 id="exTitle"></h2>
         <p class="opts" id="exOptions"></p>
-        <p class="piece-bar small" id="pieceBar" hidden><button class="btn" type="button" id="pieceEditBtn">✎ Edit piece</button> <button class="btn" type="button" id="pieceExitBtn">Back to scales</button></p>
+        <p class="piece-bar small" id="pieceBar" hidden><button class="btn" type="button" id="sectionBtn" aria-pressed="false" title="Practise just some bars: drag across them on the score, or tap the first and last bar">✂ Choose bars</button> <span class="section-label" id="sectionLabel" role="status"></span> <button class="btn" type="button" id="sectionAllBtn" hidden>Whole piece</button> <button class="btn" type="button" id="pieceEditBtn">✎ Edit piece</button> <button class="btn" type="button" id="pieceExitBtn">Back to scales</button></p>
       </div>
       </div>
       <div class="notice error" id="exInvalid" hidden></div>
@@ -161,6 +161,7 @@
         <div class="score-col">
           <div class="score-wrap" id="scoreWrap">
             <div id="score"></div>
+            <div class="section-marks" id="sectionMarks" aria-hidden="true"></div>
             <div class="arrow" id="arrow" hidden></div>
           </div>
         </div>
@@ -392,12 +393,14 @@
 
       <details>
         <summary>Pieces: practise your own music</summary>
-        <p>On the <b>Pieces</b> tab you can keep any number of pieces on this device, so your music goes wherever you take your phone. Tap <b>▶ Practise</b> on a piece and it opens on the Practice page with the arrow, the tuning bar, <b>Play</b> and a score at the end – just like a scale. <b>Back to scales</b> returns to your syllabus. (Results charts are kept for syllabus scales only.)</p>
+        <p>On the <b>Pieces</b> tab you can keep any number of pieces on this device, so your music goes wherever you take your phone. Tap <b>▶ Practise</b> on a piece and it opens on the Practice page with the arrow, the tuning bar, <b>Play</b> and a score at the end – just like a scale. <b>Back to scales</b> returns to your syllabus. Its runs are saved on the Results tab, like a syllabus exercise.</p>
         <ul>
           <li><b>＋ New piece</b> – type the music as text. The score is drawn underneath as you type, and any mistakes are listed with their line – tap one to jump to it. <b>How to write the music</b> under the box explains the letters and signs.</li>
           <li><b>📷 Decode music from a photo</b> – tap <b>Decode music with Claude</b>. Claude opens in a new window with the instructions already filled in. Sign in, choose <b>Sonnet</b> or <b>Opus</b> in Claude's model menu if it's available, and send the instructions; Claude asks for a photo – take one with your camera or choose one from your photos. When it has written the music, tap <b>Copy</b> on its answer, come back, paste it into the box and tap <b>Read the music</b>. Then check it against your music in the editor and save it. If something can't be read, <b>Copy a correction request</b> makes a message to paste back into the same Claude chat.</li>
           <li><b>⧉ Join two pieces</b> – makes a new piece from one piece followed by another (for example two movements, or a study and its repeat). Each part keeps its own key and time, and the new piece can be edited like any other.</li>
           <li><b>✎ Edit</b>, <b>⧉</b> (make a copy) and <b>🗑</b> (delete) are next to each piece. The tempo written in a piece is used when you open it; change it in Config like any other tempo.</li>
+          <li><b>✂ Choose bars</b> (on the Practice page) – practise just part of a piece. Tap <b>✂ Choose bars</b>, then drag across the bars on the score, or tap the first bar and then the last. The chosen bars are shaded; <b>Play</b> plays only them and <b>Start</b> listens for and scores only them. <b>Whole piece</b> goes back to all of it. The bars you chose are remembered for each piece.</li>
+          <li><b>Results</b> – every run of a piece is saved and shown on the Results tab and in the results PDF, so you can show your teacher how a piece is coming on. The 3D chart has every note of the piece from left to right: the bars you played in a run are coloured note by note, and bars you didn't play are left blank – so you can see which section you worked on, and which notes keep causing trouble. Deleting a piece deletes its results too.</li>
           <li><b>🔗 Share</b> – makes a link to the piece that you can send in a message or email. When the other person opens it, the piece is added to their pieces straight away (if they already have exactly the same piece, it isn't added twice). The music travels inside the link itself – it is never sent to or stored on a server. Only share music you are allowed to share: most published sheet music is protected by copyright, so don't use links to pass on copies of it. If the link opens in the browser rather than the app you use (on iPhone, links open in Safari, which keeps its own pieces separate from the Home Screen app), copy the link instead, open Pieces in your app and tap <b>📥 Paste a shared link</b>.</li>
         </ul>
         <p><b>Getting a Claude account:</b></p>

@@ -65,7 +65,9 @@ export function renderPerformance(seq, o = {}) {
     truth.push({ index: e.index, onset: t, end: t + Math.max(0.08, held * Math.min(g.beats, e.beats) * spb * stretch), dur, midis: e.midis, cents, slurred: e.slurred, art: e.articulation || null, missing: missing.includes(e.index) });
     t += dur;
   }
-  const total = t + tail;
+  // music that ends with rests lasts until their end (the arrow moves along them)
+  const musicEnd = seq.totalBeats > 0 && events.length && events[0].onsetBeat != null ? leadIn + seq.totalBeats * spb : 0;
+  const total = Math.max(t + tail, musicEnd + 0.15);
   const n = Math.round(total * sampleRate);
   const out = new Float32Array(n);
   const nr = rng(seed + 1);
