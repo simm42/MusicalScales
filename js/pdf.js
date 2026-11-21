@@ -3,8 +3,8 @@
 
 import { chartPalette, svgToPng } from './ui/charts.js';
 import { Surface3D } from './ui/surface3d.js';
-import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS } from './ui/resultsPage.js';
-import { lastRuns, atLevel, surfaceRuns, sameShape } from './results.js';
+import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS, CLEARED_NOTE } from './ui/resultsPage.js';
+import { lastRuns, atLevel, surfaceRuns, sameShape, detailCleared } from './results.js';
 import { precisionAt } from './precision.js';
 
 let loading = null;
@@ -105,7 +105,8 @@ export async function makePdf(o) {
     text(item.name, 15, 'bold', [107, 63, 160]);
     const svg = chartsSvg(data, pal, W_SVG);
     if (!data.any) { text('No runs yet.', 10, 'normal', [102, 98, 111]); continue; }
-    if (o.charts.surface) {
+    if (o.charts.surface && item.piece && detailCleared(o.results[id])) text(CLEARED_NOTE, 9, 'normal', [102, 98, 111]);
+    else if (o.charts.surface) {
       const recent = o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10;
       const full = surfaceRuns(recent); // runs with more than half the notes missing are left out
       const runs = item.piece ? sameShape(full) : full; // a piece edited since: older runs don't line up

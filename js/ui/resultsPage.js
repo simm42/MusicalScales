@@ -2,7 +2,7 @@
 // the last 2 weeks, daily averages for 6 months, monthly all-time; and a
 // summary across the whole syllabus. Also hosts the PDF export controls.
 
-import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, sameShape, DAYS } from '../results.js';
+import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, sameShape, DAYS, detailCleared } from '../results.js';
 import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
 import { lineChart, multiLineChart, legendHtml, chartPalette } from './charts.js';
@@ -21,6 +21,9 @@ export function dateTime(ts) {
   const d = new Date(ts);
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
+/** A piece whose note-by-note detail was cleared after 6 months without practice. */
+export const CLEARED_NOTE = 'Not practised for over 6 months, so only its scores are kept (in the charts below) – the note-by-note detail of each run was cleared to save space. Practise it again to start a new picture.';
+
 export function playedHow(r) {
   if (r && r.pc) {
     const where = r.sec ? `bars ${r.sec[0]}–${r.sec[1]}` : 'whole piece';
@@ -172,16 +175,18 @@ export class ResultsPage {
     const edited = fullEnough.length - plotted.length;
     const left = last.length - fullEnough.length;
     const labels = (plotted.length && plotted[plotted.length - 1].labels) || (last.length && last[last.length - 1].labels) || [];
+    const cleared = !!item.piece && detailCleared(store[item.id]);
     this.body.innerHTML = `${levelNote}
       <div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
         ${edited ? `<p class="muted small">${edited} earlier run${edited === 1 ? ' is' : 's are'} left out because the piece has been edited since, so ${edited === 1 ? 'its' : 'their'} notes no longer line up. ${edited === 1 ? 'It is' : 'They are'} still in the charts and tables below.</p>` : ''}
         <p class="muted small">${item.piece ? 'Every note of the piece left to right (bar numbers along the front). Each run is a strip with one tile per note, raised if sharp and lowered if flat; bars not played in a run are left blank, so practising some bars shows just those.' : 'Notes of the scale left to right.'} Oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
-        <div class="surface-wrap"><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div></div>
+        <div class="surface-wrap"${cleared ? ' hidden' : ''}><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div>
+        ${cleared ? `<p class="notice">${esc(CLEARED_NOTE)}</p>` : ''}</div>
       <div class="res-block"><h3>Last 2 weeks – every run</h3>${legendHtml(undefined, true, pal)}${svg.twoWeeks || '<p class="muted">No runs in the last 2 weeks.</p>'}</div>
       <div class="res-block"><h3>Past 6 months – average per day</h3>${legendHtml(undefined, true, pal)}${svg.sixMonths || '<p class="muted">No runs in the past 6 months.</p>'}</div>
       ${svg.allTime ? `<div class="res-block"><h3>All time – average per month</h3>${legendHtml(undefined, true, pal)}${svg.allTime}</div>` : ''}
-      <div class="res-block"><h3>Recent runs</h3>${this.runsTable(data.twoWeeks.length ? data.twoWeeks : last)}</div>
+      <div class="res-block"><h3>Recent runs</h3>${this.runsTable(data.twoWeeks.length ? data.twoWeeks : last, cleared ? 'No runs in the last 6 months.' : undefined)}</div>
       ${last.length ? `<div class="res-block"><h3>Run in detail</h3>
         <div class="field"><label for="runPick">Choose one of the last ${last.length} runs</label>
           <select id="runPick">${last.slice().reverse().map((r) => `<option value="${esc(r.d)}">${esc(dateTime(r.d))} · ${Math.round(r.t)} / 100${playedHow(r) ? ' · ' + esc(playedHow(r)) : ''}</option>`).join('')}</select></div>
@@ -214,8 +219,8 @@ export class ResultsPage {
     el.prepend(note);
   }
 
-  runsTable(runs) {
-    if (!runs.length) return '<p class="muted">No runs yet.</p>';
+  runsTable(runs, none = 'No runs yet.') {
+    if (!runs.length) return `<p class="muted">${esc(none)}</p>`;
     const rows = runs.slice(-15).reverse().map((r) => ({ ...r, ...(r.lv ? atLevel(r, this.getPrecision()) : {}) })).map((r) => `<tr><td>${esc(dateTime(r.d))}</td><td style="text-align:left">${esc(playedHow(r) || '–')}</td><td>${Math.round(r.t)}</td><td>${Math.round(r.i)}</td><td>${Math.round(r.ti)}</td><td>${esc(r.e ?? '–')}</td></tr>`).join('');
     return `<div class="table-wrap"><table class="notes"><thead><tr><th>When</th><th style="text-align:left">Played</th><th>Total</th><th>Intonation</th><th>Timing</th><th>Errors</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }

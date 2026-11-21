@@ -35,6 +35,7 @@ import { PiecesPage } from './ui/piecesPage.js';
 import { pieceExercise, loadPieces, readPieceShare, addSharedPiece, sectionSequence, clampSection, pieceNoteLabels } from './pieces.js';
 import { hold as holdAwake, release as releaseAwake } from './wakelock.js';
 import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
+import { storageState, askToKeep } from './persist.js';
 import { loadCalibration, describeCalibration } from './calibration.js';
 import {
   loadList, saveList, makeItem, expandSettings, compactSettings, sameSettings,
@@ -64,7 +65,13 @@ if (list.some((x) => x.settings.instrument === 'other' && !x.settings.otherSetup
   list.forEach((x) => { if (x.settings.instrument === 'other') x.settings = compactSettings(expandSettings(x.settings)); });
   saveList(list);
 }
-let results = compactAll(loadResults());
+let results = loadResults();
+{
+  // pieces not practised for 6 months drop their note-by-note detail: save the smaller store
+  const before = JSON.stringify(results).length;
+  compactAll(results);
+  if (JSON.stringify(results).length !== before) saveResults(results);
+}
 // scores kept inside items by earlier versions move to the results store
 if (list.some((x) => migrateHistory(results, x))) { saveList(list); saveResults(results); }
 let activeId = prefs.activeId && list.some((x) => x.id === prefs.activeId) ? prefs.activeId : null;
@@ -550,6 +557,32 @@ async function startSession() {
   }
 }
 
+// ---------------------------------------------------------------- keeping the data (browser storage)
+// Browsers may clear a site's data (Safari: after 7 days without opening it); asking
+// them to keep it for good is up to the browser, so Config says what it decided.
+const KEEP_TEXT = {
+  kept: '✓ This browser has agreed to keep your syllabus, results and pieces until you delete them yourself. Exporting a copy now and then is still a good idea.',
+  'may-clear': 'This browser may delete your syllabus, results and pieces if the device runs short of space – and Safari deletes them after 7 days without opening the app. Installing the app (⬇ at the top) makes them safer. Export everything now and then to keep a copy.',
+  unknown: 'Export everything now and then to keep a copy: this browser does not say whether it will keep your data.',
+};
+async function showKeep(state) {
+  const s = state || await storageState();
+  $('keepInfo').textContent = KEEP_TEXT[s];
+  $('keepBtn').hidden = s !== 'may-clear';
+}
+let keepAsked = false;
+/** Ask (once a session) for the data to be kept – after something worth keeping was saved. */
+function askKeepOnce() {
+  if (keepAsked) return;
+  keepAsked = true;
+  askToKeep().then(showKeep);
+}
+$('keepBtn').addEventListener('click', async () => {
+  const s = await askToKeep();
+  showKeep(s);
+  if (s !== 'kept') $('keepInfo').textContent += ' The browser said no for now – browsers decide this themselves, often once the app is installed or used regularly.';
+});
+
 function finishSession(result) {
   const finished = session;
   session = null;
@@ -586,6 +619,7 @@ function finishSession(result) {
     renderList();
     if (resultsPage) resultsPage.invalidate();
     setStatus(`Finished – score ${Math.round(result.total)} / 100. ${saved ? `Saved to the results for “${item.name}”.` : NOT_SAVED}`);
+    if (saved) askKeepOnce();
   }
   // a piece: every run is kept (with the bars played), note by note across the whole piece
   if (exercise.isPiece && currentPiece) {
@@ -607,6 +641,7 @@ function finishSession(result) {
     const saved = saveResults(results);
     if (resultsPage) resultsPage.invalidate();
     setStatus(`Finished – score ${Math.round(result.total)} / 100${section ? ` for bars ${section.from + 1}–${section.to + 1}` : ''}. ${saved ? `Saved to the results for “${currentPiece.name}”.` : NOT_SAVED}`);
+    if (saved) askKeepOnce();
   }
 }
 
@@ -1551,6 +1586,9 @@ engine.onStall = () => {
 function init() {
   startAnalytics();
   setupPwa();
+  // the installed app with something to keep: ask straight away (browsers don't ask the person then)
+  const installed = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
+  if (installed && (list.length || Object.keys(results).length || loadPieces().length)) askKeepOnce(); else showKeep();
   warmMic();
   if (ANALYTICS_ON) $('privacyNote').textContent = 'Your sound, scores and settings never leave your device. Anonymous page visits are counted (no cookies, no personal data) to see how the site is used.';
   setupDebug();

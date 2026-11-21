@@ -6,6 +6,9 @@
 //   days   – runs older than a month, averaged per day
 //   months – day averages older than a year, averaged per month
 //
+// A piece not practised for 6 months (pieceDetailDays) keeps only its scores: its
+// full runs (the note-by-note detail, the largest part of the store) become summaries.
+//
 // Scores depend on the precision level, so every record keeps total,
 // intonation, timing and errors for all five levels in `lv`
 // (lv[level] = [t, i, ti, e]; errors are extra notes plus bow-change scrapes,
@@ -16,7 +19,7 @@ const KEY = 'scales.results.v1';
 const DAY = 86400000;
 const LEVELS = 5;
 
-export const RES = { fullRuns: 10, dayAfterDays: 30, monthAfterDays: 365 };
+export const RES = { fullRuns: 10, dayAfterDays: 30, monthAfterDays: 365, pieceDetailDays: 182 };
 
 export function loadResults() {
   try { return normaliseStore(JSON.parse(localStorage.getItem(KEY))); } catch { return {}; }
@@ -205,10 +208,20 @@ function mergeInto(agg, x) {
 
 function emptyRecord() { return { runs: [], older: [], days: [], months: [] }; }
 
-/** Apply the storage rules: 10 full runs, then summaries, then per-day, then per-month. */
+/** A piece's record whose full runs were cleared (not practised for 6 months): scores but no full runs. */
+export function detailCleared(rec) { return !!rec && !rec.runs.length && rec.older.length + rec.days.length + rec.months.length > 0; }
+
+/**
+ * Apply the storage rules: 10 full runs, then summaries, then per-day, then per-month.
+ * A piece not practised for RES.pieceDetailDays keeps no full runs at all.
+ */
 export function compact(rec, now = Date.now()) {
   rec.runs.sort((a, b) => a.d - b.d);
   while (rec.runs.length > RES.fullRuns) rec.older.push(summaryOf(rec.runs.shift()));
+  const newest = rec.runs.length ? rec.runs[rec.runs.length - 1].d : null;
+  if (newest != null && rec.runs.some((r) => r.pc) && now - newest > RES.pieceDetailDays * DAY) {
+    while (rec.runs.length) rec.older.push(summaryOf(rec.runs.shift()));
+  }
   rec.older.sort((a, b) => a.d - b.d);
   const dayCut = now - RES.dayAfterDays * DAY;
   const keepOlder = [];

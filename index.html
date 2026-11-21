@@ -126,6 +126,8 @@
         <input type="file" id="restoreFile" accept=".json,application/json" hidden>
       </div>
       <p class="muted small" id="backupMsg" role="status"></p>
+      <p class="small" id="keepInfo" role="status"></p>
+      <div class="row small"><button class="btn" type="button" id="keepBtn" hidden>Ask this browser to keep my data</button></div>
       <hr class="sep">
       <h2 class="sec-title">Fault-finding</h2>
       <p class="small muted" style="margin:0 0 6px">App version <b id="appVersion"></b> (saved in every test recording, and in its file name).</p>
@@ -367,6 +369,7 @@
           <li>The <b>3D picture</b> shows your last 10 runs note by note: hills are sharp notes, valleys are flat. Drag it to turn it round.</li>
           <li>The <b>line charts</b> show your scores over the last 2 weeks, the last 6 months, and all time.</li>
           <li><b>Run in detail</b>: choose any of your last 10 runs to see its full result again.</li>
+          <li>A <b>piece you haven't practised for 6 months</b> keeps its scores (the charts and the summary), but the note-by-note detail of its runs – the 3D picture and <b>Run in detail</b> – is cleared to save space on your device. Practise it again and a new picture starts.</li>
           <li><b>Recent runs</b> lists how each run was played: for a scale its rhythm and bowing, for a piece the bars played and the tempo (for example <i>whole piece · ♩ = 72 (75%)</i> – 75% of the written tempo). The PDF has the same table.</li>
           <li>The <b>Summary</b> shows one line for each exercise in your syllabus.</li>
           <li><b>Export PDF</b> makes a report to send to your teacher. Put your name in <b>Student name</b> on the Config tab so it's on the report. <b>More PDF options</b> lets you choose which exercises and charts to include.</li>
@@ -476,6 +479,17 @@
           <li>The screen stays on while the app is listening or playing – during a scale, ▶ Play, the tuner and the metronome – and for 2 minutes afterwards, so your phone doesn't lock in the middle.</li>
           <li>The microphone stays on while the app is open, so you're only asked once. You can turn this off in Config (<b>Keep the microphone on…</b>).</li>
           <li>On iPhone in Safari, to stop being asked about the microphone: tap <b>aA</b> in the address bar → <b>Website Settings</b> → <b>Microphone</b> → <b>Allow</b>.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Keeping your results safe</summary>
+        <p>Your syllabus, results and pieces are kept by your browser, on this device only. Browsers are allowed to delete a website's data – when the device runs short of space, and Safari after 7 days without opening the site – so:</p>
+        <ul>
+          <li>After your first saved run, the app asks the browser to keep your data for good. The browser decides: Chrome and Edge usually agree once the app is installed or used often, Safari decides by itself, and Firefox may ask you – choose <b>Allow</b>.</li>
+          <li>Config, under <b>Move to another device</b>, says whether this browser has agreed. If it hasn't, <b>Ask this browser to keep my data</b> asks again.</li>
+          <li><b>Install the app</b> (⬇ at the top): installed apps are much less likely to be cleared. On iPhone, the app on your Home Screen isn't affected by Safari's 7-day rule.</li>
+          <li>Use <b>⬇ Export everything</b> in Config now and then to keep a copy somewhere safe (Files, iCloud Drive, email to yourself). <b>⬆ Import everything</b> brings it back.</li>
         </ul>
       </details>
 
