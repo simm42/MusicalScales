@@ -4,7 +4,7 @@
 import { chartPalette, svgToPng } from './ui/charts.js';
 import { Surface3D } from './ui/surface3d.js';
 import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS } from './ui/resultsPage.js';
-import { lastRuns, atLevel, surfaceRuns } from './results.js';
+import { lastRuns, atLevel, surfaceRuns, sameShape } from './results.js';
 import { precisionAt } from './precision.js';
 
 let loading = null;
@@ -107,10 +107,12 @@ export async function makePdf(o) {
     if (!data.any) { text('No runs yet.', 10, 'normal', [102, 98, 111]); continue; }
     if (o.charts.surface) {
       const recent = o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10;
-      const runs = surfaceRuns(recent); // runs with more than half the notes missing are left out
+      const full = surfaceRuns(recent); // runs with more than half the notes missing are left out
+      const runs = item.piece ? sameShape(full) : full; // a piece edited since: older runs don't line up
       text(`Last ${runs.length} runs - how sharp or flat each note was (oldest at the back)`, 11, 'bold');
       if (item.piece) text('Every note of the piece left to right, with bar numbers along the front. Each run is a strip with one tile per note, coloured by how in tune it was. Bars not played in a run are left blank.', 9, 'normal', [102, 98, 111]);
-      if (runs.length < recent.length) text(`${recent.length - runs.length} run${recent.length - runs.length === 1 ? '' : 's'} with more than half the notes missing left out.`, 9, 'normal', [102, 98, 111]);
+      if (full.length < recent.length) text(`${recent.length - full.length} run${recent.length - full.length === 1 ? '' : 's'} with more than half the notes missing left out.`, 9, 'normal', [102, 98, 111]);
+      if (runs.length < full.length) text(`${full.length - runs.length} earlier run${full.length - runs.length === 1 ? '' : 's'} left out: the piece has been edited since.`, 9, 'normal', [102, 98, 111]);
       const c = document.createElement('canvas');
       c.width = 1200; c.height = 608;
       const labels = (runs.length && runs[runs.length - 1].labels) || [];

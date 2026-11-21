@@ -3,7 +3,7 @@
 import { test, eq, assert, near } from './harness.js';
 import { parsePiece, extractPieceText, parseKey } from '../js/pieceText.js';
 import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, claudeLink, pieceShareLink, readPieceShare, addSharedPiece, barStarts, clampSection, sectionSequence, pieceNoteLabels } from '../js/pieces.js';
-import { makeRun, recordRun } from '../js/results.js';
+import { makeRun, recordRun, sameShape } from '../js/results.js';
 import { playedHow } from '../js/ui/resultsPage.js';
 import { instrumentInfo, detectionRange } from '../js/instruments.js';
 import { renderPerformance } from '../js/audio/synth.js';
@@ -385,4 +385,18 @@ test('pieces: a run of some bars is saved note by note across the whole piece', 
   const store = {};
   for (let k = 0; k < 12; k++) recordRun(store, 'piece:x', { ...run, d: 1000 + k, pc: 1, sec: [2, 3] }, 2000);
   assert(store['piece:x'].older.every((o) => o.pc === 1 && o.sec[0] === 2), 'older runs keep the bars played');
+});
+
+test('pieces: Play lasts until the end of rests at the end of the music', () => {
+  const seq = pieceSequence(parsePiece(head('C', '4/4') + 'C2 D2 E4 | Z |]\n'), violin);
+  const perf = renderPerformance(seq, { sampleRate: 8000, bpm: 60, detune: () => 0, noise: 0, leadIn: 0.5, tail: 0.2 });
+  assert(perf.total >= 0.5 + 8, 'the whole-bar rest at the end is played out: ' + perf.total);
+  assert(perf.total < 0.5 + 8 + 0.5, 'and then it stops');
+  const sec = sectionSequence(seq, { from: 1, to: 1 }); // just the bar of rest: nothing to play
+  eq(sec.events.length, 0);
+});
+
+test('pieces: runs from before a piece was edited are left off its 3D chart', () => {
+  eq(sameShape([{ steps: [1, 2] }, { steps: [1, 2, 3] }, { steps: [null, 2, 3] }]).length, 2);
+  eq(sameShape([]), []);
 });

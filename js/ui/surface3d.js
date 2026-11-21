@@ -77,7 +77,13 @@ export class Surface3D {
     // base plane outline and the zero line grid
     ctx.lineWidth = lw;
     ctx.strokeStyle = palette.grid;
-    const corners = [[X(0), Z(0)], [X(N - 1), Z(0)], [X(N - 1), Z(Rr - 1)], [X(0), Z(Rr - 1)]];
+    // a piece (perNote): one strip per run, each tile one note; strips are narrower than the gap between runs
+    const per = !!this.o.perNote;
+    const half = R === 1 ? 0.3 : Math.min(0.3, (1.6 / (R - 1)) * 0.4);
+    // strips fit inside the same depth as a scale's surface, so the labels along the front stay in view
+    const zOf = (j) => (!per ? Z(j) : R === 1 ? 0 : -0.8 + half + ((1.6 - 2 * half) * j) / (R - 1));
+    const zLo = per ? zOf(0) - half : Z(0), zHi = per ? zOf(R - 1) + half : Z(Rr - 1);
+    const corners = [[X(0), zLo], [X(N - 1), zLo], [X(N - 1), zHi], [X(0), zHi]];
     ctx.beginPath();
     corners.forEach(([x, z], k) => { const p = proj(x, -0.55, z); if (k) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y); });
     ctx.closePath();
@@ -94,15 +100,14 @@ export class Surface3D {
     }
     // quads, far to near
     const quads = [];
-    if (this.o.perNote) {
+    if (per) {
       // a piece: each run is its own strip, one tile per note at that note's height and colour,
       // so every note played in a run shows and the bars not played stay blank
-      const half = Rr === 1 ? 0.3 : (0.8 / (Rr - 1)) * 0.8;
       const dx = 1.4 / (N - 1);
       for (let j = 0; j < R; j++) for (let i = 0; i < N; i++) {
         const v = val(j, i);
         if (v == null) continue;
-        const z = R === 1 ? 0 : Z(j), x0 = Math.max(X(0), X(i) - dx), x1 = Math.min(X(N - 1), X(i) + dx);
+        const z = zOf(j), x0 = Math.max(X(0), X(i) - dx), x1 = Math.min(X(N - 1), X(i) + dx);
         const pts = [proj(x0, Y(v), z - half), proj(x1, Y(v), z - half), proj(x1, Y(v), z + half), proj(x0, Y(v), z + half)];
         quads.push({ pts, depth: pts.reduce((a, p) => a + p.z, 0) / 4, avg: Math.abs(v) });
       }
@@ -135,7 +140,7 @@ export class Surface3D {
     for (let i = 0; i < N; i++) {
       const v = val(Rr - 1, i);
       if (v == null) { pen = false; continue; }
-      const p = proj(X(i), Y(v), Z(Rr - 1));
+      const p = proj(X(i), Y(v), per ? zOf(R - 1) : Z(Rr - 1));
       if (pen) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
       pen = true;
     }
@@ -149,7 +154,7 @@ export class Surface3D {
       let lastAt = -Infinity;
       for (let i = 0; i < N; i++) {
         if (!labels[i] || i - lastAt < every) continue;
-        const p = proj(X(i), -0.62, Z(Rr - 1) + 0.12);
+        const p = proj(X(i), -0.62, zHi + 0.12);
         ctx.fillText(labels[i], p.x, p.y + 12);
         lastAt = i;
       }
@@ -164,7 +169,7 @@ export class Surface3D {
     const dEvery = Math.max(1, Math.ceil(R / 5));
     runs.forEach((run, j) => {
       if (j % dEvery !== 0 && j !== R - 1) return;
-      const p = proj(X(N - 1) + 0.12, -0.55, Z(R === 1 ? 0 : j));
+      const p = proj(X(N - 1) + 0.12, -0.55, per ? zOf(j) : Z(R === 1 ? 0 : j));
       const d = new Date(run.d);
       ctx.fillText(`${d.getDate()}/${d.getMonth() + 1}${j === R - 1 ? ' (newest)' : ''}`, p.x + 4, p.y + 4);
     });

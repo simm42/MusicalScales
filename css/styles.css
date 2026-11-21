@@ -453,4 +453,5 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 .section-marks { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }
 .section-marks div { position: absolute; border-radius: 6px; background: color-mix(in srgb, var(--accent) 15%, transparent); outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent); outline-offset: -2px; }
 .section-marks div.pending { background: transparent; outline-style: dashed; }
-#score.choosing { cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+/* sideways drags choose bars; up-and-down still scrolls the score (tap the first bar, scroll, tap the last) */
+#score.choosing { cursor: crosshair; touch-action: pan-y; user-select: none; -webkit-user-select: none; }

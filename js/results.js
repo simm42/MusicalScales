@@ -226,6 +226,13 @@ export function surfaceRuns(runs) {
   });
 }
 
+/** A piece's runs that match its newest run note for note (runs from before the piece was edited don't line up). */
+export function sameShape(runs) {
+  if (!runs.length) return runs;
+  const n = (runs[runs.length - 1].steps || []).length;
+  return runs.filter((r) => (r.steps || []).length === n);
+}
+
 /** Every individual run since a time (full and summarised), oldest first. */
 export function runsSince(store, id, since, level = 2) {
   const rec = recOf(store, id);

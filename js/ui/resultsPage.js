@@ -2,7 +2,7 @@
 // the last 2 weeks, daily averages for 6 months, monthly all-time; and a
 // summary across the whole syllabus. Also hosts the PDF export controls.
 
-import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, DAYS } from '../results.js';
+import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, sameShape, DAYS } from '../results.js';
 import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
 import { lineChart, multiLineChart, legendHtml, chartPalette } from './charts.js';
@@ -163,12 +163,16 @@ export class ResultsPage {
     const svg = chartsSvg(data, pal, width);
     const last = data.last10;
     // runs with more than half the notes missing would only draw holes
-    const plotted = surfaceRuns(last);
-    const left = last.length - plotted.length;
+    const fullEnough = surfaceRuns(last);
+    // a piece edited since: its older runs' notes no longer line up with the piece
+    const plotted = item.piece ? sameShape(fullEnough) : fullEnough;
+    const edited = fullEnough.length - plotted.length;
+    const left = last.length - fullEnough.length;
     const labels = (plotted.length && plotted[plotted.length - 1].labels) || (last.length && last[last.length - 1].labels) || [];
     this.body.innerHTML = `${levelNote}
       <div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
+        ${edited ? `<p class="muted small">${edited} earlier run${edited === 1 ? ' is' : 's are'} left out because the piece has been edited since, so ${edited === 1 ? 'its' : 'their'} notes no longer line up. ${edited === 1 ? 'It is' : 'They are'} still in the charts and tables below.</p>` : ''}
         <p class="muted small">${item.piece ? 'Every note of the piece left to right (bar numbers along the front). Each run is a strip with one tile per note, raised if sharp and lowered if flat; bars not played in a run are left blank, so practising some bars shows just those.' : 'Notes of the scale left to right.'} Oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
         <div class="surface-wrap"><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div></div>
       <div class="res-block"><h3>Last 2 weeks – every run</h3>${legendHtml(undefined, true, pal)}${svg.twoWeeks || '<p class="muted">No runs in the last 2 weeks.</p>'}</div>

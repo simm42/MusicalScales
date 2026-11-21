@@ -712,7 +712,15 @@ function pieceDeleted(id) {
 // Play, the run and its score are then for those bars only; the results keep which bars were played.
 
 function setSection(sec) {
-  section = currentPiece ? clampSection(sec, seq.bars) : null;
+  const want = currentPiece ? clampSection(sec, seq.bars) : null;
+  if (want && !sectionSequence(seq, want).events.length) {
+    // only rests: nothing to play or listen for
+    showSection();
+    drawSectionMarks();
+    $('sectionLabel').textContent = `Bars ${want.from + 1}–${want.to + 1} are only rests – choose bars with notes`;
+    return;
+  }
+  section = want;
   prefs.pieceSections = prefs.pieceSections || {};
   if (currentPiece) { if (section) prefs.pieceSections[currentPiece.id] = section; else delete prefs.pieceSections[currentPiece.id]; }
   savePrefs();
@@ -733,7 +741,7 @@ function showSection() {
   $('sectionBtn').textContent = on ? '✓ Done' : '✂ Choose bars';
   $('sectionAllBtn').hidden = !section || on;
   $('sectionLabel').textContent = on
-    ? (choosing.first != null ? `From bar ${choosing.first + 1} – now tap the last bar` : 'Drag across the bars, or tap the first bar')
+    ? (choosing.first != null ? `From bar ${choosing.first + 1} – now tap the last bar (scroll to it if needed)` : 'Drag across the bars, or tap the first bar')
     : section ? `Bars ${section.from + 1}–${section.to + 1}` : '';
   $('score').classList.toggle('choosing', on);
 }
@@ -801,6 +809,9 @@ $('sectionAllBtn').addEventListener('click', () => setSection(null));
   });
   score.addEventListener('pointermove', (e) => {
     if (!choosing || !down) return;
+    // dragging near the top or bottom of the score box scrolls it, to reach bars further on
+    const wrap = $('scoreWrap'), wr = wrap.getBoundingClientRect();
+    if (e.clientY > wr.bottom - 30) wrap.scrollTop += 14; else if (e.clientY < wr.top + 30) wrap.scrollTop -= 14;
     const b = barAt(e.clientX, e.clientY);
     if (b == null || (b === down.bar && !down.moved)) return;
     down.moved = true;
