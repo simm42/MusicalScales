@@ -89,13 +89,14 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   }
   if (cur.length) { lines.push(cur); lineUsed.push(used); }
 
-  // compact: tighter line spacing for short (landscape phone) screens
-  const lineH = (clefMode === 'change' ? (compact ? 108 : 130) : (compact ? 140 : 170)) + (syllables ? 22 : 0);
   // a treble clef with a small 8 below (tenor voice: sung an octave lower)
   const homeAnn = exercise.info.clefAnnotation || undefined;
   const annFor = (c) => (c === exercise.info.clef ? homeAnn : undefined);
-  const topPad = clefMode === 'change' ? (compact ? 34 : 40) : (compact ? 56 : 70);
-  const height = lines.length * lineH + 30;
+
+  // Each line gets the room its own music needs: notes high above or low below the stave
+  // (ledger lines), stems, fingering, slurs, dots and sol-fa syllables – music close to the
+  // stave packs tightly, so more lines fit on a phone. compact: a little tighter still.
+  const { topLine, height } = lineLayout(lines, glyphs, clefs, { compact, syllables: !!syllables, clefAnnotation: !!homeAnn });
   const ctx = newRenderer(container, width, height);
 
   const noteObjs = new Array(glyphs.length);
@@ -103,7 +104,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   const staves = [];
 
   lines.forEach((line, li) => {
-    const y = topPad + li * lineH - 20;
+    const y = topLine[li] - 4 * SP; // a stave's box starts four spaces above its top line
     const isLast = li === lines.length - 1;
     // a short final line keeps natural spacing instead of stretching across the page
     const staveW = isLast && lines.length > 1 ? Math.min(width - 12, Math.max(lineUsed[li] * 1.1 + 20, 200)) : width - 12;
@@ -338,6 +339,74 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     for (const b of barBoxes) if (b) { b.x0 *= s; b.x1 *= s; b.y0 *= s; b.y1 *= s; }
   }
   return { arrowTargets: targets, glyphTargets, barBoxes };
+}
+
+// ---------------------------------------------------------------- spacing between lines of music
+
+const SP = 10; // VexFlow's space between two stave lines
+// the diatonic step (7 × octave + letter) that sits on VexFlow's line 0 for each clef
+const CLEF_BASE = { treble: 28, bass: 16, alto: 22, tenor: 20, percussion: 28 };
+
+/** A note's place on the stave: 1 = bottom line, 3 = middle line, 5 = top line (halves are spaces). */
+export function staveLineOf(n, clef) {
+  return (7 * n.o + n.l - (CLEF_BASE[clef] ?? 28)) / 2;
+}
+
+/**
+ * Where each line's top stave line goes, and the height of the whole score.
+ * Room above a line: its highest note (or stem), the follow arrow, fingering, slurs and
+ * tuplet numbers. Room below: its lowest note (or stem), dots and slurs under the notes,
+ * the 8 under a tenor's clef and sol-fa syllables. Lines are never closer than a minimum.
+ */
+export function lineLayout(lines, glyphs, clefs, { compact = false, syllables = false, clefAnnotation = false } = {}) {
+  const midOf = (gi) => {
+    const ls = glyphs[gi].notes.map((n) => staveLineOf(n, clefs[gi]));
+    return (Math.min(...ls) + Math.max(...ls)) / 2;
+  };
+  const extents = lines.map((line) => {
+    // stems follow VexFlow's rule (middle of the chord below the middle line: stem up);
+    // beamed notes share one direction, from the average of the group
+    const groups = new Map();
+    for (const gi of line) {
+      const g = glyphs[gi];
+      if (g.kind !== 'note' || g.beamGroup == null) continue;
+      const e = groups.get(g.beamGroup) || { sum: 0, n: 0 };
+      e.sum += midOf(gi); e.n += 1;
+      groups.set(g.beamGroup, e);
+    }
+    let top = 0, bottom = 4 * SP; // the stave itself, measured down from its top line
+    let finger = false, slur = false, tuplet = false, dots = false;
+    for (const gi of line) {
+      const g = glyphs[gi];
+      if (g.kind !== 'note' || !g.notes.length) continue;
+      const ls = g.notes.map((n) => staveLineOf(n, clefs[gi]));
+      const hi = Math.max(...ls), lo = Math.min(...ls);
+      const grp = g.beamGroup != null && groups.get(g.beamGroup);
+      const stemUp = (grp && grp.n > 1 ? grp.sum / grp.n : (hi + lo) / 2) < 3;
+      const yHi = (5 - hi) * SP, yLo = (5 - lo) * SP;
+      const acc = g.notes.some((n) => n.a);
+      top = Math.min(top, stemUp ? yHi - 35 : yHi - (acc ? 14 : 6));
+      bottom = Math.max(bottom, stemUp ? yLo + 6 : yLo + 35);
+      if (g.notes.some((n) => n.f != null)) finger = true;
+      if (g.slurGroup != null) slur = true;
+      if (g.tuplet) tuplet = true;
+      if (g.articulation) dots = true;
+    }
+    const above = -top + 22 + (finger ? 14 : 0) + (slur || tuplet ? 10 : 0);
+    let below = bottom - 4 * SP + 8 + (slur || dots ? 8 : 0) + (clefAnnotation ? 10 : 0);
+    if (syllables) below = Math.max(below, Math.max(26, bottom - 4 * SP + 20) + 8);
+    return { above, below };
+  });
+  const PAD = 6;
+  const minStep = compact ? 76 : 86; // top line to top line, at least
+  const topLine = [];
+  extents.forEach((e, li) => {
+    topLine.push(li === 0 ? PAD + e.above
+      : Math.max(topLine[li - 1] + 4 * SP + extents[li - 1].below + e.above, topLine[li - 1] + minStep));
+  });
+  const last = extents.length - 1;
+  const height = Math.ceil(last < 0 ? 60 : topLine[last] + 4 * SP + extents[last].below + PAD);
+  return { topLine, height, extents };
 }
 
 /** Add a CSS state class to a rendered event's note. */
