@@ -99,6 +99,9 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   const { topLine, height } = lineLayout(lines, glyphs, clefs, { compact, syllables: !!syllables, clefAnnotation: !!homeAnn });
   const ctx = newRenderer(container, width, height);
   const pencil = getComputedStyle(container).getPropertyValue('--score-pencil').trim() || '#8f8a99';
+  // VexFlow draws ledger lines in a fixed dark grey (#444), almost invisible in dark mode:
+  // use the score's own ink instead (at VexFlow's usual thickness)
+  const ledger = { strokeStyle: fgColor(container), lineWidth: 1.4 };
 
   const noteObjs = new Array(glyphs.length);
   const staveOf = new Array(glyphs.length);
@@ -110,6 +113,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     // a short final line keeps natural spacing instead of stretching across the page
     const staveW = isLast && lines.length > 1 ? Math.min(width - 12, Math.max(lineUsed[li] * 1.1 + 20, 200)) : width - 12;
     const stave = new V.Stave(5, y, staveW);
+    stave.setDefaultLedgerLineStyle(ledger);
     staves[li] = stave;
     const lineClef = clefs[line[0]];
     const lineFifths = fifthsOf(line[0]);
