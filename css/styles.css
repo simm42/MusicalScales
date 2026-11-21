@@ -17,6 +17,7 @@
   --accent-soft: #eee6f8;
   --focus: #7d4fc0;
   --score-ink: #1c1a22;
+  --score-pencil: #8b8794; /* position-change lines: like pencil, lighter than the staves */
   --good: #1f8a4c; --good-rgb: 31, 138, 76;
   --warn: #c98a00; --warn-rgb: 201, 138, 0;
   --bad: #c62f2f;  --bad-rgb: 198, 47, 47;
@@ -28,7 +29,7 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #151419; --surface: #1e1d24; --surface-2: #28262f; --fg: #ece9f2; --muted: #a29dab; --border: #38353f;
-    --accent: #b79cf0; --accent-fg: #1a1325; --accent-soft: #2e2540; --focus: #b79cf0; --score-ink: #ece9f2;
+    --accent: #b79cf0; --accent-fg: #1a1325; --accent-soft: #2e2540; --focus: #b79cf0; --score-ink: #ece9f2; --score-pencil: #8f8a99;
     --good: #4cc47e; --good-rgb: 76, 196, 126; --warn: #f2c14e; --warn-rgb: 242, 193, 78; --bad: #ff6b6b; --bad-rgb: 255, 107, 107;
     --missing: #77726b; --shadow: 0 1px 2px rgba(0,0,0,.4);
   }
@@ -36,7 +37,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #151419; --surface: #1e1d24; --surface-2: #28262f; --fg: #ece9f2; --muted: #a29dab; --border: #38353f;
-  --accent: #b79cf0; --accent-fg: #1a1325; --accent-soft: #2e2540; --focus: #b79cf0; --score-ink: #ece9f2;
+  --accent: #b79cf0; --accent-fg: #1a1325; --accent-soft: #2e2540; --focus: #b79cf0; --score-ink: #ece9f2; --score-pencil: #8f8a99;
   --good: #4cc47e; --good-rgb: 76, 196, 126; --warn: #f2c14e; --warn-rgb: 242, 193, 78; --bad: #ff6b6b; --bad-rgb: 255, 107, 107;
   --missing: #77726b; --shadow: 0 1px 2px rgba(0,0,0,.4);
 }
@@ -326,6 +327,17 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   .footer-note { display: none; }
 }
 .res-block svg { width: 100%; height: auto; display: block; }
+
+/* fingering: tap a note, choose a finger or a position change */
+#score.fingering { cursor: pointer; }
+.finger-pop {
+  position: fixed; z-index: 40; display: flex; flex-direction: column; gap: 6px; padding: 8px 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); max-width: 300px;
+}
+.finger-pop .fp-title { font-weight: 600; font-size: 13px; }
+.finger-pop .fp-row { display: flex; gap: 6px; flex-wrap: wrap; }
+.finger-pop .btn { min-width: 38px; padding: 6px 10px; }
+.finger-pop .btn.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 
 /* ---------- TV mode: the phone's screen cast to a TV ----------
    The music is drawn small (renderScore's scale) so much more of it fits; the

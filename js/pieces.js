@@ -78,6 +78,7 @@ export function pieceSequence(P, info) {
       if (pendingClef) { g.clefChange = pendingClef; clef = pendingClef; g.clef = clef; pendingClef = null; }
       if (t.kind === 'note' && slurOpen) g.slurGroup = slurId;
       if (t.art && k === 0) g.articulation = t.art;
+      if (t.shift && k === 0) g.shift = true; // a position change before this note
       if (k < parts.length - 1) g.tieNext = true;
       if (k > 0) g.tiedFrom = true; // the rest of a long note written as tied notes (fingering only on the first)
       glyphs.push(g);
@@ -241,6 +242,96 @@ export function setTempoLine(text, bpm) {
   const line = `Q: 1/4=${v}`;
   if (q >= 0) lines[q] = line; else if (k >= 0) lines.splice(k, 0, line); else lines.unshift(line);
   return lines.join('\n');
+}
+
+// ---------------------------------------------------------------- editing fingering and position changes
+// Tapping a note on the Practice page edits the piece's text in place: the note is found by
+// where it is written (each glyph keeps srcLine and srcCol, 1-based), so nothing else changes.
+
+const NOTE_AT = /^(\^\^|\^|__|_|=)?([A-Ga-g])([,']*)/;
+function noteAt(s, j) {
+  const m = NOTE_AT.exec(s.slice(j));
+  if (!m) return null;
+  let o = m[2] === m[2].toUpperCase() ? 4 : 5;
+  for (const c of m[3]) o += c === "'" ? 1 : -1;
+  return { l: 'CDEFGAB'.indexOf(m[2].toUpperCase()), o, len: m[0].length };
+}
+
+/** Where the decorations (and spaces) written just before position ci begin – they belong to the note at ci. */
+function decorationsStart(s, ci, stopAt = 0) {
+  let k = ci;
+  while (k > stopAt) {
+    const c = s[k - 1];
+    if (c === ' ' || c === '\t' || c === '.') { k--; continue; }
+    if (c === '!' || c === '+') {
+      const p = s.lastIndexOf(c, k - 2);
+      if (p < stopAt || !/^[A-Za-z0-9+\-<>().\/]*$/.test(s.slice(p + 1, k - 1))) break;
+      k = p;
+      continue;
+    }
+    break;
+  }
+  return k;
+}
+
+function editLine(text, line, fn) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  const li = line - 1;
+  if (!(li >= 0 && li < lines.length)) return text;
+  const r = fn(lines[li]);
+  if (r == null) return text;
+  lines[li] = r;
+  return lines.join('\n');
+}
+
+const stripFingers = (seg) => seg.replace(/![0-5]!/g, '');
+
+/**
+ * Set (finger 0–5) or remove (null) the fingering of one note, found by where it is written.
+ * In a double stop, `note` ({ l, o }) says which of its notes.
+ * @returns the new text (unchanged if the note can't be found)
+ */
+export function setFingering(text, { line, col }, note, finger) {
+  const mark = finger == null ? '' : `!${finger}!`;
+  return editLine(text, line, (s) => {
+    const ci = col - 1;
+    if (s[ci] !== '[') {
+      if (!noteAt(s, ci)) return null;
+      const k = decorationsStart(s, ci);
+      return s.slice(0, k) + stripFingers(s.slice(k, ci)) + mark + s.slice(ci);
+    }
+    // a double stop: the fingering goes inside the brackets, just before its note
+    const close = s.indexOf(']', ci);
+    if (close < 0) return null;
+    let j = ci + 1, first = true;
+    while (j < close) {
+      const c = s[j];
+      if (c === ' ' || c === '-' || c === '/' || /\d/.test(c)) { j++; continue; }
+      if (c === '!') { const e = s.indexOf('!', j + 1); if (e < 0 || e > close) return null; j = e + 1; continue; }
+      const n = noteAt(s, j);
+      if (!n) return null;
+      if (n.l === note.l && n.o === note.o) {
+        const k = decorationsStart(s, j, ci + 1);
+        let out = s.slice(0, k) + stripFingers(s.slice(k, j)) + mark + s.slice(j);
+        // a fingering written before the [ belongs to its first note
+        if (first) { const b = decorationsStart(out, ci); out = out.slice(0, b) + stripFingers(out.slice(b, ci)) + out.slice(ci); }
+        return out;
+      }
+      first = false;
+      j += n.len;
+    }
+    return null;
+  });
+}
+
+/** Add (on) or remove a position change (!shift!) before one note, found by where it is written. */
+export function setShift(text, { line, col }, on) {
+  return editLine(text, line, (s) => {
+    const ci = col - 1;
+    if (s[ci] !== '[' && !noteAt(s, ci)) return null;
+    const k = decorationsStart(s, ci);
+    return s.slice(0, k) + s.slice(k, ci).replace(/!shift!/gi, '') + (on ? '!shift!' : '') + s.slice(ci);
+  });
 }
 
 /** Header (up to and including the first K: line) and the music after it. */

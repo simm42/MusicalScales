@@ -16,6 +16,7 @@
 //   Bars:      |   ||   |]   repeats |: … :| (played twice)
 //   Ties:      A2-A   Slurs: (ABc)   Double stops: [DA] or [D2A2]
 //   Staccato:  .A (a dot)   Tenuto: !tenuto!A (a line) – under a slur, a little gap before the next note
+//   Position change: !shift!A – a light pencilled slash before the note (as teachers mark a shift)
 //   Fingering: !0!A … !4!A (!5! too); in a double stop [!1!D!3!A]. Kept as note.f and shown above the note
 //   Triplets:  (3abc   Dotted pairs: A>B (= A3/2 B/2)   A<B
 //   Changes in the middle:  [K:D] [M:3/4] [L:1/16] [Q:120] or a K:/M:/L: line
@@ -97,6 +98,7 @@ export function parsePiece(text) {
   let pendingBroken = null;        // factor for the next note after > or <
   let pendingArt = null;           // 'staccato' (.) or 'tenuto' (!tenuto!) for the next note
   let pendingFinger = null;        // fingering (!0! … !5!) for the next note
+  let pendingShift = false;        // a position change (!shift!) before the next note
   let repeatFrom = 0;              // token index where the current repeat starts
   let sawVoice = false;
   const err = (line, col, message) => errors.push({ line: line + 1, col: col + 1, message });
@@ -170,6 +172,7 @@ export function parsePiece(text) {
         const name = j < 0 ? '' : s.slice(i + 1, j).toLowerCase();
         if (name === 'staccato' || name === 'tenuto') pendingArt = name;
         else if (/^[0-5]$/.test(name)) pendingFinger = Number(name);
+        else if (name === 'shift') pendingShift = true;
         i = j < 0 ? s.length : j + 1;
         continue;
       }
@@ -306,7 +309,9 @@ export function parsePiece(text) {
         : { kind: 'note', notes, beats, nominal, tie: false, slurStart: pendingSlurStart > 0, slurEnd: false, line: li + 1, col: col + 1, tuplet };
       if (!restKind && pendingSlurStart) { slurDepth += pendingSlurStart; pendingSlurStart = 0; }
       if (!restKind && pendingArt) tok.art = pendingArt;
+      if (!restKind && pendingShift) tok.shift = true;
       pendingArt = null;
+      pendingShift = false;
       pendingFinger = null;
       if (tok.kind === 'note' && s[j] === '-') { tok.tie = true; j++; }
       if (tupletLeft === 0) curTuplet = null;

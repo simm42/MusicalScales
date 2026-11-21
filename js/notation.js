@@ -81,7 +81,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     let j = i;
     while (j + 1 < glyphs.length && glyphs[j + 1].stepIndex === glyphs[i].stepIndex) j++;
     const chunk = glyphs.slice(i, j + 1).map((g, k) => i + k);
-    const w = chunk.reduce((a, gi) => a + (GLYPH_W[glyphs[gi].dur] || 30) + (glyphs[gi].notes.some((n) => n.a) ? 8 : 0), 0) + (piece ? 12 : 0);
+    const w = chunk.reduce((a, gi) => a + (GLYPH_W[glyphs[gi].dur] || 30) + (glyphs[gi].notes.some((n) => n.a) ? 8 : 0) + (glyphs[gi].shift ? 10 : 0), 0) + (piece ? 12 : 0);
     if (cur.length && used + w > width - 20) { lines.push(cur); lineUsed.push(used); cur = []; used = startW; }
     cur.push(...chunk);
     used += w;
@@ -98,6 +98,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   // stave packs tightly, so more lines fit on a phone. compact: a little tighter still.
   const { topLine, height } = lineLayout(lines, glyphs, clefs, { compact, syllables: !!syllables, clefAnnotation: !!homeAnn });
   const ctx = newRenderer(container, width, height);
+  const pencil = getComputedStyle(container).getPropertyValue('--score-pencil').trim() || '#8f8a99';
 
   const noteObjs = new Array(glyphs.length);
   const staveOf = new Array(glyphs.length);
@@ -129,6 +130,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     };
 
     const tickables = [];
+    const withAcc = new Set(); // notes drawn with an accidental (a position-change line goes further left)
     let clef = lineClef;
     for (const gi of line) {
       const g = glyphs[gi];
@@ -143,7 +145,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
         note = new V.StaveNote({ clef, keys: [REST_KEY[clef]], duration: g.dur.replace('d', '') + 'r' });
       } else {
         note = new V.StaveNote({ clef, keys: g.notes.map(vexKey), duration: g.dur.replace('d', ''), auto_stem: true });
-        g.notes.forEach((n, k) => { const a = accFor(n); if (a) note.addModifier(new V.Accidental(a), k); });
+        g.notes.forEach((n, k) => { const a = accFor(n); if (a) { note.addModifier(new V.Accidental(a), k); withAcc.add(gi); } });
       }
       if (g.dur.endsWith('d')) V.Dot.buildAndAttach([note], { all: true });
       noteObjs[gi] = note;
@@ -209,6 +211,25 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     new V.Formatter().joinVoices([voice]).format([voice], staveW + 5 - stave.getNoteStartX() - 25);
     voice.draw(ctx, stave);
     beams.forEach((b) => b.setContext(ctx).draw());
+
+    // position changes: a light, pencilled slash just before the note, leaning about 7.5° from
+    // upright, from two spaces below the stave to two spaces above it
+    for (const gi of line) {
+      if (!glyphs[gi].shift || !noteObjs[gi]) continue;
+      const note = noteObjs[gi];
+      const x = note.getAbsoluteX() - (withAcc.has(gi) ? 16 : 6);
+      const yTop = stave.getYForLine(0) - 2 * SP, yBot = stave.getYForLine(4) + 2 * SP;
+      const dx = (yBot - yTop) * Math.tan((7.5 * Math.PI) / 180);
+      ctx.save();
+      ctx.setStrokeStyle(pencil);
+      ctx.setLineWidth(1.6);
+      if (ctx.setLineCap) ctx.setLineCap('round');
+      ctx.beginPath();
+      ctx.moveTo(x - dx / 2, yBot);
+      ctx.lineTo(x + dx / 2, yTop);
+      ctx.stroke();
+      ctx.restore();
+    }
     tuplets.forEach((t) => t.setContext(ctx).draw());
     // ties: to the next note on the same line, or running off the end of the line
     if (piece) {
@@ -298,7 +319,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
       const note = noteObjs[gi];
       if (!note) continue;
       const ys = note.getYs ? note.getYs() : [stave.getYForLine(0)];
-      glyphTargets[gi] = { x: note.getAbsoluteX() + note.getGlyphWidth() / 2, y: Math.min(stave.getYForLine(0), ...ys) - 8, line: li, staveEnd: stave.getX() + stave.getWidth() - 6 };
+      glyphTargets[gi] = { x: note.getAbsoluteX() + note.getGlyphWidth() / 2, y: Math.min(stave.getYForLine(0), ...ys) - 8, ys: ys.slice(), line: li, staveEnd: stave.getX() + stave.getWidth() - 6 };
     }
     if (!piece) return;
     const barsHere = [...new Set(line.map((gi) => glyphs[gi].stepIndex))];
@@ -335,7 +356,7 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
       svg.style.height = `${Math.round(height * s)}px`;
     }
     for (const t of targets) if (t) { t.x *= s; t.y *= s; }
-    for (const t of glyphTargets) if (t) { t.x *= s; t.y *= s; t.staveEnd *= s; }
+    for (const t of glyphTargets) if (t) { t.x *= s; t.y *= s; t.staveEnd *= s; t.ys = t.ys.map((v) => v * s); }
     for (const b of barBoxes) if (b) { b.x0 *= s; b.x1 *= s; b.y0 *= s; b.y1 *= s; }
   }
   return { arrowTargets: targets, glyphTargets, barBoxes };
@@ -391,6 +412,8 @@ export function lineLayout(lines, glyphs, clefs, { compact = false, syllables = 
       if (g.slurGroup != null) slur = true;
       if (g.tuplet) tuplet = true;
       if (g.articulation) dots = true;
+      // a position-change line reaches two spaces beyond the stave either side
+      if (g.shift) { top = Math.min(top, -2 * SP - 4); bottom = Math.max(bottom, 6 * SP + 4); }
     }
     const above = -top + 22 + (finger ? 14 : 0) + (slur || tuplet ? 10 : 0);
     let below = bottom - 4 * SP + 8 + (slur || dots ? 8 : 0) + (clefAnnotation ? 10 : 0);

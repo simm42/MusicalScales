@@ -32,7 +32,7 @@ import { startAnalytics, ANALYTICS_ON } from './analytics.js';
 import { setupPwa } from './pwa.js';
 import { GamesPage } from './ui/gamesPage.js';
 import { PiecesPage } from './ui/piecesPage.js';
-import { pieceExercise, loadPieces, readPieceShare, addSharedPiece, sectionSequence, clampSection, pieceNoteLabels } from './pieces.js';
+import { pieceExercise, loadPieces, savePieces, readPieceShare, addSharedPiece, sectionSequence, clampSection, pieceNoteLabels, setFingering, setShift } from './pieces.js';
 import { hold as holdAwake, release as releaseAwake } from './wakelock.js';
 import { makeBackup, readBackup, restoreBackup, backupFilename } from './backup.js';
 import { storageState, askToKeep } from './persist.js';
@@ -757,6 +757,7 @@ function setPiece(p) {
 
 /** Open a piece on the Practice page, at the tempo written in it. */
 function practisePiece(p) {
+  if (fingering) { fingering = false; showFingering(); }
   setPiece(p);
   activeId = null;
   editingId = null;
@@ -767,6 +768,7 @@ function practisePiece(p) {
 }
 
 $('pieceExitBtn').addEventListener('click', () => {
+  if (fingering) { fingering = false; showFingering(); }
   setPiece(null);
   updateExercise();
   renderList();
@@ -926,6 +928,7 @@ $('sectionBtn').addEventListener('click', () => {
   stopSession(true);
   stopPlayback();
   setMore(false); // the music must be free to drag across
+  if (fingering) { fingering = false; showFingering(); }
   choosing = { first: null, dragFrom: null, dragTo: null };
   showSection();
   drawSectionMarks();
@@ -969,6 +972,106 @@ $('sectionAllBtn').addEventListener('click', () => setSection(null));
   });
   score.addEventListener('pointercancel', () => { down = null; });
 }
+
+// ---------------------------------------------------------------- fingering and position changes (tap a note)
+// "✏ Fingering", then tap a note: choose its finger (0–4), remove it, or add/remove a position-change
+// line before it. The change is written into the piece's text (!2!, !shift!) and saved straight away.
+let fingering = false;
+const FINGER_HINT = 'Tap a note to set its fingering or a position change – then ✓ Done';
+
+function showFingering() {
+  $('fingerBtn').setAttribute('aria-pressed', String(fingering));
+  $('fingerBtn').textContent = fingering ? '✓ Done' : '✏ Fingering';
+  $('score').classList.toggle('fingering', fingering);
+  if (!fingering) closeFingerPop();
+}
+$('fingerBtn').addEventListener('click', () => {
+  if (fingering) { fingering = false; showFingering(); setStatus(idleStatus()); return; }
+  if (!exercise.ok || !exercise.isPiece) return;
+  stopSession(true);
+  stopPlayback();
+  if (choosing) { choosing = null; showSection(); drawSectionMarks(); }
+  fingering = true;
+  showFingering();
+  setMore(false); // the music must be free to tap
+  setStatus(FINGER_HINT, true);
+});
+
+/** The note under a tap: the nearest note head (in a double stop, the nearer of its two notes). */
+function noteAtPoint(clientX, clientY) {
+  const rect = $('score').getBoundingClientRect();
+  const x = clientX - rect.left, y = clientY - rect.top;
+  let best = null;
+  (rendered.glyphTargets || []).forEach((t, gi) => {
+    const g = seq.glyphs[gi];
+    if (!t || !t.ys || !g || g.kind !== 'note') return;
+    t.ys.forEach((ny, k) => {
+      const d = Math.hypot(x - t.x, (y - ny) * 0.8);
+      if (!best || d < best.d) best = { d, gi, k };
+    });
+  });
+  return best && best.d < 44 ? best : null;
+}
+
+function closeFingerPop() { $('fingerPop').hidden = true; }
+
+function openFingerPop({ gi, k }) {
+  const g = seq.glyphs[gi], t = rendered.glyphTargets[gi];
+  const n = g.notes[k];
+  const pop = $('fingerPop');
+  const cur = n.f ?? null;
+  pop.innerHTML = `<div class="fp-title">${esc(noteName(n, { octave: true }))}${g.notes.length > 1 ? ` <span class="muted small">(${k === g.notes.length - 1 ? 'upper' : 'lower'} note of the double stop)</span>` : ''}</div>
+    <div class="fp-row" role="group" aria-label="Finger">${[0, 1, 2, 3, 4].map((f) => `<button type="button" class="btn${cur === f ? ' on' : ''}" data-f="${f}" aria-pressed="${cur === f}" title="${f === 0 ? 'Open string' : `Finger ${f}`}">${f}</button>`).join('')}
+      <button type="button" class="btn" data-f="none" ${cur == null ? 'disabled' : ''} title="Remove the fingering" aria-label="Remove the fingering">✕</button></div>
+    <div class="fp-row"><button type="button" class="btn${g.shift ? ' on' : ''}" data-shift="1" aria-pressed="${!!g.shift}">／ Position change before this note</button></div>`;
+  pop.hidden = false;
+  // placed on the screen (not inside the scrolling score box, which may be short): above the
+  // note if there's room, otherwise below it, kept within the window
+  const rect = $('score').getBoundingClientRect();
+  const w = pop.offsetWidth, h = pop.offsetHeight;
+  const x = rect.left + t.x, top = rect.top + t.y, bottom = rect.top + Math.max(...t.ys) + 22;
+  pop.style.left = `${Math.max(8, Math.min(x - w / 2, innerWidth - w - 8))}px`;
+  pop.style.top = `${top - h - 4 >= 8 ? top - h - 4 : Math.min(bottom, innerHeight - h - 8)}px`;
+  pop.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    const where = { line: g.srcLine, col: g.srcCol };
+    const text = b.dataset.shift ? setShift(currentPiece.text, where, !g.shift)
+      : setFingering(currentPiece.text, where, n, b.dataset.f === 'none' ? null : Number(b.dataset.f));
+    closeFingerPop();
+    if (text !== currentPiece.text) savePieceText(text);
+  };
+  const first = pop.querySelector('button.on') || pop.querySelector('button');
+  if (first) first.focus({ preventScroll: true });
+}
+
+/** Save the open piece's new text and redraw it (fingering mode stays on). */
+function savePieceText(text) {
+  const pieces = loadPieces();
+  const i = pieces.findIndex((p) => p.id === currentPiece.id);
+  if (i < 0) return;
+  pieces[i] = { ...pieces[i], text, updated: Date.now() };
+  if (!savePieces(pieces)) { setStatus(NOT_SAVED); return; }
+  setPiece(pieces[i]);
+  updateExercise();
+  renderNav();
+  showFingering();
+  setStatus('Saved. Tap another note, or ✓ Done.', true);
+}
+
+$('score').addEventListener('click', (e) => {
+  if (!fingering || choosing) return;
+  const hit = noteAtPoint(e.clientX, e.clientY);
+  if (hit) openFingerPop(hit); else closeFingerPop();
+});
+document.addEventListener('pointerdown', (e) => {
+  if ($('fingerPop').hidden) return;
+  if (!$('fingerPop').contains(e.target) && !$('score').contains(e.target)) closeFingerPop();
+});
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$('fingerPop').hidden) closeFingerPop(); });
+// it's fixed to the screen, so scrolling the music (or the page) would leave it behind
+$('scoreWrap').addEventListener('scroll', () => { if (!$('fingerPop').hidden) closeFingerPop(); }, { passive: true });
+window.addEventListener('scroll', () => { if (!$('fingerPop').hidden) closeFingerPop(); }, { passive: true });
 
 /** During Play: over a rest the arrow moves along it in time (a rest has no note of its own to point at). */
 function restArrow(beat) {
@@ -1358,6 +1461,7 @@ let calWizard = null;
 let metroCard = null;
 function setTab(tab) {
   setMore(false);
+  if (tab !== 'practice' && fingering) { fingering = false; showFingering(); }
   // on very wide screens Practice and Config share one page
   if (tab === 'config' && isWide()) tab = 'practice';
   prefs.tab = tab; savePrefs();
