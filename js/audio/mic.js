@@ -41,6 +41,9 @@ export class AudioEngine {
     this.keepMic = false;
     this.held = null;
     this.releaseWhenStopped = false;
+    // moved on by every stop(): a start() still waiting (for permission, say) when
+    // stop() is called gives up instead of starting after all
+    this.gen = 0;
   }
 
   /** The held microphone stream, if it is still live. */
@@ -195,12 +198,17 @@ export class AudioEngine {
    * @param {boolean} [o.peaks] spectrum peaks for double stops
    * @param {boolean} [o.capture] keep a copy of everything the microphone hears (fault-finding)
    * @param {(frames:object[])=>void} o.onFrames
+   * @returns the audio context – or null if stop() was called before it had started
+   *   (Stop pressed, or the tab changed, while waiting for permission)
    */
   async start(o) {
     if (o.source === 'mic') this.setSessionType('play-and-record');
     const ready = this.ensureContext(); // before any await, so it still counts as part of the tap
     await this.stop();
+    const gen = this.gen;
+    const cancelled = () => this.gen !== gen;
     const ctx = await ready;
+    if (cancelled()) return null;
     this.onFrames = o.onFrames;
     this.captured = o.capture ? [] : null;
 
@@ -208,7 +216,13 @@ export class AudioEngine {
       const problem = micSupportProblem();
       if (problem === 'insecure') throw new MicError('insecure', 'The microphone only works when this page is opened over https:// (or from localhost).');
       if (problem) throw new MicError('unsupported', 'This browser does not support microphone input.');
-      this.stream = await this.openMic();
+      const stream = await this.openMic();
+      if (cancelled()) {
+        // stopped while asking: close a microphone opened just for this (not the held one)
+        if (stream !== this.held) stream.getTracks().forEach((t) => t.stop());
+        return null;
+      }
+      this.stream = stream;
       this.source = ctx.createMediaStreamSource(this.stream);
       // what the browser really gave us (webcam mics sometimes ignore "auto-gain off" etc.)
       try {
@@ -241,6 +255,7 @@ export class AudioEngine {
 
     if (ctx.audioWorklet) {
       await ctx.audioWorklet.addModule(new URL('./capture-worklet.js', import.meta.url));
+      if (cancelled()) return null; // stop() has already taken down what was set up
       this.node = new AudioWorkletNode(ctx, 'capture-processor', { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: 'explicit', processorOptions: { chunk: HOP, capture: !!o.capture } });
       if (o.capture) this.node.port.onmessage = (e) => { if (this.captured && e.data.samples) this.captured.push(e.data); };
       const ch = new MessageChannel();
@@ -302,6 +317,7 @@ export class AudioEngine {
   setPeaks(on) { if (this.worker) this.worker.postMessage({ type: 'config', peaks: on }); }
 
   async stop() {
+    this.gen++;
     if (this.running) release('listening');
     this.running = false;
     clearInterval(this.watchdog);

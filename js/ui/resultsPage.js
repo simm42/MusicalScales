@@ -22,7 +22,10 @@ export function dateTime(ts) {
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 export function playedHow(r) {
-  if (r && r.pc) return r.sec ? `bars ${r.sec[0]}–${r.sec[1]}` : 'whole piece';
+  if (r && r.pc) {
+    const where = r.sec ? `bars ${r.sec[0]}–${r.sec[1]}` : 'whole piece';
+    return r.tempo ? `${where} · ♩ = ${r.tempo}${r.tbpm ? ` (${Math.round((r.tempo / r.tbpm) * 100)}%)` : ''}` : where;
+  }
   if (!r || !r.rhythm) return '';
   const rh = RHYTHMS[r.rhythm] ? RHYTHMS[r.rhythm].label : r.rhythm;
   // voice / other instruments store how they were performed as a word ('sung', 'detached')
@@ -181,7 +184,7 @@ export class ResultsPage {
       <div class="res-block"><h3>Recent runs</h3>${this.runsTable(data.twoWeeks.length ? data.twoWeeks : last)}</div>
       ${last.length ? `<div class="res-block"><h3>Run in detail</h3>
         <div class="field"><label for="runPick">Choose one of the last ${last.length} runs</label>
-          <select id="runPick">${last.slice().reverse().map((r) => `<option value="${r.d}">${esc(dateTime(r.d))} · ${Math.round(r.t)} / 100${playedHow(r) ? ' · ' + esc(playedHow(r)) : ''}</option>`).join('')}</select></div>
+          <select id="runPick">${last.slice().reverse().map((r) => `<option value="${esc(r.d)}">${esc(dateTime(r.d))} · ${Math.round(r.t)} / 100${playedHow(r) ? ' · ' + esc(playedHow(r)) : ''}</option>`).join('')}</select></div>
         <div id="runDetail"></div></div>` : ''}`;
     if (last.length) {
       const pick = this.body.querySelector('#runPick');
@@ -213,7 +216,7 @@ export class ResultsPage {
 
   runsTable(runs) {
     if (!runs.length) return '<p class="muted">No runs yet.</p>';
-    const rows = runs.slice(-15).reverse().map((r) => ({ ...r, ...(r.lv ? atLevel(r, this.getPrecision()) : {}) })).map((r) => `<tr><td>${esc(dateTime(r.d))}</td><td style="text-align:left">${esc(playedHow(r) || '–')}</td><td>${Math.round(r.t)}</td><td>${Math.round(r.i)}</td><td>${Math.round(r.ti)}</td><td>${r.e ?? '–'}</td></tr>`).join('');
+    const rows = runs.slice(-15).reverse().map((r) => ({ ...r, ...(r.lv ? atLevel(r, this.getPrecision()) : {}) })).map((r) => `<tr><td>${esc(dateTime(r.d))}</td><td style="text-align:left">${esc(playedHow(r) || '–')}</td><td>${Math.round(r.t)}</td><td>${Math.round(r.i)}</td><td>${Math.round(r.ti)}</td><td>${esc(r.e ?? '–')}</td></tr>`).join('');
     return `<div class="table-wrap"><table class="notes"><thead><tr><th>When</th><th style="text-align:left">Played</th><th>Total</th><th>Intonation</th><th>Timing</th><th>Errors</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
 

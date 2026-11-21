@@ -111,8 +111,12 @@ export class CalibrationWizard {
     }
     try {
       this.el.start.disabled = true;
-      await this.engine.start({ source: 'mic', minFreq, maxFreq, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
+      this.starting = true;
+      const ctx = await this.engine.start({ source: 'mic', minFreq, maxFreq, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
+      this.starting = false;
+      if (!ctx) { this.el.start.disabled = false; return; } // stopped while starting
     } catch (e) {
+      this.starting = false;
       this.el.start.disabled = false;
       this.setStep(`<b>Could not start the microphone.</b> ${esc(e instanceof MicError ? e.message : e.message)}`);
       return;
@@ -271,6 +275,7 @@ export class CalibrationWizard {
   }
 
   cancel(msg) {
+    if (this.starting) { this.starting = false; this.engine.stop(); return; }
     if (!this.running) return;
     this.stop();
     this.refresh();

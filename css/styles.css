@@ -448,6 +448,9 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 .piece-bar { margin: 4px 0 0; display: flex; gap: 6px; flex-wrap: wrap; }
 .piece-bar { align-items: center; }
 .section-label { font-weight: 600; }
+.piece-tempo { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.piece-tempo input { width: 4.2em; }
+.piece-tempo .btn { min-width: 2.2em; }
 #sectionBtn[aria-pressed="true"] { background: var(--accent); color: var(--accent-fg, #fff); border-color: var(--accent); }
 /* the chosen bars on the score (and, while choosing, the first bar tapped) */
 .section-marks { position: absolute; left: 0; top: 0; width: 0; height: 0; pointer-events: none; }

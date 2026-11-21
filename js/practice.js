@@ -405,7 +405,7 @@ export class PracticeSession {
     this.smooth = [];
     this.stopped = false;
     // fault-finding log (included in test-mode downloads)
-    this.log = { states: [], onsets: [], gates: [], endReason: null, clock: [] };
+    this.log = { states: [], onsets: [], gates: [], endReason: null, clock: [], tempo: { set: o.settings.bpm, target: o.targetBpm || null } };
   }
 
   state(name, extra) {
@@ -425,6 +425,7 @@ export class PracticeSession {
     let buffer = null;
     if (this.o.synth) {
       const ctx = await engine.ensureContext();
+      if (this.stopped) return;
       const perf = renderPerformance(this.o.seq, { sampleRate: ctx.sampleRate, a4: this.o.a4, ...this.o.synth });
       buffer = toAudioBuffer(ctx, perf.signal, ctx.sampleRate);
       this.truth = perf.truth;
@@ -433,6 +434,8 @@ export class PracticeSession {
       source: buffer ? 'buffer' : 'mic', buffer, monitor: !!buffer && this.o.synth.monitor !== false, minFreq, maxFreq, peaks: this.doubleStop, capture: !!this.o.capture,
       onFrames: (frames) => frames.forEach((f) => this.frame(f)),
     });
+    // stopped (Stop, or another tab) while the microphone was starting: nothing more to do
+    if (this.stopped) { engine.stop(); return; }
     this.state('calibrating');
     this.clockMark('start');
     this.on.arrow(0);
@@ -580,6 +583,8 @@ export class PracticeSession {
       doubleStopEval: this.doubleStop ? (n, e) => evaluateDoubleStop(n, e, a4) : null,
       scrapes: refined.scrapes,
       fold: refined.fold,
+      targetBpm: this.o.targetBpm || null,
+      setBpm: this.o.settings.bpm,
     });
     result.noiseFloor = this.noiseFloor;
     if (!this.doubleStop) result.globalOffset = detectGlobalOffset(notes, seq.events);

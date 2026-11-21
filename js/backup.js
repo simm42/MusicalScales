@@ -76,6 +76,17 @@ export function readBackup(text) {
  * from the microphone calibrations, which stay those of this device.
  */
 export function restoreBackup(b, storage) {
+  // all or nothing: if the storage fills up part way, put back what was there and say so
+  const before = Object.values(BACKUP_KEYS).map((key) => [key, storage.getItem(key)]);
+  try { writeBackup(b, storage); } catch (e) {
+    for (const [key, v] of before) {
+      try { if (v == null) storage.removeItem(key); else storage.setItem(key, v); } catch { /* nothing more to do */ }
+    }
+    throw e;
+  }
+}
+
+function writeBackup(b, storage) {
   for (const [name, key] of Object.entries(BACKUP_KEYS)) {
     if (name === 'calibration') continue;
     const v = b.data[name];

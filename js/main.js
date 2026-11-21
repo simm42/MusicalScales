@@ -8,7 +8,7 @@ import {
 import { getProfile, setProfile, getProfiles, OTHER_LIMITS } from './profiles.js';
 import { syllablesFor } from './solfege.js';
 import { buildSequence, RHYTHMS, isCrotchetRhythm } from './sequence.js';
-import { loadResults, saveResults, recordRun, makeRun, migrateHistory, cardStats, compactAll } from './results.js';
+import { loadResults, saveResults, recordRun, makeRun, migrateHistory, cardStats, compactAll, normaliseRecord } from './results.js';
 import { ResultsPage } from './ui/resultsPage.js';
 import { pcName, parsePc, noteName, spellMidi } from './theory.js';
 import { renderScore, renderKeySignature, markNote } from './notation.js';
@@ -341,6 +341,7 @@ function updateExercise() {
   choosing = null;
   showSection();
   $('pieceBar').hidden = !currentPiece;
+  showPieceTempo();
   $('rhythmBar').hidden = !!currentPiece;
   $('exInvalid').hidden = exercise.ok;
   if (!exercise.ok) $('exInvalid').textContent = exercise.isPiece ? `This piece needs fixing before it can be practised – ${exercise.reason} (Edit piece).` : exercise.reason + ' Choose fewer octaves or a lower starting octave.';
@@ -486,7 +487,6 @@ function synthOptions() {
     bpm: Number(v('d-bpm')) || 72,
     detuneSd: sd,
     jitter: (Number(v('d-jitter')) || 0) / 100,
-    vibratoCents: Number(v('d-vibrato')) || 0,
     missing: list2(v('d-missing')),
     extras: extraAfter.map((i) => ({ after: i, midi: (seq.events[i] ? seq.events[i].midis[0] : 60) + 1 })),
     seed: Math.floor(Math.random() * 1e6),
@@ -508,7 +508,8 @@ async function startSession() {
   const useSynth = DEBUG && $('d-use') && $('d-use').checked;
   const p = prec();
   const s = new PracticeSession({
-    engine, exercise, seq: runSeq, settings, a4: a4(), prec: p,
+    engine, exercise, seq: runSeq, settings: runSettings(), a4: a4(), prec: p,
+    targetBpm: currentPiece ? pieceTarget() : null,
     synth: useSynth ? synthOptions() : null,
     capture: DEBUG && $('d-capture') && $('d-capture').checked,
     calibration: loadCalibration(settings.instrument),
@@ -569,7 +570,7 @@ function finishSession(result) {
   if (!played) { setStatus(`No notes were heard. Check the microphone and ${verb()} a little louder, or move closer.`); return; }
   setStatus(`Finished – score ${Math.round(result.total)} / 100.`);
   lastResult = result;
-  renderSummary($('summary'), { result, seq: runSeq, prec: prec(), settings, details: DEBUG, labels: syllables ? runSeq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
+  renderSummary($('summary'), { result, seq: runSeq, prec: prec(), settings: runSettings(), details: DEBUG, labels: syllables ? runSeq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
   colourAll(result);
   showSummary();
   const item = activeId && list.find((x) => x.id === activeId);
@@ -581,10 +582,10 @@ function finishSession(result) {
     run.vib = !!settings.vibrato;
     run.met = !!settings.metronome;
     recordRun(results, item.id, run);
-    saveResults(results);
+    const saved = saveResults(results);
     renderList();
     if (resultsPage) resultsPage.invalidate();
-    setStatus(`Finished – score ${Math.round(result.total)} / 100. Saved to the results for “${item.name}”.`);
+    setStatus(`Finished – score ${Math.round(result.total)} / 100. ${saved ? `Saved to the results for “${item.name}”.` : NOT_SAVED}`);
   }
   // a piece: every run is kept (with the bars played), note by note across the whole piece
   if (exercise.isPiece && currentPiece) {
@@ -592,15 +593,24 @@ function finishSession(result) {
     run.labels = pieceNoteLabels(seq);
     run.pc = 1;
     run.sec = section ? [section.from + 1, section.to + 1] : null;
+    // the tempo practised at, the written tempo, the tempo played and what playing slower cost
+    run.tempo = pieceTempo();
+    if (pieceTarget()) {
+      run.tbpm = pieceTarget();
+      if (result.playedBpm) run.pbpm = Math.round(result.playedBpm);
+      if (result.tempoFactor < 1) run.tf = Math.round(result.tempoFactor * 1000) / 1000;
+    }
     run.level = settings.precision;
     run.vib = !!settings.vibrato;
     run.met = !!settings.metronome;
     recordRun(results, 'piece:' + currentPiece.id, run);
-    saveResults(results);
+    const saved = saveResults(results);
     if (resultsPage) resultsPage.invalidate();
-    setStatus(`Finished – score ${Math.round(result.total)} / 100${section ? ` for bars ${section.from + 1}–${section.to + 1}` : ''}. Saved to the results for “${currentPiece.name}”.`);
+    setStatus(`Finished – score ${Math.round(result.total)} / 100${section ? ` for bars ${section.from + 1}–${section.to + 1}` : ''}. ${saved ? `Saved to the results for “${currentPiece.name}”.` : NOT_SAVED}`);
   }
 }
+
+const NOT_SAVED = 'It could not be saved: this browser’s storage is full or blocked. Export everything (Config) to keep a copy.';
 
 function stopSession(silent = false) {
   if (!session) return;
@@ -633,7 +643,7 @@ $('playBtn').addEventListener('click', async () => {
   await new Promise((r) => setTimeout(r, 30)); // let the message show before the sound is rendered
   try {
     const playing = player.play(runSeq, {
-      bpm: settings.bpm,
+      bpm: runSettings().bpm,
       a4: a4(),
       instrument: settings.instrument,
       onEvent: (k) => {
@@ -645,7 +655,8 @@ $('playBtn').addEventListener('click', async () => {
       onEnd: () => { releaseAwake('play'); $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
     });
     await playing;
-    if (player.playing) setStatus(isVoice() ? `Playing the exercise at ♩ = ${settings.bpm}…` : `Playing the exercise at ♩ = ${settings.bpm} on the ${/^[A-Z][a-z ]*$/.test(instName(settings.instrument)) ? instName(settings.instrument).toLowerCase() : instName(settings.instrument)}…`);
+    const bpm = runSettings().bpm;
+    if (player.playing) setStatus(isVoice() ? `Playing the exercise at ♩ = ${bpm}…` : `Playing the exercise at ♩ = ${bpm} on the ${/^[A-Z][a-z ]*$/.test(instName(settings.instrument)) ? instName(settings.instrument).toLowerCase() : instName(settings.instrument)}…`);
   } catch (e) {
     releaseAwake('play');
     $('playBtn').textContent = '▶ Play';
@@ -681,9 +692,8 @@ function practisePiece(p) {
   activeId = null;
   editingId = null;
   prefs.activeId = null;
-  const tempo = pieceExercise(p, instrumentInfo(settings.instrument), settings).exercise.tempo;
-  if (tempo) prefs.global = pickFields(normalise({ ...settings, bpm: tempo }), GLOBAL_FIELDS);
-  setSettings({ ...settings, ...prefs.global }, { keepActive: true });
+  // its own tempo (kept per piece) – the scales' tempo in Config stays as it is
+  setSettings({ ...settings }, { keepActive: true });
   setTab('practice');
 }
 
@@ -698,6 +708,57 @@ $('pieceEditBtn').addEventListener('click', () => {
   if (p) piecesPage.edit(p);
 });
 
+// ---------------------------------------------------------------- a piece's tempo
+// The tempo written in the piece (its Q: line) is how fast it should go. The tempo it is
+// practised at is set on the Practice page and kept for each piece; the tempo in Config
+// is for scales. Playing slower than written costs a little of the score (scoring.js).
+const PIECE_BPM = { min: 20, max: 300, none: 80 };
+const clampBpm = (v) => Math.round(Math.min(PIECE_BPM.max, Math.max(PIECE_BPM.min, Number(v) || PIECE_BPM.none)));
+/** The piece's written tempo, or null if none is written. */
+function pieceTarget() { return exercise && exercise.isPiece && exercise.tempo ? exercise.tempo : null; }
+/** The tempo the piece is practised at: as set for it, else its written tempo. */
+function pieceTempo() {
+  if (!currentPiece) return settings.bpm;
+  return clampBpm((prefs.pieceTempos || {})[currentPiece.id] || pieceTarget() || PIECE_BPM.none);
+}
+/** What a run or Play uses: a piece goes at its own practice tempo. */
+function runSettings() { return currentPiece ? { ...settings, bpm: pieceTempo() } : settings; }
+
+function setPieceTempo(bpm) {
+  if (!currentPiece) return;
+  const v = clampBpm(bpm);
+  prefs.pieceTempos = prefs.pieceTempos || {};
+  // at the written tempo nothing is kept, so it follows the piece if its tempo is edited
+  if (v === pieceTarget()) delete prefs.pieceTempos[currentPiece.id]; else prefs.pieceTempos[currentPiece.id] = v;
+  savePrefs();
+  stopSession(true);
+  stopPlayback();
+  showPieceTempo();
+}
+
+/** − and +: to the next 5% of the written tempo (or 4 a minute when none is written). */
+function stepPieceTempo(dir) {
+  const t = pieceTarget(), bpm = pieceTempo();
+  if (!t) { setPieceTempo(bpm + 4 * dir); return; }
+  const marks = Array.from({ length: 60 }, (_, k) => Math.round(t * (k + 1) * 0.05)).filter((v) => v >= PIECE_BPM.min && v <= PIECE_BPM.max);
+  const next = dir > 0 ? marks.find((v) => v > bpm) : marks.slice().reverse().find((v) => v < bpm);
+  setPieceTempo(next ?? bpm + dir);
+}
+
+function showPieceTempo() {
+  const box = $('pieceTempo');
+  box.hidden = !(currentPiece && exercise && exercise.ok);
+  if (box.hidden) return;
+  const bpm = pieceTempo(), t = pieceTarget();
+  if (document.activeElement !== $('pieceBpm')) $('pieceBpm').value = bpm;
+  $('pieceTempoPct').textContent = t ? `${Math.round((bpm / t) * 100)}% of ♩ = ${t}` : 'no tempo written – add one in Edit piece';
+  $('pieceTempoReset').hidden = !t || bpm === t;
+}
+$('pieceSlower').addEventListener('click', () => stepPieceTempo(-1));
+$('pieceFaster').addEventListener('click', () => stepPieceTempo(1));
+$('pieceBpm').addEventListener('change', () => setPieceTempo($('pieceBpm').value));
+$('pieceTempoReset').addEventListener('click', () => setPieceTempo(pieceTarget()));
+
 /** Pieces on the Results page and in the PDF, next to the syllabus exercises. */
 function pieceItems() {
   return loadPieces().map((p) => ({ id: 'piece:' + p.id, name: `Piece: ${p.name}`, piece: true, settings: { instrument: settings.instrument } }));
@@ -706,6 +767,7 @@ function pieceItems() {
 function pieceDeleted(id) {
   if (results['piece:' + id]) { delete results['piece:' + id]; saveResults(results); if (resultsPage) resultsPage.invalidate(); }
   if (prefs.pieceSections) { delete prefs.pieceSections[id]; savePrefs(); }
+  if (prefs.pieceTempos) { delete prefs.pieceTempos[id]; savePrefs(); }
   if (currentPiece && currentPiece.id === id) { setPiece(null); updateExercise(); }
 }
 
@@ -1068,7 +1130,10 @@ function addImported(items, source) {
   const ok = confirm(`Add ${items.length} exercise${items.length === 1 ? '' : 's'} from the ${source} to your syllabus?`);
   if (!ok) return;
   for (const it of items) {
-    if (it.importedResults) { results[it.id] = it.importedResults; delete it.importedResults; }
+    // checked first: a damaged record would otherwise stop the app from starting next time
+    const rec = it.importedResults ? normaliseRecord(it.importedResults) : null;
+    delete it.importedResults;
+    if (rec) results[it.id] = rec;
     migrateHistory(results, it);
   }
   compactAll(results);
@@ -1091,6 +1156,7 @@ function checkPieceLink() {
   piecesPage.sharedArrived(result);
 }
 window.addEventListener('hashchange', checkPieceLink);
+window.addEventListener('hashchange', () => checkShareLink());
 
 function checkShareLink() {
   const m = /[#&]list=([A-Za-z0-9_-]+)/.exec(location.hash);
@@ -1296,7 +1362,8 @@ function captureMeta(sess, result, cap) {
   const segm = sess && sess.segmenter;
   return {
     app: 'scale-practice', kind: 'capture', version: 2, appVersion: APP_VERSION, created: new Date().toISOString(),
-    settings: { ...compactSettings(settings), ...pickFields(settings, GLOBAL_FIELDS) }, title: ex ? ex.title : null, a4: a4(), a4Effective: sess ? sess.a4 : a4(),
+    settings: { ...compactSettings(settings), ...pickFields(runSettings(), GLOBAL_FIELDS) }, title: ex ? ex.title : null,
+    pieceTempo: currentPiece ? { set: pieceTempo(), written: pieceTarget() } : null, a4: a4(), a4Effective: sess ? sess.a4 : a4(),
     sampleRate: cap.sampleRate, startTime: cap.startTime,
     metronomeT0: sess && sess.t0 != null ? sess.t0 : null,
     synthetic: !!(sess && sess.o.synth),
@@ -1309,7 +1376,8 @@ function captureMeta(sess, result, cap) {
     audio: engine.describe(),
     analysis: sess ? { minFreq: sess.minFreq, maxFreq: sess.maxFreq, seg: { ...SEG }, run: { ...RUN }, finalNoiseFloor: segm ? segm.noiseFloor : null, finalGate: segm ? segm.gate : null } : null,
     log: sess ? sess.log : null,
-    expected: seq ? seq.events.map((e) => ({ midis: e.midis, onsetBeat: e.onsetBeat, beats: e.beats })) : null,
+    expected: runSeq ? runSeq.events.map((e) => ({ midis: e.midis, onsetBeat: e.onsetBeat, beats: e.beats })) : null,
+    section: section ? { from: section.from + 1, to: section.to + 1 } : null,
     live: result ? {
       total: result.total, intonation: result.intonation, timing: result.timing, missing: result.missing, wrong: result.wrong, extras: result.extras.length, bpm: result.bpm,
       notes: (segm ? segm.notes : []).map((n) => ({ onset: r3(n.onset), end: r3(n.end), midi: n.midi != null ? r3(n.midi) : null, wobble: r3(n.wobble, 1) })),
@@ -1322,7 +1390,7 @@ function captureMeta(sess, result, cap) {
       missing: result.missing, wrong: result.wrong, bpm: r3(result.bpm, 1), globalOffset: result.globalOffset || null,
       precision: { level: settings.precision, ...precisionAt(settings.precision, settings.instrument) },
       notes: result.perNote.map((p) => {
-        const ev = seq.events[p.event];
+        const ev = runSeq.events[p.event];
         const d = p.note != null && segm ? segm.notes[p.note] : null;
         return {
           n: p.event + 1,
@@ -1466,6 +1534,7 @@ document.addEventListener('visibilitychange', () => {
   if (calWizard && calWizard.running) calWizard.cancel('Calibration stopped because the app went into the background. Start it again.');
   if (metroCard && metroCard.running) metroCard.stop();
   if (gamesPage) gamesPage.pause();
+  engine.stop(); // also cancels a start still waiting for the microphone
   engine.sleep();
 });
 

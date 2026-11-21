@@ -3,7 +3,7 @@
 // two pieces, and turning a photo into a piece with Claude.
 
 import { parsePiece, extractPieceText } from '../pieceText.js';
-import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, claudeLink, pieceShareLink, readPieceShare, addSharedPiece } from '../pieces.js';
+import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, claudeLink, pieceShareLink, readPieceShare, addSharedPiece, setTempoLine } from '../pieces.js';
 import { instrumentInfo } from '../instruments.js';
 import { renderScore } from '../notation.js';
 
@@ -42,7 +42,12 @@ export class PiecesPage {
   pieces() { return loadPieces(); }
   /** Off to the Practice page; coming back to the tab shows the list. */
   practise(p) { this.view = 'list'; this.onPractise(p); }
-  store(list) { savePieces(list); }
+  /** @returns false if it could not be saved (storage full) – a message is shown */
+  store(list) {
+    const ok = savePieces(list);
+    if (!ok) { const f = this.root.querySelector('#pcFlash, #pcMsg'); if (f) f.textContent = 'Could not save: this browser’s storage is full or blocked. Export everything (Config) to keep a copy.'; }
+    return ok;
+  }
 
   show() { if (this.view === 'list') this.list(); }
 
@@ -166,6 +171,8 @@ export class PiecesPage {
     this.root.innerHTML = `
       <div class="game-head"><button type="button" class="btn" data-act="back">← Pieces</button><b>${isNew ? 'New piece' : 'Edit piece'}</b></div>
       <div class="field"><label for="pcName">Name</label><input type="text" id="pcName" maxlength="120" value="${esc(draft.name)}"></div>
+      <div class="field"><label for="pcTempo">Tempo ♩ =</label><input type="number" id="pcTempo" min="20" max="300" step="1" inputmode="numeric" placeholder="none" value="${esc(parsePiece(draft.text).tempo || '')}">
+        <span class="small muted">how fast the piece should go (the Q: line). You can practise it slower or faster on the Practice page; slower than this costs a little of the score.</span></div>
       <div class="piece-edit">
         <div class="piece-text">
           <label for="pcText" class="small muted">The music (as text) – the score below follows as you type</label>
@@ -188,6 +195,14 @@ export class PiecesPage {
     let timer = null;
     const refresh = () => { draft.text = ta.value; this.preview(draft); };
     ta.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(refresh, 350); });
+    // the tempo field writes the Q: line (and follows it when the text is typed)
+    const tempo = this.root.querySelector('#pcTempo');
+    tempo.addEventListener('change', () => {
+      const v = Number(tempo.value);
+      ta.value = setTempoLine(ta.value, v >= 20 && v <= 300 ? v : null);
+      if (!(v >= 20 && v <= 300)) tempo.value = '';
+      refresh();
+    });
     refresh();
     const save = () => {
       draft.text = ta.value;
@@ -196,14 +211,15 @@ export class PiecesPage {
       const list = this.pieces();
       const i = list.findIndex((x) => x.id === draft.id);
       if (i >= 0) list[i] = draft; else list.push(draft);
-      this.store(list);
-      return draft;
+      return this.store(list) ? draft : null;
     };
-    const changed = () => ta.value !== piece.text || name.value.trim() !== piece.name;
+    // a new piece not saved yet counts as changed unless it is still the empty starter (a decoded photo would be lost)
+    const changed = () => ta.value !== piece.text || name.value.trim() !== piece.name || (isNew && piece.text !== STARTER);
     this.wire({
-      back: () => { if (!changed() || isNew === 'saved' || confirm('Leave without saving your changes?')) this.list(); },
-      save: () => { save(); isNew = 'saved'; piece = { ...draft }; this.root.querySelector('#pcMsg').textContent = `Saved “${draft.name}”.`; },
-      practise: () => { const p = save(); if (parsePiece(p.text).ok) this.practise(p); else this.root.querySelector('#pcMsg').textContent = 'Saved – but fix the problems shown before practising.'; },
+      // changed() compares with the last save, so edits made after a Save are still asked about
+      back: () => { if (!changed() || confirm('Leave without saving your changes?')) this.list(); },
+      save: () => { if (!save()) return; isNew = false; piece = { ...draft }; this.root.querySelector('#pcMsg').textContent = `Saved “${draft.name}”.`; },
+      practise: () => { const p = save(); if (!p) return; if (parsePiece(p.text).ok) this.practise(p); else this.root.querySelector('#pcMsg').textContent = 'Saved – but fix the problems shown before practising.'; },
     });
     this.problemsEl = this.root.querySelector('#pcProblems');
     this.problemsEl.addEventListener('click', (e) => {
@@ -219,6 +235,8 @@ export class PiecesPage {
     if (!el) return;
     const info = instrumentInfo(this.getInstrument());
     const { exercise, seq, parsed } = pieceExercise(piece, info, {});
+    const tf = this.root.querySelector('#pcTempo');
+    if (tf && document.activeElement !== tf) tf.value = parsed.tempo || '';
     const items = [
       ...parsed.errors.map((e) => `<li class="bad" data-line="${e.line}"><b>Line ${e.line}</b>, column ${e.col}: ${esc(e.message)}</li>`),
       ...parsed.warnings.map((w) => `<li class="${w.check ? 'warn' : 'muted'}" data-line="${w.line}">Line ${w.line}: ${esc(w.message)}</li>`),

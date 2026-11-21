@@ -54,6 +54,20 @@ function scrapeNote(result, prec) {
     : ` – too small to count at ${esc(prec.name)} precision`}${extras ? `; ${extras} extra note${extras === 1 ? '' : 's'}` : ''}.</p>`;
 }
 
+/** A piece: the tempo it was played at against its written tempo, and what playing slower cost. */
+function tempoNote(result) {
+  const target = result.targetBpm;
+  if (!target) return '';
+  const played = Math.round(result.playedBpm || result.setBpm || 0);
+  if (!played) return '';
+  const pct = Math.round((played / target) * 100);
+  const set = result.setBpm && Math.abs(result.setBpm - played) >= 3 ? ` (practice tempo ♩ = ${Math.round(result.setBpm)})` : '';
+  const f = result.tempoFactor ?? 1;
+  if (f >= 0.9995) return `<p class="small">Tempo: ♩ ≈ ${played}${set} – ${pct >= 97 ? 'at' : 'close to'} the written ♩ = ${target}, so nothing was taken off.</p>`;
+  const cut = (1 - f) * 100;
+  return `<p class="small">Tempo: ♩ ≈ ${played}${set}, ${pct}% of the written ♩ = ${target}, so the total was reduced by ${cut < 1 ? cut.toFixed(1) : Math.round(cut)}%. Practising slower is a good way to learn a piece – play at the written tempo for the full score.</p>`;
+}
+
 function offsetNotice(result) {
   const g = result.globalOffset;
   if (!g) return '';
@@ -107,6 +121,7 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
         <div class="stat"><div class="v">${r0(result.timing)}</div><div class="l">Timing (25%)</div></div>
         <div class="stat"><div class="v">${fmtErrors(result.errors ?? result.extras.length)}</div><div class="l">Errors${result.penalty != null ? ` (−${fmtErrors(result.penalty)})` : ''}</div></div>
       </div>
+      ${tempoNote(result)}
       ${offsetNotice(result)}
       ${details ? scrapeNote(result, prec) : ''}
       <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents)${vib} · ${result.missing} missing · ${result.wrong} wrong${tempo}${timed}</p>

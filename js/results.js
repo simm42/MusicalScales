@@ -19,10 +19,50 @@ const LEVELS = 5;
 export const RES = { fullRuns: 10, dayAfterDays: 30, monthAfterDays: 365 };
 
 export function loadResults() {
-  try { return JSON.parse(localStorage.getItem(KEY)) || {}; } catch { return {}; }
+  try { return normaliseStore(JSON.parse(localStorage.getItem(KEY))); } catch { return {}; }
 }
+/** @returns false if it could not be saved (storage full or blocked) */
 export function saveResults(store) {
   try { localStorage.setItem(KEY, JSON.stringify(store)); return true; } catch { return false; }
+}
+
+const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
+const isNum = (x) => typeof x === 'number' && isFinite(x);
+const numOrNull = (x) => (isNum(x) ? x : null);
+
+/**
+ * One item's results as the rest of this file expects them, whatever was stored
+ * or imported (a damaged or hand-edited file): anything unreadable is dropped.
+ * Fields shown on the page as they are (dates, scores, errors) are made numbers.
+ * @returns the record, or null if nothing in it can be used
+ */
+export function normaliseRecord(rec) {
+  if (!isObj(rec)) return null;
+  const list = (a, ok) => (Array.isArray(a) ? a.filter((x) => isObj(x) && ok(x)) : []);
+  const run = (r) => {
+    if (!isNum(r.d)) return false;
+    for (const k of ['t', 'i', 'ti', 'e', 'bpm', 'tempo', 'tbpm', 'pbpm', 'tf']) if (k in r) r[k] = numOrNull(r[k]);
+    if ('lv' in r && !Array.isArray(r.lv)) delete r.lv;
+    return true;
+  };
+  const out = {
+    runs: list(rec.runs, run),
+    older: list(rec.older, run),
+    days: list(rec.days, (x) => typeof x.day === 'string' && /^\d{4}-\d\d-\d\d$/.test(x.day)),
+    months: list(rec.months, (x) => typeof x.month === 'string' && /^\d{4}-\d\d$/.test(x.month)),
+  };
+  return out.runs.length + out.older.length + out.days.length + out.months.length ? out : null;
+}
+
+/** Every item's results normalised (see normaliseRecord); unusable items are left out. */
+export function normaliseStore(store) {
+  const out = {};
+  if (!isObj(store)) return out;
+  for (const [id, rec] of Object.entries(store)) {
+    const r = normaliseRecord(rec);
+    if (r) out[id] = r;
+  }
+  return out;
 }
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -128,12 +168,17 @@ export function runDetail(run, labels = null) {
       wrong: run.wrong ?? perNote.filter((p) => p.status === 'wrong').length,
       bpm: run.bpm || null,
       globalOffset: run.off || null,
+      // a piece: the tempo practised at, the written tempo, and what playing slower cost
+      setBpm: run.tempo || null,
+      targetBpm: run.tbpm || null,
+      playedBpm: run.pbpm || null,
+      tempoFactor: run.tf ?? 1,
     },
     labels: names && names.length === perNote.length ? names : perNote.map((_, k) => `Note ${k + 1}`),
   };
 }
 
-const summaryOf = (r) => ({ d: r.d, lv: levelsOf(r), e: r.e ?? null, rhythm: r.rhythm, slurred: r.slurred, ...(r.pc ? { pc: 1, sec: r.sec || null } : {}) });
+const summaryOf = (r) => ({ d: r.d, lv: levelsOf(r), e: r.e ?? null, rhythm: r.rhythm, slurred: r.slurred, ...(r.pc ? { pc: 1, sec: r.sec || null, tempo: r.tempo, tbpm: r.tbpm, tf: r.tf } : {}) });
 
 /** Weighted merge of a run summary or an aggregate into an aggregate (per level). */
 function mergeInto(agg, x) {
@@ -239,7 +284,7 @@ export function runsSince(store, id, since, level = 2) {
   return [...rec.older, ...rec.runs]
     .filter((r) => r.d >= since)
     .sort((a, b) => a.d - b.d)
-    .map((r) => project(r, level, { d: r.d, rhythm: r.rhythm, slurred: r.slurred, pc: r.pc, sec: r.sec }));
+    .map((r) => project(r, level, { d: r.d, rhythm: r.rhythm, slurred: r.slurred, pc: r.pc, sec: r.sec, tempo: r.tempo, tbpm: r.tbpm }));
 }
 
 function groupDaily(rec, since) {

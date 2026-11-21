@@ -4,7 +4,24 @@
 import { linearScore, scrapeSize, scrapeWeight } from './precision.js';
 import { foldPitch, HARMONIC_SHIFTS } from './align.js';
 
-export const SCORING = { intonationWeight: 0.75, timingWeight: 0.25, extraPenalty: 3, wrongCents: 50 };
+export const SCORING = {
+  intonationWeight: 0.75, timingWeight: 0.25, extraPenalty: 3, wrongCents: 50,
+  // a piece played slower than its written tempo: the score is cut by `cut` at `at` of
+  // the speed, on a log scale bent by `curve` so that a little slower costs almost nothing
+  slowTempo: { at: 0.5, cut: 0.2, curve: 1.5 },
+  tempoMinNotes: 4, // notes heard before the tempo measured from the run is trusted
+};
+
+/**
+ * The share of the score kept when a piece is played slower than written: 1 at the
+ * written tempo or faster. With the settings above: 95 % of the speed keeps 99.6 %,
+ * 90 % → 98.8 %, 75 % → 94.7 %, 50 % → 80 %, 25 % → 43 %.
+ */
+export function tempoFactor(played, target, s = SCORING.slowTempo) {
+  if (!(played > 0) || !(target > 0) || played >= target) return 1;
+  const x = Math.log(target / played) / Math.log(1 / s.at);
+  return Math.max(0, 1 - s.cut * Math.pow(x, s.curve));
+}
 
 const median = (a) => { const s = a.slice().sort((x, y) => x - y); const n = s.length; return n ? (n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2) : NaN; };
 
@@ -16,6 +33,8 @@ const median = (a) => { const s = a.slice().sort((x, y) => x - y); const n = s.l
  * @param {object} o.prec precision tolerances
  * @param {{t0:number, spb:number}|null} [o.metronome] beat grid
  * @param {(note, event)=>{cents:(number|null)[], approx?:boolean}} [o.doubleStopEval]
+ * @param {number} [o.targetBpm] a piece's written tempo: playing slower costs a little (tempoFactor)
+ * @param {number} [o.setBpm] the tempo it was practised at (used when too few notes give a tempo)
  */
 export function scoreRun(o) {
   const { expected, detected, alignment, prec, metronome = null, doubleStopEval = null, scrapes = [], fold = false } = o;
@@ -95,9 +114,17 @@ export function scoreRun(o) {
   const timing = per.reduce((a, r) => a + r.timing, 0) / n;
   const extraPenalty = SCORING.extraPenalty * extras.length;
   const penalty = extraPenalty + SCORING.extraPenalty * scrapeErrors;
-  const total = Math.max(0, Math.min(100, SCORING.intonationWeight * intonation + SCORING.timingWeight * timing - penalty));
+  // a piece: the tempo played – the metronome's, or measured from the notes
+  const measured = o.secondsPerBeat && matched.length >= SCORING.tempoMinNotes ? 60 / o.secondsPerBeat : null;
+  const playedBpm = metronome ? 60 / metronome.spb : measured || o.setBpm || null;
+  const factor = o.targetBpm ? tempoFactor(playedBpm, o.targetBpm) : 1;
+  const total = Math.max(0, Math.min(100, SCORING.intonationWeight * intonation + SCORING.timingWeight * timing - penalty)) * factor;
   return {
     perNote: per,
+    tempoFactor: factor,
+    targetBpm: o.targetBpm || null,
+    setBpm: o.setBpm || null,
+    playedBpm: o.targetBpm ? playedBpm : null,
     intonation,
     timing,
     extras: extras.map((i) => detected[i]),
@@ -169,7 +196,7 @@ export function scoresAtLevels(result, levels = [0, 1, 2, 3, 4], precisionAt) {
     const base = result.extraPenalty ?? (result.scrapes ? SCORING.extraPenalty * (result.extras || []).length : result.penalty || 0);
     const penalty = base + SCORING.extraPenalty * scrapeErrors;
     const errors = result.extras ? Math.round((result.extras.length + scrapeErrors) * 10) / 10 : null;
-    const total = Math.max(0, Math.min(100, SCORING.intonationWeight * inton + SCORING.timingWeight * timing - penalty));
+    const total = Math.max(0, Math.min(100, SCORING.intonationWeight * inton + SCORING.timingWeight * timing - penalty)) * (result.tempoFactor ?? 1);
     return [Math.round(total * 10) / 10, Math.round(inton * 10) / 10, Math.round(timing * 10) / 10, errors];
   });
 }

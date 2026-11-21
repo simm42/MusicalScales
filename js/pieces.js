@@ -228,6 +228,21 @@ export function addSharedPiece(shared, storage = typeof localStorage !== 'undefi
   return { piece, added: true };
 }
 
+/**
+ * The piece's written tempo (crotchets a minute) set in its header as Q: 1/4=N, or
+ * the Q: line taken out when bpm is empty. The rest of the text is left as it is.
+ */
+export function setTempoLine(text, bpm) {
+  const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
+  const k = lines.findIndex((l) => /^\s*K:/.test(l));
+  const q = lines.slice(0, k < 0 ? lines.length : k).findIndex((l) => /^\s*Q:/.test(l));
+  const v = Math.round(Number(bpm));
+  if (!(v > 0)) { if (q >= 0) lines.splice(q, 1); return lines.join('\n'); }
+  const line = `Q: 1/4=${v}`;
+  if (q >= 0) lines[q] = line; else if (k >= 0) lines.splice(k, 0, line); else lines.unshift(line);
+  return lines.join('\n');
+}
+
 /** Header (up to and including the first K: line) and the music after it. */
 export function splitHeader(text) {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');

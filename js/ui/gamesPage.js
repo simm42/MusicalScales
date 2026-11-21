@@ -267,7 +267,10 @@ export class GamesPage {
     const btn = this.root.querySelector('[data-act="start"]');
     if (btn) btn.disabled = true;
     try {
-      await this.engine.start({ source: 'mic', minFreq: 60, maxFreq: 1400, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
+      this.starting = true;
+      const ctx = await this.engine.start({ source: 'mic', minFreq: 60, maxFreq: 1400, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
+      this.starting = false;
+      if (!ctx) { if (btn) btn.disabled = false; return; } // stopped while starting
       this.listening = true;
       this.lastFrameAt = this.lastVoicedAt = performance.now();
       clearInterval(this.checker);
@@ -275,13 +278,15 @@ export class GamesPage {
       if (btn) btn.remove();
       this.beginQuestion();
     } catch (e) {
+      this.starting = false;
       if (btn) btn.disabled = false;
       this.say(e instanceof MicError ? e.message : 'Could not start the microphone: ' + (e && e.message), false);
     }
   }
 
   stopListening() {
-    if (this.listening) this.engine.stop();
+    if (this.listening || this.starting) this.engine.stop();
+    this.starting = false;
     this.listening = false;
     clearTimeout(this.noteTimer);
     clearInterval(this.checker);

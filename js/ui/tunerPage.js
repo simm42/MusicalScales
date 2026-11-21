@@ -162,7 +162,9 @@ export class TunerPage {
     const { minFreq, maxFreq } = inst === 'voice' ? { minFreq: 60, maxFreq: 1400 } : detectionRange(inst, this.getA4());
     try {
       this.el.start.disabled = true;
-      await this.engine.start({ source: 'mic', minFreq, maxFreq, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
+      this.starting = true;
+      const ctx = await this.engine.start({ source: 'mic', minFreq, maxFreq, onFrames: (fs) => fs.forEach((f) => this.frame(f)) });
+      if (!ctx) return; // stopped while starting
       this.running = true;
       this.el.start.textContent = 'Stop tuner';
       this.meter.clear(this.idleText());
@@ -170,11 +172,13 @@ export class TunerPage {
       this.el.error.textContent = e instanceof MicError ? e.message : 'Could not start: ' + e.message;
       this.el.error.hidden = false;
     } finally {
+      this.starting = false;
       this.el.start.disabled = false;
     }
   }
 
   stop() {
+    this.starting = false;
     this.engine.stop();
     this.running = false;
     this.el.start.textContent = 'Start tuner';
@@ -182,7 +186,7 @@ export class TunerPage {
     this.markStrings(this.locked);
   }
 
-  deactivate() { if (this.running) this.stop(); this.stopTones(); this.refresh(false); }
+  deactivate() { if (this.running || this.starting) this.stop(); this.stopTones(); this.refresh(false); }
 
   frame(f) {
     if (!this.running) return;
