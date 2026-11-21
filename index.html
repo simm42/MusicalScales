@@ -137,24 +137,27 @@
 
     <!-- ================= PRACTICE ================= -->
     <section class="card stage practice" id="tab-practice" role="tabpanel" aria-labelledby="tabBtnPractice">
-      <div class="practice-top">
+      <div class="practice-top-wrap">
+      <div class="practice-top" id="practiceTop">
       <div class="rhythm-bar" id="rhythmBar" role="radiogroup" aria-label="Each note"></div>
       <div class="control-row">
         <button class="btn primary" id="startBtn">Start</button>
         <button class="btn" id="playBtn" title="Hear the music played – a scale at the tempo set in Config, a piece at its own tempo">▶ Play</button>
-        <button class="btn cast-btn" id="castBtn" type="button" aria-pressed="false" title="TV mode: the music is drawn much smaller so far more of it fits – for showing your phone's screen on a TV. Start and Play stay big.">📺 TV</button>
-        <label class="cast-size" id="castSizeBox" hidden title="Size of the music in TV mode – smaller fits more on the screen; larger is easier to read from further away"><span>Size</span><input type="range" id="castSize" min="25" max="100" step="5" aria-label="Size of the music in TV mode"><output id="castSizeOut"></output></label>
+        <span class="cast-tools"><button class="btn cast-btn" id="castBtn" type="button" aria-pressed="false" title="TV mode: the music is drawn much smaller so far more of it fits – for showing your phone's screen on a TV. Start and Play stay big.">📺 TV</button>
+        <label class="cast-size" id="castSizeBox" hidden title="Size of the music in TV mode – smaller fits more on the screen; larger is easier to read from further away"><span>Size</span><input type="range" id="castSize" min="25" max="100" step="5" aria-label="Size of the music in TV mode"><output id="castSizeOut"></output></label></span>
         <p class="status" id="status" aria-live="polite">Press Start, wait for “Play now”, then play.</p>
         <nav class="list-nav" id="listNav" aria-label="Syllabus" hidden>
           <button class="btn" id="prevBtn" type="button" aria-label="Previous exercise in the syllabus" title="Previous in syllabus">◀</button>
           <span class="muted small" id="navPos"></span>
           <button class="btn" id="nextBtn" type="button" aria-label="Next exercise in the syllabus" title="Next in syllabus">▶</button>
         </nav>
+        <button class="btn more-btn" id="moreBtn" type="button" aria-expanded="false" aria-controls="practiceTop" aria-label="More options" title="More options: rhythms, tempo, choose bars, edit piece, TV mode">⋯</button>
       </div>
       <div class="title-row">
         <h2 id="exTitle"></h2>
         <p class="opts" id="exOptions"></p>
         <p class="piece-bar small" id="pieceBar" hidden><span class="piece-tempo" id="pieceTempo" hidden><button class="btn" type="button" id="pieceSlower" aria-label="Slower" title="Slower (5% of the written tempo)">−</button><label for="pieceBpm">♩ =</label><input type="number" id="pieceBpm" min="20" max="300" step="1" inputmode="numeric" title="The tempo for practising this piece (Play, the metronome and listening)"><button class="btn" type="button" id="pieceFaster" aria-label="Faster" title="Faster (5% of the written tempo)">+</button> <span class="muted" id="pieceTempoPct"></span> <button class="btn" type="button" id="pieceTempoReset" hidden>Written tempo</button></span> <button class="btn" type="button" id="sectionBtn" aria-pressed="false" title="Practise just some bars: drag across them on the score, or tap the first and last bar">✂ Choose bars</button> <span class="section-label" id="sectionLabel" role="status"></span> <button class="btn" type="button" id="sectionAllBtn" hidden>Whole piece</button> <button class="btn" type="button" id="pieceEditBtn">✎ Edit piece</button> <button class="btn" type="button" id="pieceExitBtn">Back to scales</button></p>
+      </div>
       </div>
       </div>
       <div class="notice error" id="exInvalid" hidden></div>
@@ -318,6 +321,7 @@
           <li><b>Start</b>: the app listens to the room for a moment (stay quiet), then says <b>“Play now”</b>. Take your time – it waits for you to begin.</li>
           <li>While you play, the <b>tuning bar</b> on the left shows each note: in the middle and green is in tune, higher up is sharp, lower down is flat. The <b>arrow</b> above the music shows the note to play next: once you have played a note for about its length, the arrow moves on to the next one (over a rest it moves along in time). If you stop a note well short, the arrow stays on it. The music scrolls along with you.</li>
           <li>The run ends by itself when you reach the end, or press <b>Stop</b>.</li>
+          <li><b>Phone held sideways:</b> the top of the Practice page is one slim bar – <b>Start</b>, <b>▶ Play</b>, <b>◀ ▶</b> (the previous or next piece, or syllabus exercise), the title, and <b>⋯</b>. Tap <b>⋯</b> for everything else: the rhythm buttons, the piece's tempo, <b>✂ Choose bars</b>, <b>Edit piece</b>, <b>Back to scales</b> and <b>📺 TV</b>. The extra options close by themselves when you press <b>Play</b> or <b>Start</b>, tap the music, or leave them for a few seconds, so the music gets the whole screen.</li>
         </ul>
       </details>
 
@@ -401,7 +405,7 @@
 
       <details>
         <summary>Pieces: practise your own music</summary>
-        <p>On the <b>Pieces</b> tab you can keep any number of pieces on this device, so your music goes wherever you take your phone. Tap <b>▶ Practise</b> on a piece and it opens on the Practice page with the arrow, the tuning bar, <b>Play</b> and a score at the end – just like a scale. <b>Back to scales</b> returns to your syllabus. Its runs are saved on the Results tab, like a syllabus exercise.</p>
+        <p>On the <b>Pieces</b> tab you can keep any number of pieces on this device, so your music goes wherever you take your phone. Tap <b>▶ Practise</b> on a piece and it opens on the Practice page with the arrow, the tuning bar, <b>Play</b> and a score at the end – just like a scale. <b>Back to scales</b> returns to your syllabus. While a piece is open, <b>◀</b> and <b>▶</b> on the Practice page move to the previous or next piece (in the order of the Pieces list). Its runs are saved on the Results tab, like a syllabus exercise.</p>
         <ul>
           <li><b>＋ New piece</b> – type the music as text. The score is drawn underneath as you type, and any mistakes are listed with their line – tap one to jump to it. <b>How to write the music</b> under the box explains the letters and signs.</li>
           <li><b>📷 Decode music from a photo</b> – tap <b>Decode music with Claude</b>. Claude opens in a new window with the instructions already filled in. Sign in, choose <b>Sonnet</b> or <b>Opus</b> in Claude's model menu if it's available, and send the instructions; Claude asks for a photo – take one with your camera or choose one from your photos. When it has written the music, tap <b>Copy</b> on its answer, come back, paste it into the box and tap <b>Read the music</b>. Then check it against your music in the editor and save it. If something can't be read, <b>Copy a correction request</b> makes a message to paste back into the same Claude chat.</li>

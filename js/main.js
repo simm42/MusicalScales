@@ -699,6 +699,7 @@ function stopPlayback() {
 }
 
 $('playBtn').addEventListener('click', async () => {
+  setMore(false);
   if (player.playing) { stopPlayback(); return; }
   if (!exercise.ok) return;
   stopSession(true);
@@ -732,6 +733,7 @@ $('playBtn').addEventListener('click', async () => {
 });
 
 $('startBtn').addEventListener('click', () => {
+  setMore(false);
   if (session) { const s = session; s.stop(); }
   else { engine.unlock(DEBUG && $('d-use') && $('d-use').checked ? 'playback' : 'play-and-record'); startSession(); hideTabBar(); }
 });
@@ -875,6 +877,8 @@ function showSection() {
     ? (choosing.first != null ? `From bar ${choosing.first + 1} – now tap the last bar (scroll to it if needed)` : 'Drag across the bars, or tap the first bar')
     : section ? `Bars ${section.from + 1}–${section.to + 1}` : '';
   $('score').classList.toggle('choosing', on);
+  // landscape phones: the piece's buttons are in the closed drop-down, so say what to do in the bar
+  if (on && isPhoneLandscape()) setStatus($('sectionLabel').textContent, true);
 }
 
 /** Shade the chosen bars (or, while choosing, the bars being picked). */
@@ -917,10 +921,11 @@ function barAt(clientX, clientY) {
 }
 
 $('sectionBtn').addEventListener('click', () => {
-  if (choosing) { choosing = null; showSection(); drawSectionMarks(); return; }
+  if (choosing) { choosing = null; showSection(); drawSectionMarks(); setStatus(idleStatus()); return; }
   if (!exercise.ok || !exercise.isPiece || seq.bars < 2) return;
   stopSession(true);
   stopPlayback();
+  setMore(false); // the music must be free to drag across
   choosing = { first: null, dragFrom: null, dragTo: null };
   showSection();
   drawSectionMarks();
@@ -1043,13 +1048,34 @@ function selectItem(item, goPractise = true) {
   if (goPractise && !isWide()) setTab('practice');
 }
 
-// Back / Next through the list (wraps around)
+// Back / Next through the list (wraps around) – or, while a piece is open, through the pieces
+/** Pieces in the order the Pieces tab shows them (most recently edited first). */
+const piecesInOrder = () => loadPieces().sort((a, b) => (b.updated || 0) - (a.updated || 0));
 function renderNav() {
+  const pieces = currentPiece ? piecesInOrder() : null;
+  $('listNav').setAttribute('aria-label', pieces ? 'Pieces' : 'Syllabus');
+  $('prevBtn').title = pieces ? 'Previous piece' : 'Previous in syllabus';
+  $('nextBtn').title = pieces ? 'Next piece' : 'Next in syllabus';
+  $('prevBtn').setAttribute('aria-label', pieces ? 'Previous piece' : 'Previous exercise in the syllabus');
+  $('nextBtn').setAttribute('aria-label', pieces ? 'Next piece' : 'Next exercise in the syllabus');
+  if (pieces) {
+    const i = pieces.findIndex((p) => p.id === currentPiece.id);
+    $('listNav').hidden = pieces.length < 2;
+    $('navPos').textContent = i >= 0 ? `${i + 1} of ${pieces.length}` : `${pieces.length} pieces`;
+    return;
+  }
   $('listNav').hidden = list.length === 0;
   const i = list.findIndex((x) => x.id === activeId);
   $('navPos').textContent = i >= 0 ? `${i + 1} of ${list.length}` : `${list.length} saved`;
 }
 function stepList(dir) {
+  if (currentPiece) {
+    const pieces = piecesInOrder();
+    if (pieces.length < 2) return;
+    const i = pieces.findIndex((p) => p.id === currentPiece.id);
+    practisePiece(pieces[i < 0 ? 0 : (i + dir + pieces.length) % pieces.length]);
+    return;
+  }
   if (!list.length) return;
   const i = list.findIndex((x) => x.id === activeId);
   const j = i < 0 ? (dir > 0 ? 0 : list.length - 1) : (i + dir + list.length) % list.length;
@@ -1280,6 +1306,27 @@ function renderRhythmBar() {
 // ---------------------------------------------------------------- landscape phones: let the tab bar scroll away
 const phoneLandscapeQuery = window.matchMedia('(orientation: landscape) and (max-height: 500px)');
 function isPhoneLandscape() { return phoneLandscapeQuery.matches; }
+// The Practice page's slim top bar (landscape phones, styles.css): ⋯ drops the rest down over the
+// music. It closes again on Play or Start, a tap anywhere else, Escape, or after a few seconds untouched.
+const MORE_IDLE_MS = 6000;
+let moreTimer = null;
+const moreOpen = () => $('practiceTop').classList.contains('expanded');
+function setMore(open) {
+  clearTimeout(moreTimer);
+  $('practiceTop').classList.toggle('expanded', !!open);
+  $('moreBtn').setAttribute('aria-expanded', String(!!open));
+  $('moreBtn').textContent = open ? '✕' : '⋯';
+  $('moreBtn').setAttribute('aria-label', open ? 'Close the options' : 'More options');
+  if (open) moreTimer = setTimeout(() => setMore(false), MORE_IDLE_MS);
+}
+$('moreBtn').addEventListener('click', () => setMore(!moreOpen()));
+// using the options keeps them open a little longer
+for (const ev of ['pointerdown', 'input', 'change', 'keydown', 'focusin']) {
+  $('practiceTop').addEventListener(ev, () => { if (moreOpen()) { clearTimeout(moreTimer); moreTimer = setTimeout(() => setMore(false), MORE_IDLE_MS); } });
+}
+document.addEventListener('pointerdown', (e) => { if (moreOpen() && !$('practiceTop').contains(e.target)) setMore(false); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && moreOpen()) { setMore(false); $('moreBtn').focus(); } });
+
 /** Scroll so the practice box starts at the top of the screen (the tab bar goes out of view). */
 function hideTabBar() {
   if (!isPhoneLandscape() || $('tab-practice').hidden) return;
@@ -1310,6 +1357,7 @@ let piecesPage = null;
 let calWizard = null;
 let metroCard = null;
 function setTab(tab) {
+  setMore(false);
   // on very wide screens Practice and Config share one page
   if (tab === 'config' && isWide()) tab = 'practice';
   prefs.tab = tab; savePrefs();

@@ -130,6 +130,8 @@ input[type="range"] { width: 100%; accent-color: var(--accent); }
 .list-nav { display: flex; align-items: center; gap: 6px; margin-left: auto; }
 .list-nav .btn { padding: 6px 12px; }
 .list-nav span { text-align: center; white-space: nowrap; }
+.cast-tools { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.more-btn { display: none; }
 .sep { border: 0; border-top: 1px solid var(--border); margin: 4px 0 14px; }
 .stage { padding: 16px; }
 .stage h2 { margin: 0; font-size: 22px; }
@@ -278,19 +280,31 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   .icon-btn { padding: 3px 9px; font-size: 13px; }
   main { padding: 6px max(10px, var(--safe-r)) max(6px, var(--safe-b)) max(10px, var(--safe-l)); }
   .practice { padding: 8px 10px; }
-  /* top box in two columns: rhythms + Start/Play on the left, scale name and description on the right */
+  /* One slim bar: Start, Play, ◀ ▶ (pieces or syllabus), the title, the status and ⋯.
+     ⋯ drops everything else down over the music, and it hides again by itself (setMore in main.js).
+     The wrapper keeps the bar's height, so the drop-down never pushes the music down. */
+  .practice-top-wrap { --bar-h: 40px; position: relative; height: var(--bar-h); margin-bottom: 6px; z-index: 30; }
   .practice-top {
-    display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 27%); column-gap: 12px;
-    border-bottom: 1px solid var(--border); margin-bottom: 6px; padding-bottom: 4px;
+    position: absolute; top: 0; left: 0; right: 0; min-height: var(--bar-h);
+    display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; padding: 0 0 4px;
+    background: var(--surface); border-bottom: 1px solid var(--border);
   }
-  .practice-top .rhythm-bar { grid-column: 1; grid-row: 1; }
-  .practice-top .control-row { grid-column: 1; grid-row: 2; border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
-  .practice-top .title-row {
-    grid-column: 2; grid-row: 1 / span 2; align-self: center;
-    flex-direction: column; align-items: flex-end; text-align: right; gap: 2px; margin: 0; min-width: 0;
-  }
-  .practice-top .title-row h2 { font-size: 15px; line-height: 1.25; }
-  .practice-top .title-row .opts { font-size: 12px; line-height: 1.3; }
+  .practice-top > .control-row, .practice-top > .title-row { display: contents; }
+  .practice-top #startBtn { order: 1; }
+  .practice-top #playBtn { order: 2; }
+  .practice-top .list-nav { order: 3; margin-left: 0; gap: 4px; }
+  .practice-top .list-nav .btn { padding: 3px 10px; }
+  .practice-top #exTitle { order: 4; flex: 1 1 0; min-width: 0; font-size: 14px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .practice-top .status { order: 5; flex: 1.4 1 0; min-width: 0; }
+  .practice-top .more-btn { order: 6; display: inline-flex; align-items: center; justify-content: center; padding: 3px 14px; font-size: 16px; line-height: 1; min-width: 44px; min-height: 28px; }
+  /* the drop-down part */
+  .practice-top .rhythm-bar, .practice-top .cast-tools, .practice-top #exOptions, .practice-top #pieceBar { display: none; flex: 1 0 100%; margin: 0; }
+  .practice-top.expanded { box-shadow: var(--shadow); border-radius: 0 0 10px 10px; padding-bottom: 8px; max-height: calc(100dvh - 16px); overflow-y: auto; }
+  .practice-top.expanded #exOptions { display: block; order: 10; font-size: 12px; }
+  .practice-top.expanded .rhythm-bar { display: flex; order: 11; padding-bottom: 2px; }
+  .practice-top.expanded #pieceBar { display: flex; order: 12; }
+  .practice-top.expanded .cast-tools { display: flex; order: 13; }
+  .practice-top.expanded .more-btn { background: var(--accent-soft); border-color: var(--accent); }
   .rhythm-bar { padding-bottom: 4px; margin-bottom: 4px; }
   .chip { padding: 3px 8px; font-size: 13px; }
   .rhythm-bar { gap: 4px; }
@@ -301,14 +315,14 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
   .control-row .status { font-size: 13px; }
   .practice-main { grid-template-columns: 96px minmax(0, 1fr); gap: 10px; }
   .gauge-col { top: 6px; gap: 6px; }
-  .tuner.stack .meter { height: calc(100dvh - 150px - var(--safe-b)); min-height: 70px; width: 40px; }
+  .tuner.stack .meter { height: calc(100dvh - 112px - var(--safe-b)); min-height: 70px; width: 40px; }
   .tuner.stack .readout .note { font-size: 22px; }
   .tuner.stack .readout .cents { font-size: 12px; margin-top: 2px; }
   /* the tab bar scrolls away (see hideTabBar in main.js): the practice box gets the full height */
   .app-header { position: static; }
   .pc-layout { min-height: 100dvh; }
   /* a swipe past the end of the score carries on and scrolls the page down to the summary */
-  .score-wrap { max-height: calc(100dvh - 112px - var(--safe-b)); min-height: 100px; overscroll-behavior: auto; }
+  .score-wrap { max-height: calc(100dvh - 74px - var(--safe-b)); min-height: 100px; overscroll-behavior: auto; }
   .footer-note { display: none; }
 }
 .res-block svg { width: 100%; height: auto; display: block; }
@@ -336,10 +350,8 @@ body.cast .score-wrap { max-height: calc(100dvh - 120px - var(--safe-b)); }
 body.cast .arrow { border-left-width: 6px; border-right-width: 6px; border-top-width: 10px; }
 @media (orientation: landscape) and (max-height: 500px) {
   body.cast .control-row #startBtn, body.cast .control-row #playBtn { padding: 8px 20px; font-size: 17px; min-height: 44px; }
-  body.cast .score-wrap { max-height: calc(100dvh - 96px - var(--safe-b)); }
-  /* the piece's tempo and bar buttons get a wider column, so they take fewer rows above the music */
-  body.cast .practice-top { grid-template-columns: minmax(0, 1fr) minmax(150px, 48%); }
-  body.cast .practice-top .title-row .piece-bar { justify-content: flex-end; }
+  body.cast .practice-top-wrap { --bar-h: 48px; }
+  body.cast .score-wrap { max-height: calc(100dvh - 82px - var(--safe-b)); }
   body.cast .cast-size input { width: 90px; }
 }
 
