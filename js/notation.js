@@ -44,11 +44,15 @@ export function renderKeySignature(container, exercise) {
  * Full score. Returns positions for the follow arrow and an element per event
  * for colouring notes after scoring.
  * @param {(note)=>string|null} [o.syllables] sol-fa syllable shown under each note (singing)
+ * @param {number} [o.scale] draw smaller (0.5 = half size, so twice as much fits across) –
+ *   TV mode. Positions returned (arrow, bars) are in the page's pixels either way.
  */
-export function renderScore(container, exercise, seq, { clefMode = 'change', compact = false, syllables = null } = {}) {
+export function renderScore(container, exercise, seq, { clefMode = 'change', compact = false, syllables = null, scale = 1 } = {}) {
   container.innerHTML = '';
   const V = VF();
-  const width = Math.max(200, Math.floor(container.clientWidth || 800));
+  const s = scale > 0 && scale < 1 ? scale : 1;
+  // laid out as if the box were 1/s as wide, then shrunk to fit it
+  const width = Math.max(200, Math.floor((container.clientWidth || 800) / s));
   const glyphs = seq.glyphs;
 
   // A piece (pieces.js) carries its own clef, key and bars on each glyph; its
@@ -91,7 +95,8 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
   const homeAnn = exercise.info.clefAnnotation || undefined;
   const annFor = (c) => (c === exercise.info.clef ? homeAnn : undefined);
   const topPad = clefMode === 'change' ? (compact ? 34 : 40) : (compact ? 56 : 70);
-  const ctx = newRenderer(container, width, lines.length * lineH + 30);
+  const height = lines.length * lineH + 30;
+  const ctx = newRenderer(container, width, height);
 
   const noteObjs = new Array(glyphs.length);
   const staveOf = new Array(glyphs.length);
@@ -318,6 +323,20 @@ export function renderScore(container, exercise, seq, { clefMode = 'change', com
     if (note.getStemDirection && note.getStemDirection() === 1 && note.hasStem()) top = Math.min(top, Math.min(...ys) - 35);
     targets[g.eventIndex] = { x, y: top - 8, el: note.getSVGElement ? note.getSVGElement() : null };
   });
+  if (s !== 1) {
+    // shrink the drawing; positions given back follow it
+    const svg = container.querySelector('svg');
+    if (svg) {
+      svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+      svg.setAttribute('width', String(Math.round(width * s)));
+      svg.setAttribute('height', String(Math.round(height * s)));
+      svg.style.width = `${Math.round(width * s)}px`;
+      svg.style.height = `${Math.round(height * s)}px`;
+    }
+    for (const t of targets) if (t) { t.x *= s; t.y *= s; }
+    for (const t of glyphTargets) if (t) { t.x *= s; t.y *= s; t.staveEnd *= s; }
+    for (const b of barBoxes) if (b) { b.x0 *= s; b.x1 *= s; b.y0 *= s; b.y1 *= s; }
+  }
   return { arrowTargets: targets, glyphTargets, barBoxes };
 }
 

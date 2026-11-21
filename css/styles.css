@@ -313,6 +313,36 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 }
 .res-block svg { width: 100%; height: auto; display: block; }
 
+/* ---------- TV mode: the phone's screen cast to a TV ----------
+   The music is drawn small (renderScore's scale) so much more of it fits; the
+   words and the tuner bar get smaller too, but Start and Play stay big enough to tap. */
+.cast-btn[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); font-weight: 600; }
+.cast-size { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); }
+.cast-size input { width: 120px; }
+.cast-size output { min-width: 3em; font-variant-numeric: tabular-nums; }
+body.cast .practice-main { grid-template-columns: 56px minmax(0, 1fr); gap: 8px; }
+body.cast .tuner.stack .meter { width: 30px; }
+body.cast .tuner.stack .readout .note { font-size: 16px; }
+body.cast .tuner.stack .readout .cents, body.cast .tuner.stack .readout .hint { font-size: 11px; }
+body.cast .stage h2, body.cast .practice-top .title-row h2 { font-size: 14px; }
+body.cast .stage .opts, body.cast .practice-top .title-row .opts { font-size: 11px; margin: 2px 0 6px; }
+body.cast .piece-bar { font-size: 12px; gap: 4px; }
+body.cast .piece-bar .btn { padding: 3px 9px; }
+body.cast .rhythm-bar .chip { padding: 2px 7px; font-size: 12px; }
+body.cast .rhythm-bar .chip .note-icon { height: 15px; }
+body.cast .control-row .status { font-size: 13px; }
+body.cast .control-row #startBtn, body.cast .control-row #playBtn { padding: 10px 22px; font-size: 18px; min-height: 48px; }
+body.cast .score-wrap { max-height: calc(100dvh - 120px - var(--safe-b)); }
+body.cast .arrow { border-left-width: 6px; border-right-width: 6px; border-top-width: 10px; }
+@media (orientation: landscape) and (max-height: 500px) {
+  body.cast .control-row #startBtn, body.cast .control-row #playBtn { padding: 8px 20px; font-size: 17px; min-height: 44px; }
+  body.cast .score-wrap { max-height: calc(100dvh - 96px - var(--safe-b)); }
+  /* the piece's tempo and bar buttons get a wider column, so they take fewer rows above the music */
+  body.cast .practice-top { grid-template-columns: minmax(0, 1fr) minmax(150px, 48%); }
+  body.cast .practice-top .title-row .piece-bar { justify-content: flex-end; }
+  body.cast .cast-size input { width: 90px; }
+}
+
 /* ---------- metronome (Tuner page) ---------- */
 .metro { display: grid; gap: 10px; }
 .metro-tempo { display: flex; align-items: center; gap: 10px; }

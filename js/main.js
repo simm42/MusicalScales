@@ -368,8 +368,10 @@ function drawScore() {
   rendered = { arrowTargets: [] };
   if (!window.Vex) { scoreEl.textContent = ''; return; }
   try {
-    if (exercise.isPiece) rendered = seq.events.length ? renderScore(scoreEl, exercise, seq, { clefMode: 'home', compact: isPhoneLandscape(), syllables }) : (scoreEl.innerHTML = '', { arrowTargets: [] });
-    else if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, compact: isPhoneLandscape(), syllables });
+    // TV mode: drawn smaller, with tighter lines, so much more fits on the screen
+    const look = { compact: isPhoneLandscape() || !!prefs.cast, scale: castScale(), syllables };
+    if (exercise.isPiece) rendered = seq.events.length ? renderScore(scoreEl, exercise, seq, { clefMode: 'home', ...look }) : (scoreEl.innerHTML = '', { arrowTargets: [] });
+    else if (settings.display === 'score') rendered = renderScore(scoreEl, exercise, seq, { clefMode: settings.clefMode, ...look });
     else if (settings.display === 'keysig') rendered = renderKeySignature(scoreEl, exercise);
     else scoreEl.innerHTML = '';
   } catch (err) {
@@ -379,6 +381,36 @@ function drawScore() {
   if (lastResult) colourAll(lastResult);
   drawSectionMarks();
 }
+
+// ---------------------------------------------------------------- TV mode (the phone's screen cast to a TV)
+// The music is drawn smaller so much more of it fits; Start and Play stay big (styles.css).
+// the size is a percentage of the normal size, set with the slider next to 📺 TV
+const CAST = { min: 25, max: 100, normal: 50 };
+const castPct = () => Math.round(Math.min(CAST.max, Math.max(CAST.min, Number(prefs.castPct) || CAST.normal)));
+const castScale = () => (prefs.cast ? castPct() / 100 : 1);
+function applyCast() {
+  document.body.classList.toggle('cast', !!prefs.cast);
+  $('castBtn').setAttribute('aria-pressed', String(!!prefs.cast));
+  $('castSizeBox').hidden = !prefs.cast;
+  $('castSize').value = castPct();
+  $('castSizeOut').textContent = `${castPct()}%`;
+}
+$('castBtn').addEventListener('click', () => {
+  prefs.cast = !prefs.cast;
+  savePrefs();
+  applyCast();
+  // TV mode always shows the music (it is the point of it)
+  if (prefs.cast && !scoreShown()) { setGlobal({ display: 'score' }); return; }
+  redrawKeepingColours();
+});
+// redrawn as the slider moves (a moment after it stops, so dragging stays smooth)
+let castTimer = null;
+$('castSize').addEventListener('input', () => {
+  prefs.castPct = Number($('castSize').value);
+  $('castSizeOut').textContent = `${castPct()}%`;
+  clearTimeout(castTimer);
+  castTimer = setTimeout(() => { savePrefs(); redrawKeepingColours(); }, 120);
+});
 
 function placeArrow(k) {
   arrowIndex = k;
@@ -1586,6 +1618,7 @@ engine.onStall = () => {
 function init() {
   startAnalytics();
   setupPwa();
+  applyCast();
   // the installed app with something to keep: ask straight away (browsers don't ask the person then)
   const installed = (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) || window.navigator.standalone === true;
   if (installed && (list.length || Object.keys(results).length || loadPieces().length)) askKeepOnce(); else showKeep();

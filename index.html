@@ -142,6 +142,8 @@
       <div class="control-row">
         <button class="btn primary" id="startBtn">Start</button>
         <button class="btn" id="playBtn" title="Hear the music played – a scale at the tempo set in Config, a piece at its own tempo">▶ Play</button>
+        <button class="btn cast-btn" id="castBtn" type="button" aria-pressed="false" title="TV mode: the music is drawn much smaller so far more of it fits – for showing your phone's screen on a TV. Start and Play stay big.">📺 TV</button>
+        <label class="cast-size" id="castSizeBox" hidden title="Size of the music in TV mode – smaller fits more on the screen; larger is easier to read from further away"><span>Size</span><input type="range" id="castSize" min="25" max="100" step="5" aria-label="Size of the music in TV mode"><output id="castSizeOut"></output></label>
         <p class="status" id="status" aria-live="polite">Press Start, wait for “Play now”, then play.</p>
         <nav class="list-nav" id="listNav" aria-label="Syllabus" hidden>
           <button class="btn" id="prevBtn" type="button" aria-label="Previous exercise in the syllabus" title="Previous in syllabus">◀</button>
@@ -479,6 +481,18 @@
           <li>The screen stays on while the app is listening or playing – during a scale, ▶ Play, the tuner and the metronome – and for 2 minutes afterwards, so your phone doesn't lock in the middle.</li>
           <li>The microphone stays on while the app is open, so you're only asked once. You can turn this off in Config (<b>Keep the microphone on…</b>).</li>
           <li>On iPhone in Safari, to stop being asked about the microphone: tap <b>aA</b> in the address bar → <b>Website Settings</b> → <b>Microphone</b> → <b>Allow</b>.</li>
+        </ul>
+      </details>
+
+      <details>
+        <summary>Showing the music on a TV</summary>
+        <p>A phone screen is small for reading music. You can show it on a TV with screen mirroring (<b>Screen Mirroring</b> to an Apple TV or AirPlay TV on iPhone; <b>Cast</b> / <b>Smart View</b> / <b>Screen cast</b> on Android) – and the phone stays on your music stand, listening with its own microphone as usual.</p>
+        <ul>
+          <li>Tap <b>📺 TV</b> next to <b>▶ Play</b> on the Practice page. The music is drawn much smaller, so far more of it fits on the screen – the TV makes it big again. The writing and the tuning bar get smaller too, but <b>Start</b>, <b>Stop</b> and <b>Play</b> stay big enough to tap.</li>
+          <li><b>Size</b> (the slider next to 📺 TV) sets how small: lower fits more music, higher is easier to read from further away or if your eyesight needs it. It's remembered on this device; 50% is a good start.</li>
+          <li>Turn the phone <b>sideways</b>: a widescreen TV then shows the whole phone screen, much larger. Upright, the picture is a narrow strip in the middle of the TV.</li>
+          <li>Tap <b>📺 TV</b> again to go back to the normal size.</li>
+          <li>The sound of <b>Play</b> and the metronome may come out of the TV, often a moment late. The listening allows for a steady delay like that, so your timing isn't marked down for it.</li>
         </ul>
       </details>
 
