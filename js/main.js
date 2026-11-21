@@ -446,9 +446,10 @@ function gaugeNote(n) {
   return settings.solfegeLetters ? `${syllables(n)} · ${noteName(n, { octave: true })}` : syllables(n);
 }
 
-function liveNoteName(midiSounding) {
+/** The name of the note being played; `k` is the note it was matched to (in the run), for its spelling. */
+function liveNoteName(midiSounding, k = null) {
   const written = Math.round(midiSounding) - exercise.info.transpose;
-  const ev = seq.events[arrowIndex];
+  const ev = (k != null && runSeq && runSeq.events[k]) || seq.events[arrowIndex];
   if (ev) {
     const k = ev.writtenMidis.indexOf(written);
     if (k >= 0) return gaugeNote(ev.notes[k]);
@@ -527,9 +528,10 @@ async function startSession() {
         }
         const cents = (pv.midi - Math.round(pv.midi)) * 100;
         meter.setBar(0, cents, p);
-        meter.setReadout(liveNoteName(pv.midi), fmtCents(cents), hintText());
+        meter.setReadout(liveNoteName(pv.midi, pv.event), fmtCents(cents), hintText());
       },
       arrow: (k) => placeArrow(toFull(k)),
+      rest: (beat) => restArrow(beat), // between notes: along the rest, in time
       noteDone: (k, cents) => colourNote(toFull(k), cents),
       done: (result) => finishSession(result),
     },

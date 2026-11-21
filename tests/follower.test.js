@@ -1,5 +1,5 @@
 // The live arrow: following repeated quavers, octave slips, and finding the place again.
-import { test, eq, assert } from './harness.js';
+import { test, eq, assert, near } from './harness.js';
 import { Follower } from '../js/follower.js';
 import { buildExercise } from '../js/exercises.js';
 import { buildSequence } from '../js/sequence.js';
@@ -92,4 +92,48 @@ test('the top note sounding twice does not skip it on the way down', () => {
   eq(f.onset(64, 34.9), -1, 'the E again (a bounce) is not the E on the way down');
   f.release();
   eq(f.onset(65, 38.6), top, 'the top F is still where the arrow goes next');
+});
+
+// ---------------------------------------------------------------- the arrow shows what is due next
+const dueEvents = () => [
+  { midis: [60], beats: 1, onsetBeat: 0 },
+  { midis: [62], beats: 1, onsetBeat: 1 },
+  // a crotchet rest (beat 2)
+  { midis: [64], beats: 1, onsetBeat: 3, articulation: 'staccato' },
+  { midis: [65], beats: 2, onsetBeat: 4 },
+];
+
+test('follower: the arrow moves on once a note has sounded for about its length', () => {
+  const f = new Follower(dueEvents(), { spb: 0.5 }); // crotchet = 0.5 s
+  eq(f.due(0), { event: 0 }, 'before anything is played: the first note');
+  f.onset(60, 0);
+  eq(f.due(0.2), { event: 0 }, 'still playing it');
+  eq(f.due(0.41), { event: 1 }, 'after about a crotchet: the next note is due');
+});
+
+test('follower: a note stopped well short keeps the arrow on it', () => {
+  const f = new Follower(dueEvents(), { spb: 0.5 });
+  f.onset(60, 0);
+  f.release(0.1); // a fifth of its length
+  eq(f.due(0.6), { event: 0 });
+  f.onset(62, 0.7); // the next note played: the arrow follows it
+  eq(f.due(0.75), { event: 1 });
+});
+
+test('follower: over a rest the arrow moves along it in time, then to the next note', () => {
+  const f = new Follower(dueEvents(), { spb: 0.5 });
+  f.onset(60, 0);
+  f.onset(62, 0.5);
+  eq(f.due(0.6), { event: 1 });
+  const a = f.due(1.0), b = f.due(1.25);
+  assert(a.restBeat != null && b.restBeat != null && b.restBeat > a.restBeat, JSON.stringify([a, b]));
+  near(b.restBeat, 2.5, 1e-9, 'half way through the rest');
+  eq(f.due(1.55), { event: 2 }, 'the rest is over: the next note');
+  // a staccato note only needs to be held for a short time
+  f.onset(64, 1.5);
+  f.release(1.65); // held a little over a quarter of its length
+  eq(f.due(1.95), { event: 3 });
+  // the last note: the arrow stays there
+  f.onset(65, 2.0);
+  eq(f.due(3.5), { event: 3 });
 });

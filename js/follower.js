@@ -6,6 +6,9 @@
 //    one heard note, so the next pitch can be several events on.
 //  - A note heard an octave (or an octave and a fifth) out still matches,
 //    unless the exercise itself steps by octaves.
+//  - The arrow shows what is due next: once the note being played has been
+//    heard for roughly its length, the arrow moves on to the next note (over a
+//    rest first, in time). A note stopped well short keeps the arrow on it.
 //  - If the arrow gets stuck – a note that doesn't fit, or the same place for
 //    much longer than the player's tempo suggests – the last few notes heard
 //    are compared with the music further on, and the arrow jumps to where
@@ -20,12 +23,24 @@ export const FOLLOW = {
   minFit: 3,         // heard notes that must fit to jump (fewer early in a run)
   stuckFactor: 2.5,  // stuck: on one place this many times longer than expected…
   stuckMinSec: 1.5,  // …and at least this long
+  dueFrac: 0.8,      // move on once a note has sounded for this much of its length…
+  heldFrac: 0.5,     // …if it was held for at least this much (a staccato note: half of that)
   maxBeatsUnknown: 6, // furthest jump (in beats) before the player's tempo is known
 };
 
 export class Follower {
-  constructor(events, { lookahead = FOLLOW.lookahead, pitchless = false, fold = false } = {}) {
+  /**
+   * @param {object[]} events
+   * @param {object} o  spb: seconds per beat at the set tempo (until the player's own is known);
+   *                    sound: each note's sounding length in beats (without any rest after it)
+   */
+  constructor(events, { lookahead = FOLLOW.lookahead, pitchless = false, fold = false, spb = null, sound = null } = {}) {
     this.events = events;
+    this.spbSet = spb;
+    this.sound = sound || events.map((e) => e.beats);
+    this.last = -1;        // the note last matched (sounding or not)
+    this.lastT = null;     // when it started
+    this.releaseT = null;  // when it stopped (null while it sounds)
     this.lookahead = lookahead;
     this.pitchless = pitchless;
     this.fold = fold;
@@ -86,6 +101,9 @@ export class Follower {
 
   moveTo(k, t) {
     this.current = k;
+    this.last = k;
+    this.lastT = t;
+    this.releaseT = null;
     this.pos = k + 1;
     this.matches.push({ event: k, t });
     if (this.matches.length > 12) this.matches.shift();
@@ -179,7 +197,37 @@ export class Follower {
   }
 
   /** The sounding note ended. */
-  release() { this.current = -1; }
+  release(t = null) { if (this.current >= 0) this.releaseT = t; this.current = -1; }
+
+  /**
+   * What the arrow should show at time t – what is due to be played:
+   *  { event: k } a note, or { restBeat } a point within a rest (in the music's beats).
+   * It stays on the note being played until that has sounded for roughly its length
+   * (and was held for a fair part of it), then moves on – over a rest first, in time.
+   */
+  due(t) {
+    const ev = this.events;
+    if (!ev.length) return { event: 0 };
+    const k = this.last;
+    if (k < 0 || this.lastT == null || t == null) return { event: Math.min(this.pos, ev.length - 1) };
+    const e = ev[k];
+    const spb = this.secondsPerBeat() || this.spbSet;
+    if (!spb) return { event: this.arrow };
+    const len = (this.sound[k] ?? e.beats) * spb;
+    const held = (this.releaseT != null ? this.releaseT : t) - this.lastT;
+    const need = FOLLOW.heldFrac * len * (e.articulation === 'staccato' ? 0.5 : 1);
+    if (t - this.lastT < FOLLOW.dueFrac * len || held < need) return { event: k };
+    if (this.pos >= ev.length) return { event: ev.length - 1 }; // the last note: nothing further
+    const next = ev[this.pos];
+    // a rest before the next note: the arrow moves along it in time
+    const endBeat = e.onsetBeat + (this.sound[k] ?? e.beats);
+    if (next.onsetBeat != null && e.onsetBeat != null && next.onsetBeat - endBeat > 0.05) {
+      const restT = this.lastT + len;
+      const into = Math.max(0, (t - restT) / spb);
+      if (endBeat + into < next.onsetBeat) return { restBeat: endBeat + into };
+    }
+    return { event: this.pos };
+  }
 
   /** Event the arrow should point at. */
   get arrow() { return this.current >= 0 ? this.current : Math.min(this.pos, this.events.length - 1); }

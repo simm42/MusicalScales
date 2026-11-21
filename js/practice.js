@@ -387,7 +387,14 @@ export class PracticeSession {
     this.segOpts = applied.segmenter;
     this.segmenter = null;
     // notes heard at an octave still move the arrow, unless the exercise steps by octaves
-    this.follower = new Follower(o.seq.events, { pitchless: this.doubleStop, fold: !this.doubleStop && !hasOctaveSteps(o.seq.events) });
+    // the arrow shows what is due next: it moves on once a note has sounded for about its
+    // length (its sounding length – a scale's rhythm can put a rest after it)
+    this.follower = new Follower(o.seq.events, {
+      pitchless: this.doubleStop, fold: !this.doubleStop && !hasOctaveSteps(o.seq.events),
+      spb: o.settings && o.settings.bpm ? 60 / o.settings.bpm : null,
+      sound: o.seq.events.map((e) => { const g = o.seq.glyphs && o.seq.glyphs[e.glyphIndex]; return g && g.beats > 0 ? Math.min(g.beats, e.beats) : e.beats; }),
+    });
+    this.shown = null; // what the arrow shows now (an event, or a beat within a rest)
     this.metronome = null;
     this.t0 = null;
     this.startT = null;
@@ -448,14 +455,14 @@ export class PracticeSession {
         const jumpsBefore = this.follower.jumps;
         this.curMatch = this.follower.onset(n.nominal, n.onset);
         this.log.onsets.push({ t: +n.onset.toFixed(3), heard: n.nominal, matched: this.curMatch, ...(this.follower.jumps > jumpsBefore ? { refound: true } : {}) });
-        this.on.arrow(this.follower.arrow);
+        this.showDue(n.onset);
       },
       onNote: (n) => {
         this.lastNoteEnd = n.end;
         const k = this.curMatch;
         this.curMatch = -1;
-        this.follower.release();
-        this.on.arrow(this.follower.arrow);
+        this.follower.release(n.end);
+        this.showDue(n.end);
         if (k >= 0) {
           const e = this.o.seq.events[k];
           let cents;
@@ -482,8 +489,8 @@ export class PracticeSession {
     // the arrow stuck in one place for too long: find where the player is from the last notes heard
     if (this.follower && this.follower.tick(f.t)) {
       this.log.onsets.push({ t: +f.t.toFixed(3), refound: true, matched: this.follower.arrow });
-      this.on.arrow(this.follower.arrow);
     }
+    if (this.follower && this.segmenter) this.showDue(f.t);
     if (this.startT == null) this.startT = f.t;
     this.frames.push(f);
     if (!this.segmenter) {
@@ -506,12 +513,28 @@ export class PracticeSession {
     }
   }
 
+  /** Point the arrow at what is due to be played (moving along a rest in time). */
+  showDue(t) {
+    const d = this.follower.due(t);
+    if (d.restBeat != null) {
+      this.shown = null;
+      if (this.on.rest) this.on.rest(d.restBeat);
+      return;
+    }
+    if (this.shown === d.event) return;
+    this.shown = d.event;
+    this.on.arrow(d.event);
+  }
+
+  /** The note being played now (for the tuning bar), else the one due. */
+  soundingEvent() { return this.follower.current >= 0 ? this.follower.current : this.follower.arrow; }
+
   live(f) {
     const { settings } = this.o;
     const a4 = this.a4;
     const gate = this.segmenter.gate; // follows the running background-noise estimate
     if (this.doubleStop) {
-      const ev = this.o.seq.events[this.follower.arrow];
+      const ev = this.o.seq.events[this.soundingEvent()];
       const pair = f.rms >= gate ? liveDoubleStop(f.peaks, ev, a4) : null;
       this.on.pitch(pair ? { pair, event: ev } : null);
       return;
@@ -520,7 +543,8 @@ export class PracticeSession {
     if (!voiced) { this.smooth = []; this.on.pitch(null); return; }
     let m = freqToMidi(f.freq, a4);
     // fold an octave error towards the expected note for display only
-    const ev = this.o.seq.events[this.follower.arrow];
+    const k = this.soundingEvent();
+    const ev = this.o.seq.events[k];
     if (ev) {
       const exp = ev.midis[0];
       const r = Math.round(m);
@@ -531,7 +555,7 @@ export class PracticeSession {
     this.smooth.push({ t: f.t, m });
     while (this.smooth.length && f.t - this.smooth[0].t > span) this.smooth.shift();
     const avg = this.smooth.reduce((a, x) => a + x.m, 0) / this.smooth.length;
-    this.on.pitch({ midi: avg });
+    this.on.pitch({ midi: avg, event: k });
   }
 
   finish(reason = 'Stop pressed') {
