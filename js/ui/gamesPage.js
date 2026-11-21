@@ -13,6 +13,26 @@ import { MicError } from '../audio/mic.js';
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const starText = (n) => '★'.repeat(n) + '☆'.repeat(3 - n);
 
+/**
+ * Name the note, easier: for each note its four choices in the order of the buttons, a pause,
+ * and the note. The key isn't played as well – the choices already set the scene.
+ * `marks` says what each sound is, to light it up.
+ */
+function easyListenSeq(q) {
+  const events = [], glyphs = [], marks = [];
+  const add = (midi, beats, sounding, mark) => {
+    const i = events.length;
+    glyphs.push({ beats: sounding });
+    events.push({ index: i, glyphIndex: i, beats, midis: [midi], slurred: false });
+    marks.push(mark);
+  };
+  q.notes.forEach((n, row) => {
+    q.choiceMidis[row].forEach((m, k) => add(m, k === q.choiceMidis[row].length - 1 ? 1.7 : 0.8, 0.65, { row, name: q.choices[row][k] }));
+    add(n.midi, row < q.notes.length - 1 ? 2.2 : 1.1, 0.95, { row, note: true });
+  });
+  return { seq: { events, glyphs }, marks };
+}
+
 /** A few notes as a little "sequence" the synthesiser can play: the key, a pause, then the notes. */
 function soundSeq(reference, notes) {
   const events = [], glyphs = [];
@@ -51,9 +71,11 @@ export class GamesPage {
   home() {
     this.stop();
     this.progress = loadProgress();
+    const easy = !!this.progress.listenEasier;
     const levelButtons = (game, levels) => levels.map((L) => {
-      const open = isUnlocked(this.progress, game, L.id);
-      const best = this.progress[game].best[L.id];
+      const track = game === 'listen' && easy ? 'listenEasy' : game; // the easier version keeps its own scores
+      const open = isUnlocked(this.progress, track, L.id);
+      const best = (this.progress[track] || { best: {} }).best[L.id];
       return `<button type="button" class="game-level" data-game="${game}" data-level="${L.id}" ${open ? '' : 'disabled'}
         title="${esc(L.detail)}"><span class="lv">Level ${L.id}</span><span class="nm">${esc(L.label)}</span>
         <span class="st">${open ? (best != null ? `${starText(stars(best))} ${Math.round(best * 100)}%` : 'Not played yet') : '🔒 Score 70% on the level before'}</span></button>`;
@@ -65,6 +87,7 @@ export class GamesPage {
         <div class="game-card">
           <h3>🎧 Name the note</h3>
           <p class="muted small">A note is played – choose its name from four. At first the key is given and played; later it isn't, and there are two notes.</p>
+          <label class="check small game-easy"><input type="checkbox" id="listenEasy" ${easy ? 'checked' : ''}> <span><b>Easier:</b> hear the four choices before each note <span class="muted">(its own scores and levels)</span></span></label>
           <div class="game-levels">${levelButtons('listen', LISTEN_LEVELS)}</div>
         </div>
         <div class="game-card">
@@ -73,6 +96,11 @@ export class GamesPage {
           <div class="game-levels">${levelButtons('sing', SING_LEVELS)}</div>
         </div>
       </div>`;
+    this.root.querySelector('#listenEasy').addEventListener('change', (e) => {
+      this.progress.listenEasier = e.target.checked;
+      saveProgress(this.progress);
+      this.home();
+    });
     this.root.querySelectorAll('.game-level').forEach((b) => b.addEventListener('click', () => {
       const level = Number(b.dataset.level);
       if (b.dataset.game === 'listen') this.startListen(level); else this.startSing(level);
@@ -85,10 +113,12 @@ export class GamesPage {
   }
 
   /** Play the key (if allowed) and/or the notes; resolves when finished. Call inside a tap. */
-  playSounds(reference, notes) {
+  playSounds(reference, notes) { return this.playSeq(soundSeq(reference, notes)); }
+
+  /** Play a little sequence; onEvent(k) as each sound starts. Resolves when finished. */
+  playSeq(seq, onEvent = null) {
     this.player.prime();
     const inst = this.getInstrument();
-    const seq = soundSeq(reference, notes);
     // how long it should take (100 beats a minute, plus the lead-in and tail)
     const expectMs = (seq.events.reduce((a, e) => a + e.beats, 0) * 0.6 + 1.2) * 1000;
     return new Promise((resolve) => {
@@ -105,7 +135,7 @@ export class GamesPage {
       // never wait for ever: some phones don't say when a sound has finished
       guard = setTimeout(finish, expectMs + 1500);
       this.playing = true;
-      this.player.play(seq, { bpm: 100, a4: this.getA4(), instrument: inst === 'voice' ? 'voice' : inst, onEnd: finish }).catch(finish);
+      this.player.play(seq, { bpm: 100, a4: this.getA4(), instrument: inst === 'voice' ? 'voice' : inst, onEvent: onEvent || undefined, onEnd: finish }).catch(finish);
     });
   }
 
@@ -120,7 +150,7 @@ export class GamesPage {
 
   startListen(level) {
     this.view = 'listen';
-    this.round = { game: 'listen', level, i: 0, right: 0, total: GAME.listenRound, asked: 0 };
+    this.round = { game: 'listen', easy: !!this.progress.listenEasier, level, i: 0, right: 0, total: GAME.listenRound, asked: 0 };
     this.nextListen(true);
   }
 
@@ -135,20 +165,32 @@ export class GamesPage {
   }
 
   playQuestion() {
-    const q = this.round.q;
-    return this.playSounds(q.reference, q.notes.map((n) => n.midi));
+    const R = this.round, q = R.q;
+    if (!R.easy) return this.playSounds(q.reference, q.notes.map((n) => n.midi));
+    // easier: each choice lights up as it sounds, then the note's row
+    const { seq, marks } = easyListenSeq(q);
+    const light = (mark) => {
+      this.root.querySelectorAll('.choice.sounding').forEach((b) => b.classList.remove('sounding'));
+      this.root.querySelectorAll('.choice-row.hearing').forEach((r) => r.classList.remove('hearing'));
+      if (!mark) return;
+      if (mark.note) { const row = this.root.querySelector(`.choice-row[data-row="${mark.row}"]`); if (row) row.classList.add('hearing'); return; }
+      const b = [...this.root.querySelectorAll(`.choice[data-row="${mark.row}"]`)].find((x) => x.dataset.name === mark.name);
+      if (b) b.classList.add('sounding');
+    };
+    return this.playSeq(seq, (k) => light(marks[k])).then(() => light(null));
   }
 
   renderListen() {
     const R = this.round, q = R.q, L = LISTEN_LEVELS.find((x) => x.id === R.level);
-    const keyLine = q.keyShown ? `Key: <b>${esc(q.key.title)}</b>${q.hearKey ? ' – you hear the key first' : ''}` : 'Key: <b>not given</b>';
+    const keyLine = q.keyShown ? `Key: <b>${esc(q.key.title)}</b>${q.hearKey && !R.easy ? ' – you hear the key first' : ''}` : 'Key: <b>not given</b>';
     const rows = q.notes.map((n, k) => `
       <div class="choice-row" data-row="${k}">
         ${q.notes.length > 1 ? `<span class="muted small">${k === 0 ? 'First' : 'Second'} note</span>` : ''}
         <div class="choices">${q.choices[k].map((c) => `<button type="button" class="choice" data-row="${k}" data-name="${esc(c)}">${esc(c)}</button>`).join('')}</div>
+        ${R.easy ? '<span class="hearing-label muted small">← now the note</span>' : ''}
       </div>`).join('');
     this.root.innerHTML = `${this.header(`Name the note · Level ${R.level}`, R.i, R.total, R.right)}
-      <p class="muted small">${esc(L.detail)}</p>
+      <p class="muted small">${esc(L.detail)}${R.easy ? ` <b>Easier:</b> you hear the four choices (each lights up), then the note${q.hearKey ? ' – the key isn’t played' : ''}.` : ''}</p>
       <p>${keyLine}</p>
       <div class="row"><button type="button" class="btn primary big" data-act="play">▶ ${R.i === 0 && !R.started ? 'Start' : 'Play again'}</button></div>
       <p class="game-ask">${q.notes.length > 1 ? 'Which two notes were played, in order?' : 'Which note was played?'}</p>
@@ -412,14 +454,15 @@ export class GamesPage {
     const R = this.round;
     this.stopListening();
     const fraction = R.game === 'sing' ? (R.notesAsked ? R.notesRight / R.notesAsked : 0) : R.right / R.total;
-    const res = recordRound(this.progress, R.game, R.level, fraction);
+    const track = R.game === 'listen' && R.easy ? 'listenEasy' : R.game;
+    const res = recordRound(this.progress, track, R.level, fraction);
     saveProgress(this.progress);
     const levels = R.game === 'listen' ? LISTEN_LEVELS : SING_LEVELS;
-    const hasNext = R.level < levels.length && isUnlocked(this.progress, R.game, R.level + 1);
+    const hasNext = R.level < levels.length && isUnlocked(this.progress, track, R.level + 1);
     this.view = 'end';
     this.root.innerHTML = `
       <div class="game-end">
-        <h2>${R.game === 'listen' ? 'Name the note' : 'Sing the note'} · Level ${R.level}</h2>
+        <h2>${R.game === 'listen' ? `Name the note${R.easy ? ' (easier)' : ''}` : 'Sing the note'} · Level ${R.level}</h2>
         <p class="game-score">${Math.round(fraction * 100)}%</p>
         <p class="game-stars" aria-label="${stars(fraction)} stars">${starText(stars(fraction))}</p>
         <p>${res.newBest ? 'A new best score for this level!' : `Your best: ${Math.round(res.best * 100)}%`}</p>

@@ -103,6 +103,28 @@ test('a round of 70% or more opens the next level; best scores and stars kept', 
   r = recordRound(p, 'listen', 1, 0.5);
   eq([r.best, r.newBest, r.unlocked], [0.8, false, false]);
   assert(!isUnlocked(p, 'sing', 2), 'each game has its own levels');
+  // the easier Name the note keeps its own scores and levels
+  const q = { listen: { best: {} }, listenEasy: { best: {} }, sing: { best: {} } };
+  recordRound(q, 'listenEasy', 1, 0.9);
+  assert(isUnlocked(q, 'listenEasy', 2) && !isUnlocked(q, 'listen', 2), 'easier rounds open only easier levels');
   eq([stars(0.4), stars(0.5), stars(0.7), stars(0.95)], [0, 1, 2, 3]);
   eq(GAME.unlockAt, 0.7);
+});
+
+test('easier Name the note: each choice sounds next to the note, the right one is the note', () => {
+  for (const L of LISTEN_LEVELS) {
+    const r = rng(L.id * 7 + 3);
+    for (let n = 0; n < 30; n++) {
+      const q = listenQuestion(L.id, { low: 48, high: 84, r });
+      eq(q.choiceMidis.length, q.notes.length);
+      q.notes.forEach((note, k) => {
+        const mids = q.choiceMidis[k];
+        eq(mids.length, 4, 'four sounds for four choices');
+        eq(new Set(mids).size, 4, 'four different sounds');
+        const right = q.choices[k].indexOf(note.name);
+        eq(mids[right], note.midi, 'the right choice is the note itself');
+        assert(mids.every((m) => m - note.midi >= -6 && m - note.midi <= 5), `in the octave closest to the note (level ${L.id})`);
+      });
+    }
+  }
 });

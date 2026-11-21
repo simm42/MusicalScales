@@ -3,6 +3,8 @@
 //
 //  Name the note (listening): a note (or two) is played; choose its name from
 //  four. Easier levels give the key and play it first; harder ones don't.
+//  "Easier" (a switch, with its own scores): the four choices are played first,
+//  then the note.
 //  Sing the note: sing the note(s) asked for. Easier levels give the key and
 //  play the note; harder ones only name it, then two or three in a row, then
 //  without the key.
@@ -101,7 +103,9 @@ export function listenQuestion(level, { low, high, r = rng() }) {
     notes.push({ midi, degree, name: pcName(key.degrees[degree]) });
   }
   const choices = notes.map((n) => answerChoices(n, key, L.key, r));
-  return { level: L.id, key, keyShown: L.key, hearKey: L.hearKey, reference: L.hearKey ? keyChord(tonic) : [], notes, choices };
+  // where each choice sounds (next to the note), for the easier version that plays them first
+  const choiceMidis = notes.map((n, k) => choiceSounds(n, key, L.key, choices[k]));
+  return { level: L.id, key, keyShown: L.key, hearKey: L.hearKey, reference: L.hearKey ? keyChord(tonic) : [], notes, choices, choiceMidis };
 }
 
 /**
@@ -111,16 +115,40 @@ export function listenQuestion(level, { low, high, r = rng() }) {
  */
 export function answerChoices(note, key, keyKnown, r = rng()) {
   const right = note.name;
-  let pool;
-  if (keyKnown) {
-    const near = [1, -1, 2, -2, 3, -3].map((s) => key.degrees[(note.degree + s + 7) % 7]);
-    pool = near.map(pcName);
-  } else {
-    pool = [1, -1, 2, -2, 3, -3].map((s) => pcName(spellMidi(note.midi + s, key.pref)));
-  }
+  const pool = choicePool(note, key, keyKnown).map((c) => c.name);
   const others = [...new Set(pool.filter((n) => n !== right))];
   const chosen = shuffle(r, others.slice(0, 4)).slice(0, 3);
   return shuffle(r, [right, ...chosen]);
+}
+
+/**
+ * The wrong answers a note can have, nearest first, each with where it sounds next to the
+ * note: other notes of the key a step to three steps away, or (without a key) a semitone
+ * to three semitones away.
+ */
+function choicePool(note, key, keyKnown) {
+  if (keyKnown) {
+    const base = note.midi - MAJOR[note.degree];
+    return [1, -1, 2, -2, 3, -3].map((s) => {
+      const t = note.degree + s, d = ((t % 7) + 7) % 7;
+      return { name: pcName(key.degrees[d]), midi: base + MAJOR[d] + 12 * Math.floor(t / 7) };
+    });
+  }
+  return [1, -1, 2, -2, 3, -3].map((s) => ({ name: pcName(spellMidi(note.midi + s, key.pref)), midi: note.midi + s }));
+}
+
+/**
+ * Where each of a question's choices sounds (in the same order as the names): the right one is
+ * the note itself; the others in whichever octave is closest to the note (within a tritone).
+ */
+export function choiceSounds(note, key, keyKnown, names) {
+  const pool = choicePool(note, key, keyKnown);
+  const nearest = (m) => note.midi + ((((m - note.midi) % 12) + 18) % 12) - 6; // -6 … +5 semitones away
+  return names.map((name) => {
+    if (name === note.name) return note.midi;
+    const c = pool.find((x) => x.name === name);
+    return c ? nearest(c.midi) : note.midi;
+  });
 }
 
 // ---------------------------------------------------------------- sing the note
@@ -190,7 +218,8 @@ export class HoldJudge {
 // ---------------------------------------------------------------- scores and levels unlocked
 
 const KEY = 'scales.games.v1';
-const empty = () => ({ listen: { best: {} }, sing: { best: {} } });
+// listenEasy: Name the note with the choices played first – its own scores and levels
+const empty = () => ({ listen: { best: {} }, listenEasy: { best: {} }, sing: { best: {} } });
 
 export function loadProgress(storage = typeof localStorage !== 'undefined' ? localStorage : null) {
   try { const p = JSON.parse(storage.getItem(KEY)); return { ...empty(), ...(p || {}) }; } catch { return empty(); }
@@ -202,7 +231,7 @@ export function saveProgress(p, storage = typeof localStorage !== 'undefined' ? 
 /** Record a finished round (fraction right, 0–1). @returns { best, newBest, unlocked } */
 export function recordRound(p, game, level, fraction) {
   const g = p[game] || (p[game] = { best: {} });
-  const levels = game === 'listen' ? LISTEN_LEVELS : SING_LEVELS;
+  const levels = game === 'sing' ? SING_LEVELS : LISTEN_LEVELS;
   const hasNext = level < levels.length;
   const nextWasOpen = hasNext && isUnlocked(p, game, level + 1);
   const was = g.best[level] ?? null;

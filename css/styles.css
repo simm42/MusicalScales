@@ -328,6 +328,12 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 }
 .res-block svg { width: 100%; height: auto; display: block; }
 
+/* Name the note, easier: each choice lights up as it is played, then the note's row */
+.game-easy { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0 10px; }
+.choice.sounding { outline: 3px solid var(--accent); outline-offset: 2px; }
+.choice-row .hearing-label { display: none; margin-left: 6px; }
+.choice-row.hearing .hearing-label { display: inline; color: var(--accent); font-weight: 600; }
+
 /* fingering: tap a note, choose a finger or a position change */
 #score.fingering { cursor: pointer; }
 .finger-pop {
