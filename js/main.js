@@ -635,6 +635,7 @@ function finishSession(result) {
   if (!played) { setStatus(`No notes were heard. Check the microphone and ${verb()} a little louder, or move closer.`); return; }
   setStatus(`Finished – score ${Math.round(result.total)} / 100.`);
   lastResult = result;
+  if (currentPiece && pieceBeat().unit !== 1) result.beat = { unit: pieceBeat().unit, sign: pieceBeat().sign }; // the tempo note counts dotted crotchets
   renderSummary($('summary'), { result, seq: runSeq, prec: prec(), settings: runSettings(), details: DEBUG, labels: syllables ? runSeq.events.map((ev) => ev.notes.map((n) => labelNote(n)).join(' + ')) : null });
   colourAll(result);
   showSummary();
@@ -723,8 +724,8 @@ $('playBtn').addEventListener('click', async () => {
       onEnd: () => { releaseAwake('play'); $('playBtn').textContent = '▶ Play'; $('arrow').hidden = true; meter.clear(); setStatus('Now you try: press Start.'); },
     });
     await playing;
-    const bpm = runSettings().bpm;
-    if (player.playing) setStatus(isVoice() ? `Playing the exercise at ♩ = ${bpm}…` : `Playing the exercise at ♩ = ${bpm} on the ${/^[A-Z][a-z ]*$/.test(instName(settings.instrument)) ? instName(settings.instrument).toLowerCase() : instName(settings.instrument)}…`);
+    const bpm = tempoText(runSettings().bpm);
+    if (player.playing) setStatus(isVoice() ? `Playing the exercise at ${bpm}…` : `Playing the exercise at ${bpm} on the ${/^[A-Z][a-z ]*$/.test(instName(settings.instrument)) ? instName(settings.instrument).toLowerCase() : instName(settings.instrument)}…`);
   } catch (e) {
     releaseAwake('play');
     $('playBtn').textContent = '▶ Play';
@@ -792,6 +793,10 @@ function pieceTempo() {
   if (!currentPiece) return settings.bpm;
   return clampBpm((prefs.pieceTempos || {})[currentPiece.id] || pieceTarget() || PIECE_BPM.none);
 }
+/** The beat a piece's tempo is shown in (dotted crotchets in 6/8); tempos are kept in crotchets. */
+function pieceBeat() { return exercise && exercise.isPiece && exercise.beat ? exercise.beat : { unit: 1, sign: '♩' }; }
+/** A tempo in crotchets, as the beat of the piece: "♩. = 100". */
+function tempoText(bpm) { const b = currentPiece ? pieceBeat() : { unit: 1, sign: '♩' }; return `${b.sign} = ${Math.round(bpm / b.unit)}`; }
 /** What a run or Play uses: a piece goes at its own practice tempo. */
 function runSettings() { return currentPiece ? { ...settings, bpm: pieceTempo() } : settings; }
 
@@ -807,27 +812,31 @@ function setPieceTempo(bpm) {
   showPieceTempo();
 }
 
-/** − and +: to the next 5% of the written tempo (or 4 a minute when none is written). */
+/** − and +: to the next 5% of the written tempo (or 4 beats a minute when none is written). */
 function stepPieceTempo(dir) {
-  const t = pieceTarget(), bpm = pieceTempo();
-  if (!t) { setPieceTempo(bpm + 4 * dir); return; }
-  const marks = Array.from({ length: 60 }, (_, k) => Math.round(t * (k + 1) * 0.05)).filter((v) => v >= PIECE_BPM.min && v <= PIECE_BPM.max);
-  const next = dir > 0 ? marks.find((v) => v > bpm) : marks.slice().reverse().find((v) => v < bpm);
-  setPieceTempo(next ?? bpm + dir);
+  const t = pieceTarget(), bpm = pieceTempo(), u = pieceBeat().unit;
+  if (!t) { setPieceTempo((Math.round(bpm / u) + 4 * dir) * u); return; }
+  // the steps are whole beats a minute, as shown
+  const shown = Math.round(bpm / u);
+  const marks = Array.from({ length: 60 }, (_, k) => Math.round((t / u) * (k + 1) * 0.05)).filter((v) => v * u >= PIECE_BPM.min && v * u <= PIECE_BPM.max);
+  const next = dir > 0 ? marks.find((v) => v > shown) : marks.slice().reverse().find((v) => v < shown);
+  setPieceTempo(next != null ? next * u : bpm + dir * u);
 }
 
 function showPieceTempo() {
   const box = $('pieceTempo');
   box.hidden = !(currentPiece && exercise && exercise.ok);
   if (box.hidden) return;
-  const bpm = pieceTempo(), t = pieceTarget();
-  if (document.activeElement !== $('pieceBpm')) $('pieceBpm').value = bpm;
-  $('pieceTempoPct').textContent = t ? `${Math.round((bpm / t) * 100)}% of ♩ = ${t}` : 'no tempo written – add one in Edit piece';
+  const bpm = pieceTempo(), t = pieceTarget(), b = pieceBeat();
+  $('pieceBeatSign').textContent = b.sign;
+  $('pieceBpm').title = `The tempo for practising this piece (Play, the metronome and listening), in ${b.unit === 1 ? 'crotchets' : 'dotted crotchets – the beat in this time signature –'} a minute`;
+  if (document.activeElement !== $('pieceBpm')) $('pieceBpm').value = Math.round(bpm / b.unit);
+  $('pieceTempoPct').textContent = t ? `${Math.round((bpm / t) * 100)}% of ${tempoText(t)}` : 'no tempo written – add one in Edit piece';
   $('pieceTempoReset').hidden = !t || bpm === t;
 }
 $('pieceSlower').addEventListener('click', () => stepPieceTempo(-1));
 $('pieceFaster').addEventListener('click', () => stepPieceTempo(1));
-$('pieceBpm').addEventListener('change', () => setPieceTempo($('pieceBpm').value));
+$('pieceBpm').addEventListener('change', () => setPieceTempo((Number($('pieceBpm').value) || 0) * pieceBeat().unit));
 $('pieceTempoReset').addEventListener('click', () => setPieceTempo(pieceTarget()));
 
 /** Pieces on the Results page and in the PDF, next to the syllabus exercises. */
@@ -1583,6 +1592,8 @@ function captureMeta(sess, result, cap) {
     app: 'scale-practice', kind: 'capture', version: 2, appVersion: APP_VERSION, created: new Date().toISOString(),
     settings: { ...compactSettings(settings), ...pickFields(runSettings(), GLOBAL_FIELDS) }, title: ex ? ex.title : null,
     pieceTempo: currentPiece ? { set: pieceTempo(), written: pieceTarget() } : null, a4: a4(), a4Effective: sess ? sess.a4 : a4(),
+    // a piece: its whole text (slurs, ties, bars – everything needed to study the run again)
+    piece: currentPiece ? { id: currentPiece.id, name: currentPiece.name, text: currentPiece.text } : null,
     sampleRate: cap.sampleRate, startTime: cap.startTime,
     metronomeT0: sess && sess.t0 != null ? sess.t0 : null,
     synthetic: !!(sess && sess.o.synth),
@@ -1663,7 +1674,11 @@ function offerCapture(sess, result) {
     const stamp = meta.created.replace(/[-:]/g, '').replace('T', '-').slice(0, 15);
     const s = settings;
     // the app version in the name too (it is also stored inside the file, as appVersion)
-    const name = `scale-capture-${s.instrument}-${s.type}-${(s.type === 'chromatic' || s.type === 'dim7' ? s.start : s.key).replace('#', 's')}-${stamp}-v${APP_VERSION}.wav`;
+    // a piece is named after the piece (a scale after its type and key)
+    const what = currentPiece
+      ? `piece-${(currentPiece.name || 'untitled').replace(/[^\p{L}\p{N}]+/gu, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'untitled'}`
+      : `${s.type}-${(s.type === 'chromatic' || s.type === 'dim7' ? s.start : s.key).replace('#', 's')}`;
+    const name = `scale-capture-${s.instrument}-${what}-${stamp}-v${APP_VERSION}.wav`;
     saveFile(blob, name, 'audio/wav'); // the share sheet on phones: works in the installed app too
   });
 }

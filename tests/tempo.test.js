@@ -5,7 +5,8 @@ import { test, eq, near, assert } from './harness.js';
 import { tempoFactor, scoreRun, scoresAtLevels } from '../js/scoring.js';
 import { precisionAt } from '../js/precision.js';
 import { parsePiece } from '../js/pieceText.js';
-import { setTempoLine, STARTER } from '../js/pieces.js';
+import { setTempoLine, STARTER, tempoBeat, pieceExercise } from '../js/pieces.js';
+import { instrumentInfo } from '../js/instruments.js';
 import { makeRun, runDetail, recordRun, runsSince, normaliseStore, normaliseRecord, compactAll, RES } from '../js/results.js';
 import { playedHow } from '../js/ui/resultsPage.js';
 import { restoreBackup, BACKUP_KEYS } from '../js/backup.js';
@@ -76,6 +77,20 @@ test('the tempo line: set, changed and taken out, the rest of the piece unchange
   const change = 'T: x\nQ: 1/4=60\nK: C\nC2 D2 |\nQ: 1/4=90\nE2 F2 |]';
   assert(setTempoLine(change, 66).includes('Q: 1/4=90'));
   eq(parsePiece(setTempoLine(change, 66)).tempo, 66);
+});
+
+test('compound time counts its tempo in dotted crotchets', () => {
+  const SIX = 'T: x\nM: 6/8\nL: 1/8\nK: Gm\nG3 A3 |]\n';
+  const six = parsePiece(SIX).meter;
+  eq(tempoBeat(six).unit, 1.5); eq(tempoBeat(six).sign, '♩.');
+  eq(tempoBeat({ num: 12, den: 8 }).unit, 1.5); eq(tempoBeat({ num: 9, den: 8 }).unit, 1.5);
+  eq(tempoBeat({ num: 3, den: 8 }).unit, 1, '3/8 stays in crotchets');
+  eq(tempoBeat({ num: 3, den: 4 }).unit, 1); eq(tempoBeat(null).unit, 1);
+  // ♩. = 100 is written Q: 3/8=100 and is 150 crotchets a minute inside the app
+  const text = setTempoLine(SIX, 100, tempoBeat(six));
+  assert(text.includes('Q: 3/8=100'));
+  eq(parsePiece(text).tempo, 150);
+  eq(pieceExercise({ name: 'x', text }, instrumentInfo('cello'), {}).exercise.beat.unit, 1.5);
 });
 
 test('a piece run keeps its tempo: in the record, the summary and the results table', () => {

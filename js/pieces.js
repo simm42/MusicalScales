@@ -180,6 +180,7 @@ export function pieceExercise(piece, info, settings) {
     meterText: parsed.meter ? parsed.meter.text : null,
     bars: seq.bars,
     tempo: parsed.tempo,
+    beat: tempoBeat(parsed.meter),
     type: { doubleStop: false, label: 'Piece', slurs: [] },
     reason: ok ? '' : (parsed.errors[0] ? `Line ${parsed.errors[0].line}: ${parsed.errors[0].message}` : 'No notes.'),
     outside,
@@ -230,16 +231,27 @@ export function addSharedPiece(shared, storage = typeof localStorage !== 'undefi
 }
 
 /**
- * The piece's written tempo (crotchets a minute) set in its header as Q: 1/4=N, or
- * the Q: line taken out when bpm is empty. The rest of the text is left as it is.
+ * The beat a tempo is counted in. Compound time (6/8, 9/8, 12/8) is felt in dotted crotchets,
+ * so its metronome mark is ♩. = N (N × 1.5 crotchets a minute); everything else in crotchets.
+ * Tempos are kept in crotchets inside the app; this is only how they are shown and written.
  */
-export function setTempoLine(text, bpm) {
+export function tempoBeat(meter) {
+  const compound = meter && meter.den === 8 && meter.num % 3 === 0 && meter.num > 3;
+  return compound ? { unit: 1.5, sign: '♩.', q: '3/8', name: 'dotted crotchets' } : { unit: 1, sign: '♩', q: '1/4', name: 'crotchets' };
+}
+
+/**
+ * The piece's written tempo set in its header as Q: 1/4=N (or Q: 3/8=N in compound time,
+ * `beats` then being dotted crotchets), or the Q: line taken out when it is empty.
+ * The rest of the text is left as it is.
+ */
+export function setTempoLine(text, beats, beat = tempoBeat(null)) {
   const lines = String(text || '').replace(/\r\n?/g, '\n').split('\n');
   const k = lines.findIndex((l) => /^\s*K:/.test(l));
   const q = lines.slice(0, k < 0 ? lines.length : k).findIndex((l) => /^\s*Q:/.test(l));
-  const v = Math.round(Number(bpm));
+  const v = Math.round(Number(beats));
   if (!(v > 0)) { if (q >= 0) lines.splice(q, 1); return lines.join('\n'); }
-  const line = `Q: 1/4=${v}`;
+  const line = `Q: ${beat.q}=${v}`;
   if (q >= 0) lines[q] = line; else if (k >= 0) lines.splice(k, 0, line); else lines.unshift(line);
   return lines.join('\n');
 }
@@ -385,7 +397,7 @@ STEP 2 - When the photo arrives, transcribe it into ABC notation. A program read
    C: the composer, if printed (leave the line out otherwise)
    M: the time signature, e.g. M: 3/4 (M: C for common time)
    L: 1/8   (always 1/8)
-   Q: the metronome mark, e.g. Q: 1/4=96 (leave the line out if none is printed)
+   Q: the metronome mark, e.g. Q: 1/4=96 - or Q: 3/8=60 when it is given for a dotted crotchet, as is usual in 6/8, 9/8 and 12/8 (leave the line out if none is printed)
    K: the key from the key signature, e.g. K: G, K: Bb, K: Em. Then the clef of the top staff: K: G clef=treble, K: D clef=bass, K: C clef=alto, K: F clef=tenor. Look at the clef sign itself - a bass clef has two dots either side of the fourth line; a treble clef curls round the second line; an alto or tenor (C) clef is centred on the middle or fourth line. Violin music is in treble clef; viola mostly in alto clef; cello mostly in bass clef (tenor or treble clef for high passages); double bass in bass clef; singers in treble or bass clef. If the clef changes in the middle, write the new clef where it changes, e.g. [K: clef=tenor] (the key stays the same). Write every note as printed, also for double bass and tenor voice, which sound an octave lower than written.
 3. Pitches. In ABC the octave is shown ONLY by the letter case and by commas and apostrophes:
    C, D, E, F, G, A, B,  = the octave below middle C (one comma)

@@ -3,7 +3,7 @@
 // two pieces, and turning a photo into a piece with Claude.
 
 import { parsePiece, extractPieceText } from '../pieceText.js';
-import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, claudeLink, pieceShareLink, readPieceShare, addSharedPiece, setTempoLine } from '../pieces.js';
+import { loadPieces, savePieces, newPiece, joinPieces, pieceExercise, AI_PROMPT, fixPrompt, STARTER, claudeLink, pieceShareLink, readPieceShare, addSharedPiece, setTempoLine, tempoBeat } from '../pieces.js';
 import { instrumentInfo } from '../instruments.js';
 import { renderScore } from '../notation.js';
 
@@ -16,6 +16,7 @@ const FORMAT_HELP = `
 <tr><td><code>M: 3/4</code></td><td>time signature</td></tr>
 <tr><td><code>L: 1/8</code></td><td>note length 1 = a quaver (eighth)</td></tr>
 <tr><td><code>Q: 1/4=96</code></td><td>tempo (crotchets a minute)</td></tr>
+<tr><td><code>Q: 3/8=66</code></td><td>tempo in dotted crotchets (♩.), as written in 6/8, 9/8 and 12/8</td></tr>
 <tr><td><code>K: G</code> <code>K: Em</code> <code>K: D clef=bass</code></td><td>key (and clef) – the last header line</td></tr>
 <tr><td><code>C D E F G A B c d e …</code></td><td>notes: capitals = from middle C up; small = the octave above</td></tr>
 <tr><td><code>C,</code> &nbsp; <code>c'</code></td><td><code>,</code> an octave lower, <code>'</code> an octave higher</td></tr>
@@ -176,8 +177,8 @@ export class PiecesPage {
     this.root.innerHTML = `
       <div class="game-head"><button type="button" class="btn" data-act="back">← Pieces</button><b>${isNew ? 'New piece' : 'Edit piece'}</b></div>
       <div class="field"><label for="pcName">Name</label><input type="text" id="pcName" maxlength="120" value="${esc(draft.name)}"></div>
-      <div class="field"><label for="pcTempo">Tempo ♩ =</label><input type="number" id="pcTempo" min="20" max="300" step="1" inputmode="numeric" placeholder="none" value="${esc(parsePiece(draft.text).tempo || '')}">
-        <span class="small muted">how fast the piece should go (the Q: line). You can practise it slower or faster on the Practice page; slower than this costs a little of the score.</span></div>
+      <div class="field"><label for="pcTempo">Tempo <span id="pcTempoSign">♩</span> =</label><input type="number" id="pcTempo" min="20" max="300" step="1" inputmode="numeric" placeholder="none">
+        <span class="small muted">how fast the piece should go (the Q: line) – in 6/8, 9/8 and 12/8 in dotted crotchets (♩.), the beat you count. You can practise it slower or faster on the Practice page; slower than this costs a little of the score.</span></div>
       <div class="piece-edit">
         <div class="piece-text">
           <label for="pcText" class="small muted">The music (as text) – the score below follows as you type</label>
@@ -204,7 +205,7 @@ export class PiecesPage {
     const tempo = this.root.querySelector('#pcTempo');
     tempo.addEventListener('change', () => {
       const v = Number(tempo.value);
-      ta.value = setTempoLine(ta.value, v >= 20 && v <= 300 ? v : null);
+      ta.value = setTempoLine(ta.value, v >= 20 && v <= 300 ? v : null, tempoBeat(parsePiece(ta.value).meter));
       if (!(v >= 20 && v <= 300)) tempo.value = '';
       refresh();
     });
@@ -241,7 +242,11 @@ export class PiecesPage {
     const info = instrumentInfo(this.getInstrument());
     const { exercise, seq, parsed } = pieceExercise(piece, info, {});
     const tf = this.root.querySelector('#pcTempo');
-    if (tf && document.activeElement !== tf) tf.value = parsed.tempo || '';
+    // shown in the beat of the time signature (dotted crotchets in 6/8), kept in crotchets
+    const beat = tempoBeat(parsed.meter);
+    if (tf && document.activeElement !== tf) tf.value = parsed.tempo ? Math.round(parsed.tempo / beat.unit) : '';
+    const sign = this.root.querySelector('#pcTempoSign');
+    if (sign) sign.textContent = beat.sign;
     const items = [
       ...parsed.errors.map((e) => `<li class="bad" data-line="${e.line}"><b>Line ${e.line}</b>, column ${e.col}: ${esc(e.message)}</li>`),
       ...parsed.warnings.map((w) => `<li class="${w.check ? 'warn' : 'muted'}" data-line="${w.line}">Line ${w.line}: ${esc(w.message)}</li>`),

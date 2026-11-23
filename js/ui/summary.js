@@ -56,16 +56,20 @@ function scrapeNote(result, prec) {
 
 /** A piece: the tempo it was played at against its written tempo, and what playing slower cost. */
 function tempoNote(result) {
+  // shown in the piece's beat: dotted crotchets in 6/8 (result.beat), else crotchets
+  const u = (result.beat && result.beat.unit) || 1, sign = (result.beat && result.beat.sign) || '♩';
   const target = result.targetBpm;
   if (!target) return '';
-  const played = Math.round(result.playedBpm || result.setBpm || 0);
+  const playedBpm = result.playedBpm || result.setBpm || 0;
+  const played = Math.round(playedBpm / u);
   if (!played) return '';
-  const pct = Math.round((played / target) * 100);
-  const set = result.setBpm && Math.abs(result.setBpm - played) >= 3 ? ` (practice tempo ♩ = ${Math.round(result.setBpm)})` : '';
+  const pct = Math.round((playedBpm / target) * 100);
+  const set = result.setBpm && Math.abs(result.setBpm - playedBpm) >= 3 * u ? ` (practice tempo ${sign} = ${Math.round(result.setBpm / u)})` : '';
   const f = result.tempoFactor ?? 1;
-  if (f >= 0.9995) return `<p class="small">Tempo: ♩ ≈ ${played}${set} – ${pct >= 97 ? 'at' : 'close to'} the written ♩ = ${target}, so nothing was taken off.</p>`;
+  const written = Math.round(target / u);
+  if (f >= 0.9995) return `<p class="small">Tempo: ${sign} ≈ ${played}${set} – ${pct >= 97 ? 'at' : 'close to'} the written ${sign} = ${written}, so nothing was taken off.</p>`;
   const cut = (1 - f) * 100;
-  return `<p class="small">Tempo: ♩ ≈ ${played}${set}, ${pct}% of the written ♩ = ${target}, so the total was reduced by ${cut < 1 ? cut.toFixed(1) : Math.round(cut)}%. Practising slower is a good way to learn a piece – play at the written tempo for the full score.</p>`;
+  return `<p class="small">Tempo: ${sign} ≈ ${played}${set}, ${pct}% of the written ${sign} = ${written}, so the total was reduced by ${cut < 1 ? cut.toFixed(1) : Math.round(cut)}%. Practising slower is a good way to learn a piece – play at the written tempo for the full score.</p>`;
 }
 
 function offsetNotice(result) {
@@ -108,7 +112,7 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
     return p === 0 ? '0%' : `${p > 0 ? '+' : '−'}${Math.abs(p)}%`;
   };
   const rows = result.perNote.map((r, i) => `<tr><td>${i + 1}</td><td>${esc(label(r, i))}</td><td>${centsCell(r)}</td><td>${r0(r.intonation)}</td><td>${timingCell(r)}</td><td>${r0(r.timing)}</td><td style="text-align:left">${statusPill(r)}</td></tr>`).join('');
-  const tempo = result.bpm ? ` · tempo ≈ ♩ ${Math.round(result.bpm)}` : '';
+  const tempo = result.bpm ? ` · tempo ≈ ${(result.beat && result.beat.sign) || '♩'} ${Math.round(result.bpm / ((result.beat && result.beat.unit) || 1))}` : '';
   // singing is always listened to as if with vibrato
   const vib = settings.instrument === 'voice' ? ' · Sung' : settings.vibrato == null ? '' : ` · Vibrato ${settings.vibrato ? 'on' : 'off'}`;
   const timed = settings.metronome == null ? '' : settings.metronome ? ' · timed against the metronome' : ' · timed against your own pulse';
