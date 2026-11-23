@@ -12,7 +12,7 @@ const APP_FILES = [
   './', './index.html', './manifest.webmanifest',
   './css/styles.css',
   './icons/apple-touch-icon.png', './icons/icon-192.png', './icons/icon-512.png',
-  './js/align.js', './js/analytics.js', './js/backup.js', './js/calibration.js', './js/doublestop.js', './js/exercises.js', './js/follower.js', './js/games.js',
+  './js/align.js', './js/analytics.js', './js/backup.js', './js/barSurface.js', './js/calibration.js', './js/doublestop.js', './js/exercises.js', './js/follower.js', './js/games.js',
   './js/instruments.js', './js/main.js', './js/metronome.js', './js/notation.js', './js/pdf.js', './js/persist.js', './js/pieces.js', './js/pieceText.js', './js/pitch.js', './js/playback.js',
   './js/practice.js', './js/practiceList.js', './js/precision.js', './js/profiles.js', './js/pwa.js', './js/results.js', './js/scoring.js',
   './js/segmenter.js', './js/sequence.js', './js/settingsText.js', './js/solfege.js', './js/theory.js', './js/version.js', './js/wakelock.js',

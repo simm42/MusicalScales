@@ -168,3 +168,53 @@ export function svgToPng(svg, width, height, scale = 2, type = 'image/png', qual
     img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
   });
 }
+
+/**
+ * A piece's mistakes, bar by bar: one row per run (oldest at the top, newest below), then a
+ * row adding them all up. Each cell is shaded by the share of the bar's notes with a mistake,
+ * with the number of them when there is room; empty where the run didn't play that bar.
+ * @param {object} o { data: from pieceMistakes(), width, palette, dates: (ts) => label }
+ * @returns {string} SVG markup
+ */
+export function mistakesChart({ data, width = 760, palette = chartPalette(), dates = (d) => new Date(d).toLocaleDateString() }) {
+  if (!data || !data.rows.length) return '';
+  const L = 78, R = 8, T = 20, rowH = 18, gap = 8;
+  const B = data.bars, W = width - L - R, cw = W / B;
+  const rows = data.rows.length;
+  const H = T + rows * rowH + gap + rowH + 22;
+  const x = (b) => L + b * cw;
+  let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${H}" viewBox="0 0 ${width} ${H}" font-family="Helvetica, Arial, sans-serif">`;
+  if (palette.bg && palette.bg !== 'transparent') s += `<rect width="${width}" height="${H}" fill="${palette.bg}"/>`;
+  const tip = (c, what, b) => {
+    if (!c) return `${what} · bar ${b + 1}: not played`;
+    if (!c.n) return `${what} · bar ${b + 1}: no mistakes (${c.notes} note${c.notes === 1 ? '' : 's'})`;
+    const parts = [c.missed && `${c.missed} missed`, c.tune && `${c.tune} wrong or far out of tune`, c.time && `${c.time} badly timed`].filter(Boolean);
+    return `${what} · bar ${b + 1}: ${parts.join(', ')} (${c.n} of ${c.notes} note${c.notes === 1 ? '' : 's'})`;
+  };
+  const cell = (c, b, y, what, strong = false) => {
+    if (!c) return '';
+    const share = c.notes ? c.n / c.notes : 0;
+    const fill = c.n ? palette.errors : palette.grid;
+    const op = c.n ? (strong ? 0.3 : 0.22) + 0.75 * share : 0.55;
+    let out = `<rect x="${x(b) + 0.5}" y="${y + 1}" width="${Math.max(1, cw - 1)}" height="${rowH - 2}" fill="${fill}" opacity="${Math.min(1, op).toFixed(2)}"><title>${esc(tip(c, what, b))}</title></rect>`;
+    if (c.n && cw >= 13) out += `<text x="${x(b) + cw / 2}" y="${y + rowH / 2 + 4}" font-size="10.5" text-anchor="middle" fill="${palette.fg}" pointer-events="none">${c.n}</text>`;
+    return out;
+  };
+  data.rows.forEach((r, j) => {
+    const y = T + j * rowH;
+    s += `<text x="${L - 6}" y="${y + rowH / 2 + 4}" font-size="11" text-anchor="end" fill="${palette.muted}">${esc(dates(r.d))}</text>`;
+    r.cells.forEach((c, b) => { s += cell(c, b, y, dates(r.d), false); });
+  });
+  const yAll = T + rows * rowH + gap;
+  s += `<text x="${L - 6}" y="${yAll + rowH / 2 + 4}" font-size="11" font-weight="bold" text-anchor="end" fill="${palette.fg}">All runs</text>`;
+  data.all.forEach((c, b) => { s += cell(c, b, yAll, 'All runs', true); });
+  // bar numbers along the top, thinned to fit
+  const every = Math.max(1, Math.ceil(22 / cw));
+  for (let b = 0; b < B; b++) {
+    if (b % every && b !== B - 1) continue;
+    if (b === B - 1 && b % every && (b % every) < every / 2) continue;
+    s += `<text x="${x(b) + cw / 2}" y="${T - 6}" font-size="10.5" text-anchor="middle" fill="${palette.muted}">${b + 1}</text>`;
+  }
+  s += `<text x="${L + W / 2}" y="${H - 6}" font-size="11" text-anchor="middle" fill="${palette.muted}">bar</text>`;
+  return s + '</svg>';
+}

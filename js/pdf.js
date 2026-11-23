@@ -1,9 +1,10 @@
 // PDF report of syllabus and piece results, made entirely in the browser with jsPDF
 // (vendor/jspdf.umd.min.js, loaded only when a PDF is requested).
 
-import { chartPalette, svgToPng } from './ui/charts.js';
+import { chartPalette, svgToPng, mistakesChart } from './ui/charts.js';
 import { Surface3D } from './ui/surface3d.js';
-import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS, CLEARED_NOTE } from './ui/resultsPage.js';
+import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS, CLEARED_NOTE, PIECE_SURFACES, barGroupText, shortDate } from './ui/resultsPage.js';
+import { pieceBarSurfaces, pieceMistakes } from './barSurface.js';
 import { lastRuns, atLevel, surfaceRuns, sameShape, detailCleared } from './results.js';
 import { precisionAt } from './precision.js';
 
@@ -36,7 +37,7 @@ const W_SVG = 760, H_SVG = 230;
  * @param {object} o.results results store
  * @param {string} o.studentName
  * @param {string[]} o.items ids to include
- * @param {object} o.charts { surface, twoWeeks, sixMonths, allTime, table }
+ * @param {object} o.charts { surface, mistakes, twoWeeks, sixMonths, allTime, table }
  * @param {'all'|'2w'} o.range
  * @returns {Promise<{doc, save, filename, pages, blob}>}
  */
@@ -105,8 +106,39 @@ export async function makePdf(o) {
     text(item.name, 15, 'bold', [107, 63, 160]);
     const svg = chartsSvg(data, pal, W_SVG);
     if (!data.any) { text('No runs yet.', 10, 'normal', [102, 98, 111]); continue; }
-    if (o.charts.surface && item.piece && detailCleared(o.results[id])) text(CLEARED_NOTE, 9, 'normal', [102, 98, 111]);
-    else if (o.charts.surface) {
+    const cleared = item.piece && detailCleared(o.results[id]);
+    const prec = precisionAt(o.precision ?? 2, item.settings.instrument);
+    const recentRuns = () => (o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10);
+    if ((o.charts.surface || o.charts.mistakes) && cleared) text(CLEARED_NOTE, 9, 'normal', [102, 98, 111]);
+    else if (item.piece) {
+      // a piece: three plots by groups of bars, then where the mistakes are, bar by bar
+      const recent = recentRuns();
+      const full = surfaceRuns(recent);
+      const runs = sameShape(full);
+      const bars = o.charts.surface ? pieceBarSurfaces(runs, prec) : null;
+      if (bars) {
+        text(`Last ${runs.length} runs - bar by bar (oldest at the back)`, 11, 'bold');
+        text(`Each run is a strip across the piece, averaged ${barGroupText(bars.size)}, with bar numbers along the front. Higher and greener is better: green from 90, amber about 60, red at 30 and below (${prec.name} precision). Missing notes count as 0; bars not played are left blank.`, 9, 'normal', [102, 98, 111]);
+        if (full.length < recent.length) text(`${recent.length - full.length} run${recent.length - full.length === 1 ? '' : 's'} with more than half the notes missing left out.`, 9, 'normal', [102, 98, 111]);
+        if (runs.length < full.length) text(`${full.length - runs.length} earlier run${full.length - runs.length === 1 ? '' : 's'} left out: the piece has been edited since.`, 9, 'normal', [102, 98, 111]);
+        for (const p of PIECE_SURFACES) {
+          const c = document.createElement('canvas');
+          c.width = 1200; c.height = 500;
+          new Surface3D(c, { runs: bars[p.key], labels: bars.labels.map(plain), scores: true, palette: { ...pal }, interactive: false });
+          const h = (CW * 0.8 * 500) / 1200;
+          need(h + 9);
+          text(`${p.title} - ${p.note}`, 10, 'bold');
+          doc.addImage(c.toDataURL('image/jpeg', 0.88), 'JPEG', M + CW * 0.1, y, CW * 0.8, h);
+          y += h + 3;
+        }
+      }
+      const mk = o.charts.mistakes ? pieceMistakes(sameShape(recent), prec) : null;
+      if (mk) {
+        text('Where the mistakes are - bar by bar', 11, 'bold');
+        text(`Each row is a run (newest at the bottom); the last row adds them all up. A bar is redder the more of its notes had a mistake: missed, a wrong note or far out of tune (${Math.round(prec.zeroCents)} cents or more), or badly out of time.`, 9, 'normal', [102, 98, 111]);
+        await image(mistakesChart({ data: mk, width: W_SVG, palette: pal, dates: shortDate }));
+      }
+    } else if (o.charts.surface) {
       const recent = o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10;
       const full = surfaceRuns(recent); // runs with more than half the notes missing are left out
       const runs = item.piece ? sameShape(full) : full; // a piece edited since: older runs don't line up

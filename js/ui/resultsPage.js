@@ -1,11 +1,13 @@
-// Results tab: per syllabus item – 3D surface of the last 10 runs, runs in
+// Results tab: per syllabus item – 3D surface of the last 10 runs (a piece: three, by
+// groups of bars – overall, intonation, timing – and a bar-by-bar chart of mistakes), runs in
 // the last 2 weeks, daily averages for 6 months, monthly all-time; and a
 // summary across the whole syllabus. Also hosts the PDF export controls.
 
 import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, sameShape, DAYS, detailCleared } from '../results.js';
 import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
-import { lineChart, multiLineChart, legendHtml, chartPalette } from './charts.js';
+import { lineChart, multiLineChart, legendHtml, chartPalette, mistakesChart } from './charts.js';
+import { pieceBarSurfaces, pieceMistakes } from '../barSurface.js';
 import { Surface3D } from './surface3d.js';
 import { readPalette } from './meter.js';
 import { precisionAt } from '../precision.js';
@@ -71,6 +73,21 @@ export function summaryData(store, items, now = Date.now(), level = 2) {
   const allTime = first != null && first < now - SIX_MONTHS
     ? table(items.map((it) => ({ id: it.id, name: it.name, points: monthly(store, it.id, level) })), 'month') : null;
   return { sixMonths, allTime, any: first != null };
+}
+
+/** A short date for the charts: "3/12". */
+export const shortDate = (ts) => { const d = new Date(ts); return `${d.getDate()}/${d.getMonth() + 1}`; };
+
+/** A piece's three 3D plots, by groups of bars (also used by the PDF). */
+export const PIECE_SURFACES = [
+  { key: 'overall', title: 'Overall', note: 'intonation and timing together (75 : 25), as in the total' },
+  { key: 'intonation', title: 'Intonation', note: 'how in tune' },
+  { key: 'timing', title: 'Timing (tempo)', note: 'how evenly in time' },
+];
+
+/** How the piece's plots group the bars, in words. */
+export function barGroupText(size) {
+  return size === 1 ? 'one bar at a time' : `${size} bars at a time, to keep a long piece readable`;
 }
 
 /** The four standard charts as SVG strings. */
@@ -176,13 +193,24 @@ export class ResultsPage {
     const left = last.length - fullEnough.length;
     const labels = (plotted.length && plotted[plotted.length - 1].labels) || (last.length && last[last.length - 1].labels) || [];
     const cleared = !!item.piece && detailCleared(store[item.id]);
-    this.body.innerHTML = `${levelNote}
-      <div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
+    const precNow = precisionAt(this.getPrecision(), item.settings.instrument);
+    // a piece: three plots averaged by groups of bars, and where the mistakes are bar by bar
+    const bars = item.piece && !cleared ? pieceBarSurfaces(plotted, precNow) : null;
+    const mistakes = item.piece && !cleared ? pieceMistakes(sameShape(last), precNow) : null;
+    const pieceBlock = item.piece ? `<div class="res-block"><h3>Last ${plotted.length || 10} runs – bar by bar</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
         ${edited ? `<p class="muted small">${edited} earlier run${edited === 1 ? ' is' : 's are'} left out because the piece has been edited since, so ${edited === 1 ? 'its' : 'their'} notes no longer line up. ${edited === 1 ? 'It is' : 'They are'} still in the charts and tables below.</p>` : ''}
-        <p class="muted small">${item.piece ? 'Every note of the piece left to right (bar numbers along the front). Each run is a strip with one tile per note, raised if sharp and lowered if flat; bars not played in a run are left blank, so practising some bars shows just those.' : 'Notes of the scale left to right.'} Oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
-        <div class="surface-wrap"${cleared ? ' hidden' : ''}><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div>
-        ${cleared ? `<p class="notice">${esc(CLEARED_NOTE)}</p>` : ''}</div>
+        ${cleared ? `<p class="notice">${esc(CLEARED_NOTE)}</p>` : bars ? `<p class="muted small">Each run is a strip across the piece, averaged ${barGroupText(bars.size)} (bar numbers along the front); oldest run at the back, newest at the front. Higher and greener is better: green from 90, amber about 60, red at 30 and below (${esc(precNow.name)} precision). Missing notes count as 0. Bars not played in a run are left blank. Drag to turn a plot.</p>
+          ${PIECE_SURFACES.map((p) => `<h4 class="surface-title">${esc(p.title)} <span class="muted small">– ${esc(p.note)}</span></h4><div class="surface-wrap"><canvas data-surface="${p.key}" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.62)}"></canvas></div>`).join('')}` : '<p class="muted">No runs yet.</p>'}</div>
+      ${mistakes ? `<div class="res-block"><h3>Where the mistakes are – bar by bar</h3>
+        <p class="muted small">The bars to work on. Each row is a run (newest at the bottom), and the last row adds them all up. A bar is redder the more of its notes had a mistake: missed, a wrong note or far out of tune (±${Math.round(precNow.zeroCents)} cents or more), or badly out of time. The number is how many notes; on a computer, point at a bar to see which kind.</p>
+        <div class="table-wrap">${mistakesChart({ data: mistakes, width: Math.max(width, Math.min(1400, 78 + mistakes.bars * 12)), palette: pal, dates: shortDate })}</div></div>` : ''}` : '';
+    this.body.innerHTML = `${levelNote}
+      ${item.piece ? pieceBlock : `<div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
+        ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
+        ${edited ? `<p class="muted small">${edited} earlier run${edited === 1 ? ' is' : 's are'} left out because the piece has been edited since, so ${edited === 1 ? 'its' : 'their'} notes no longer line up. ${edited === 1 ? 'It is' : 'They are'} still in the charts and tables below.</p>` : ''}
+        <p class="muted small">Notes of the scale left to right. Oldest run at the back, newest at the front. Hills are sharp, valleys flat. Colours as in the summary after a run: green within ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).fullCents)} cents, through amber, to red at ±${Math.round(precisionAt(this.getPrecision(), item.settings.instrument).zeroCents)} (${precisionAt(this.getPrecision()).name} precision). Drag to turn it.</p>
+        <div class="surface-wrap"><canvas id="surface" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.75)}"></canvas></div></div>`}
       <div class="res-block"><h3>Last 2 weeks – every run</h3>${legendHtml(undefined, true, pal)}${svg.twoWeeks || '<p class="muted">No runs in the last 2 weeks.</p>'}</div>
       <div class="res-block"><h3>Past 6 months – average per day</h3>${legendHtml(undefined, true, pal)}${svg.sixMonths || '<p class="muted">No runs in the past 6 months.</p>'}</div>
       ${svg.allTime ? `<div class="res-block"><h3>All time – average per month</h3>${legendHtml(undefined, true, pal)}${svg.allTime}</div>` : ''}
@@ -202,8 +230,12 @@ export class ResultsPage {
       pick.addEventListener('change', show);
       show();
     }
+    if (item.piece) {
+      if (bars) for (const p of PIECE_SURFACES) new Surface3D(this.body.querySelector(`[data-surface="${p.key}"]`), { runs: bars[p.key], labels: bars.labels, scores: true, palette: { ...pal, bg: 'transparent' }, colors: readPalette() });
+      return;
+    }
     const canvas = this.body.querySelector('#surface');
-    this.surface = new Surface3D(canvas, { runs: plotted, labels, perNote: !!item.piece, palette: { ...pal, bg: 'transparent' }, prec: precisionAt(this.getPrecision(), item.settings.instrument), colors: readPalette() });
+    this.surface = new Surface3D(canvas, { runs: plotted, labels, palette: { ...pal, bg: 'transparent' }, prec: precNow, colors: readPalette() });
   }
 
   /** The same detailed summary as after a run, for a stored run (scored at the precision it was played at). */
@@ -254,7 +286,8 @@ export class ResultsPage {
           ${list.map((it) => `<label class="check"><input type="checkbox" data-pdf-item="${esc(it.id)}" checked> ${esc(it.name)}</label>`).join('')}
         </fieldset>
         <fieldset><legend>For each exercise</legend>
-          <label class="check"><input type="checkbox" data-pdf-chart="surface" checked> 3D surface of the last 10 runs</label>
+          <label class="check"><input type="checkbox" data-pdf-chart="surface" checked> 3D surfaces of the last 10 runs (pieces: overall, intonation and timing, by bar)</label>
+          <label class="check"><input type="checkbox" data-pdf-chart="mistakes" checked> Pieces: where the mistakes are, bar by bar</label>
           <label class="check"><input type="checkbox" data-pdf-chart="twoWeeks" checked> Last 2 weeks – every run</label>
           <label class="check"><input type="checkbox" data-pdf-chart="sixMonths" checked> Past 6 months – daily averages</label>
           <label class="check"><input type="checkbox" data-pdf-chart="allTime" checked> All time – monthly averages</label>
@@ -284,7 +317,7 @@ export class ResultsPage {
     try {
       const { makePdf } = await import('../pdf.js');
       const list = this.getList();
-      const opts = options || { items: list.map((x) => x.id), charts: { surface: true, twoWeeks: true, sixMonths: true, allTime: true, table: true }, range: 'all' };
+      const opts = options || { items: list.map((x) => x.id), charts: { surface: true, mistakes: true, twoWeeks: true, sixMonths: true, allTime: true, table: true }, range: 'all' };
       const out = await makePdf({ list, results: this.getResults(), studentName: this.getStudentName(), precision: this.getPrecision(), ...opts });
       out.save();
       msg.textContent = `PDF ready: ${out.filename} (${out.pages} page${out.pages === 1 ? '' : 's'}).`;

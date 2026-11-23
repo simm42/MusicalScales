@@ -147,3 +147,65 @@ test('scores are kept for all five precision levels, also after averaging', () =
   eq(cardStats(store, 'a', 0).best, Math.round(lv[0][0]));
   eq(cardStats(store, 'a', 4).best, Math.round(lv[4][0]));
 });
+
+// ---------------------------------------------------------------- a piece's plots, bar by bar
+import { pieceBarSurfaces, pieceMistakes, barsOfSteps, MAX_BAR_GROUPS } from '../js/barSurface.js';
+import { mistakesChart } from '../js/ui/charts.js';
+
+/** A stored piece run: `bars` bars of `per` notes; notes given as [cents, , , status, timing %]. */
+const pieceRun = (d, bars, per, note = () => [0, 100, 100, 0, 0], sec = null) => {
+  const labels = [];
+  for (let b = 1; b <= bars; b++) for (let k = 0; k < per; k++) labels.push(k ? '' : String(b));
+  const from = sec ? sec[0] : 1, to = sec ? sec[1] : bars;
+  const notes = [];
+  for (let b = from; b <= to; b++) for (let k = 0; k < per; k++) notes.push(note(b, k));
+  return { d, labels, notes, sec, steps: labels.map(() => null) };
+};
+
+test('a piece: runs averaged over groups of bars, at most 32 along the front', () => {
+  eq(barsOfSteps(['1', '', '2', '', '', '3']), [1, 1, 2, 2, 2, 3]);
+  const p = precisionAt(1);
+  // 10 bars: one bar at a time; bar 3 has a missing note (both scores 0), bar 5 is far out of tune
+  const note = (b, k) => (b === 3 && k === 0 ? [null, 0, 0, 2, null] : b === 5 ? [60, 0, 100, 0, 0] : [0, 100, 100, 0, 0]);
+  const s = pieceBarSurfaces([pieceRun(1, 10, 4, note)], p);
+  eq(s.size, 1); eq(s.labels.length, 10); eq(s.labels[0], '1');
+  near(s.intonation[0].steps[2], 75, 1e-9, 'one of four notes missing');
+  near(s.timing[0].steps[2], 75, 1e-9);
+  near(s.intonation[0].steps[4], 0, 1e-9, '60 cents scores nothing at Elementary');
+  near(s.timing[0].steps[4], 100, 1e-9);
+  near(s.overall[0].steps[4], 25, 1e-9, 'overall = 75 % intonation + 25 % timing');
+  near(s.overall[0].steps[0], 100, 1e-9);
+  // 70 bars: three at a time, 24 groups
+  const long = pieceBarSurfaces([pieceRun(1, 70, 2)], p);
+  eq(long.size, 3); eq(long.labels.length, 24); eq(long.labels[1], '4'); eq(long.labels[23], '70'); eq(long.groups[1], { from: 4, to: 6 });
+  assert(long.labels.length <= MAX_BAR_GROUPS);
+  // 64 bars: two at a time
+  eq(pieceBarSurfaces([pieceRun(1, 64, 2)], p).size, 2);
+  // a run of bars 4–6 fills just those; a run whose notes don't line up stays blank
+  const sec = pieceBarSurfaces([pieceRun(1, 10, 4, undefined, [4, 6]), { ...pieceRun(2, 10, 4), notes: [[0, 100, 100, 0, 0]] }], p);
+  eq(sec.overall[0].steps.map((v) => v != null), [false, false, false, true, true, true, false, false, false, false]);
+  assert(sec.overall[1].steps.every((v) => v == null));
+});
+
+test('a piece: where the mistakes are, bar by bar, with every run added up', () => {
+  const p = precisionAt(1); // Elementary: 45 cents, 50 % timing score nothing
+  const note = (b, k) => (b === 2 && k === 0 ? [null, 0, 0, 2, null] // missed
+    : b === 2 && k === 1 ? [null, 0, 80, 1, 5] // wrong note
+      : b === 3 && k === 0 ? [50, 0, 100, 0, 0] // far out of tune
+        : b === 4 && k === 2 ? [5, 90, 0, 0, 70] // badly timed
+          : b === 4 && k === 3 ? [48, 0, 0, 0, -60] // both: one note with a mistake
+            : [10, 100, 100, 0, 10]);
+  const m = pieceMistakes([pieceRun(1, 5, 4, note), pieceRun(2, 5, 4, note, [2, 3])], p);
+  eq(m.bars, 5);
+  const r = m.rows[0].cells;
+  eq(r[0].n, 0); eq(r[0].notes, 4);
+  eq([r[1].n, r[1].missed, r[1].tune, r[1].time], [2, 1, 1, 0]);
+  eq([r[2].n, r[2].tune], [1, 1]);
+  eq([r[3].n, r[3].tune, r[3].time], [2, 1, 2]);
+  // the second run played bars 2–3 only
+  eq(m.rows[1].cells.map((c) => (c ? c.n : null)), [null, 2, 1, null, null]);
+  eq(m.all.map((c) => c.n), [0, 4, 2, 2, 0]);
+  eq(m.all[1].notes, 8);
+  const svg = mistakesChart({ data: m, width: 600, palette: { fg: '#000', muted: '#666', grid: '#ddd', bg: '#fff', errors: '#c00' }, dates: () => 'd' });
+  assert(svg.startsWith('<svg') && svg.includes('All runs') && svg.includes('1 missed, 1 wrong or far out of tune'));
+});
