@@ -1,7 +1,11 @@
-// Scoring: intonation 75 %, timing 25 %, minus a penalty for each extra note.
+// Scoring: intonation 75 %, timing 25 %, minus a penalty for each extra note (never more
+// than a wrong note costs, so a long piece isn't sunk by a few stray notes).
 // No DOM access.
 
-import { linearScore, scrapeSize, scrapeWeight } from './precision.js';
+import { linearScore, scrapeSize, scrapeWeight, blipWeight } from './precision.js';
+
+/** How much of an extra note each stray note is: a whole one in a scale; in a piece, by its length. */
+const extraWeights = (notes, piece, prec) => notes.map((d) => (piece ? blipWeight((d.end ?? d.onset) - d.onset, prec) : 1));
 import { foldPitch, HARMONIC_SHIFTS } from './align.js';
 
 export const SCORING = {
@@ -11,6 +15,15 @@ export const SCORING = {
   slowTempo: { at: 0.5, cut: 0.2, curve: 1.5 },
   tempoMinNotes: 4, // notes heard before the tempo measured from the run is trusted
 };
+
+/**
+ * What one extra note (or a whole scrape's worth of error) takes off the total: SCORING.extraPenalty,
+ * but never more than a wrong note costs – a wrong note loses its share of the intonation,
+ * 75 / notes points. So a 15-note scale keeps 3 points an extra note; a 158-note piece 0.47.
+ */
+export function errorCost(notes) {
+  return Math.min(SCORING.extraPenalty, (SCORING.intonationWeight * 100) / Math.max(1, notes));
+}
 
 /**
  * The share of the score kept when a piece is played slower than written: 1 at the
@@ -35,6 +48,7 @@ const median = (a) => { const s = a.slice().sort((x, y) => x - y); const n = s.l
  * @param {(note, event)=>{cents:(number|null)[], approx?:boolean}} [o.doubleStopEval]
  * @param {number} [o.targetBpm] a piece's written tempo: playing slower costs a little (tempoFactor)
  * @param {number} [o.setBpm] the tempo it was practised at (used when too few notes give a tempo)
+ * @param {boolean} [o.piece] a practice piece: short stray notes (blips) count less, or not at all
  */
 export function scoreRun(o) {
   const { expected, detected, alignment, prec, metronome = null, doubleStopEval = null, scrapes = [], fold = false } = o;
@@ -112,8 +126,11 @@ export function scoreRun(o) {
   const n = per.length || 1;
   const intonation = per.reduce((a, r) => a + r.intonation, 0) / n;
   const timing = per.reduce((a, r) => a + r.timing, 0) / n;
-  const extraPenalty = SCORING.extraPenalty * extras.length;
-  const penalty = extraPenalty + SCORING.extraPenalty * scrapeErrors;
+  const cost = errorCost(per.length);
+  const weights = extraWeights(extras.map((i) => detected[i]), !!o.piece, prec);
+  const extraErrors = weights.reduce((a, w) => a + w, 0);
+  const extraPenalty = cost * extraErrors;
+  const penalty = extraPenalty + cost * scrapeErrors;
   // a piece: the tempo played – the metronome's, or measured from the notes
   const measured = o.secondsPerBeat && matched.length >= SCORING.tempoMinNotes ? 60 / o.secondsPerBeat : null;
   const playedBpm = metronome ? 60 / metronome.spb : measured || o.setBpm || null;
@@ -128,10 +145,15 @@ export function scoreRun(o) {
     intonation,
     timing,
     extras: extras.map((i) => detected[i]),
+    piece: !!o.piece,
+    // in a piece, the stray notes too short to count in full (blips)
+    blips: weights.filter((w) => w < 1).length,
+    extraErrors,
     scrapes: scr,
-    // errors: extra notes, plus scrapes counted as part errors at this level
-    errors: extras.length + scrapeErrors,
+    // errors: extra notes (blips in a piece counting less), plus scrapes counted as part errors at this level
+    errors: extraErrors + scrapeErrors,
     extraPenalty,
+    errorCost: cost,
     penalty,
     total,
     missing: per.filter((r) => r.status === 'missing').length,
@@ -193,9 +215,13 @@ export function scoresAtLevels(result, levels = [0, 1, 2, 3, 4], precisionAt) {
     inton /= n;
     timing /= n;
     const scrapeErrors = (result.scrapes || []).reduce((a, x) => a + scrapeWeight(x.size ?? scrapeSize(x.dur, x.relDb), p), 0);
-    const base = result.extraPenalty ?? (result.scrapes ? SCORING.extraPenalty * (result.extras || []).length : result.penalty || 0);
-    const penalty = base + SCORING.extraPenalty * scrapeErrors;
-    const errors = result.extras ? Math.round((result.extras.length + scrapeErrors) * 10) / 10 : null;
+    const cost = result.errorCost ?? SCORING.extraPenalty;
+    // a piece's blips are weighed again at each level
+    const extraErrors = result.piece && result.extras ? extraWeights(result.extras, true, p).reduce((a, w) => a + w, 0) : null;
+    const base = extraErrors != null ? cost * extraErrors
+      : result.extraPenalty ?? (result.scrapes ? SCORING.extraPenalty * (result.extras || []).length : result.penalty || 0);
+    const penalty = base + cost * scrapeErrors;
+    const errors = result.extras ? Math.round(((extraErrors ?? result.extras.length) + scrapeErrors) * 10) / 10 : null;
     const total = Math.max(0, Math.min(100, SCORING.intonationWeight * inton + SCORING.timingWeight * timing - penalty)) * (result.tempoFactor ?? 1);
     return [Math.round(total * 10) / 10, Math.round(inton * 10) / 10, Math.round(timing * 10) / 10, errors];
   });

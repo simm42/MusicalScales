@@ -105,6 +105,55 @@ test('metronome grid timing with constant latency is not penalised', () => {
   near(r.timing, 100, 1e-6);
 });
 
+import { errorCost, scoresAtLevels } from '../js/scoring.js';
+
+test('an extra note never costs more than a wrong note', () => {
+  eq(errorCost(15), 3, 'a scale keeps 3 points an extra note');
+  near(errorCost(158), 75 / 158, 1e-9);
+  /** n notes in tune and in time, `wrong` of them far out, plus `extra` stray notes. */
+  const runOf = (n, wrong, extra) => {
+    const ev = Array.from({ length: n }, (_, b) => ({ midis: [60], onsetBeat: b, notes: [] }));
+    const det = ev.map((e, i) => ({ midi: i < wrong ? 64 : 60, onset: 1 + e.onsetBeat * 0.5, end: 1.4 + e.onsetBeat * 0.5 }));
+    const stray = Array.from({ length: extra }, (_, k) => ({ midi: 72, onset: 1.45 + k * 0.5, end: 1.48 + k * 0.5 }));
+    const alignment = { pairs: ev.map((e, i) => ({ event: i, note: i })), extras: stray.map((_, k) => n + k) };
+    return scoreRun({ expected: ev, detected: [...det, ...stray], alignment, prec: precisionAt(2), metronome: { t0: 1, spb: 0.5 } });
+  };
+  // a long piece: one extra note costs no more than one wrong note
+  const clean = runOf(158, 0, 0).total, oneWrong = runOf(158, 1, 0).total, oneExtra = runOf(158, 0, 1).total;
+  near(clean, 100, 1e-6);
+  assert(clean - oneExtra <= clean - oneWrong + 1e-9, `extra ${clean - oneExtra} vs wrong ${clean - oneWrong}`);
+  // 18 extras in a 158-note piece take about 8.5 points, not 54
+  const many = runOf(158, 0, 18);
+  near(many.penalty, 18 * 75 / 158, 1e-6);
+  near(scoresAtLevels(many, [2], precisionAt)[0][0], Math.round(many.total * 10) / 10, 0.05, 'the same at every level');
+  // a short scale is unchanged: 3 points an extra note
+  near(runOf(15, 0, 1).penalty, 3, 1e-9);
+});
+
+test('in a piece, short blips are let off – more so at the easier levels', () => {
+  const ev = Array.from({ length: 40 }, (_, b) => ({ midis: [60], onsetBeat: b, notes: [] }));
+  const det = ev.map((e) => ({ midi: 60, onset: 1 + e.onsetBeat * 0.5, end: 1.4 + e.onsetBeat * 0.5 }));
+  // stray notes of 0.12 s, 0.25 s and 0.8 s
+  const stray = [0.12, 0.25, 0.8].map((d, k) => ({ midi: 72, onset: 5.45 + k * 2, end: 5.45 + k * 2 + d }));
+  const alignment = { pairs: ev.map((e, i) => ({ event: i, note: i })), extras: [40, 41, 42] };
+  const score = (lv, piece) => scoreRun({ expected: ev, detected: [...det, ...stray], alignment, prec: precisionAt(lv), metronome: { t0: 1, spb: 0.5 }, piece });
+  // a scale counts all three in full
+  near(score(1, false).errors, 3, 1e-9);
+  // Elementary piece: the 0.12 s blip is free, the 0.25 s one counts about a tenth, the 0.8 s one in full
+  const el = score(1, true);
+  near(el.errors, 1 + (0.25 - 0.22) / (0.5 - 0.22), 1e-9);
+  eq(el.blips, 2);
+  // Beginner lets off more; Expert counts the 0.25 s and 0.12 s notes in full
+  assert(score(0, true).errors < el.errors);
+  near(score(0, true).errors, 1, 1e-9, 'Beginner: only the long one, in full');
+  near(score(4, true).errors, 3, 1e-9);
+  // the levels table re-weighs them the same way
+  const lv = scoresAtLevels(el, undefined, precisionAt);
+  near(lv[1][3], Math.round(el.errors * 10) / 10, 1e-9);
+  near(lv[4][3], 3, 1e-9);
+  assert(lv[0][0] >= lv[1][0] && lv[1][0] >= lv[4][0], 'easier levels score higher');
+});
+
 import { analyseRecording } from '../js/practice.js';
 import { encodeWav, decodeWav } from '../js/audio/wav.js';
 

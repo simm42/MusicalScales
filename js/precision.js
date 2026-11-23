@@ -3,12 +3,14 @@
 
 export const LEVELS = [
   // scrapeFree / scrapeFull: a bow-change scrape's size (see scrapeSize) below which it is
-  // not counted, and from which it counts as one whole error; in between, part of one
-  { name: 'Beginner',     fullCents: 15, zeroCents: 60, fullTiming: 0.15, zeroTiming: 0.60, scrapeFree: 2.5,  scrapeFull: 8 },
-  { name: 'Elementary',   fullCents: 10, zeroCents: 45, fullTiming: 0.10, zeroTiming: 0.50, scrapeFree: 1.2,  scrapeFull: 5 },
-  { name: 'Intermediate', fullCents: 7,  zeroCents: 35, fullTiming: 0.07, zeroTiming: 0.40, scrapeFree: 0.6,  scrapeFull: 3 },
-  { name: 'Advanced',     fullCents: 5,  zeroCents: 25, fullTiming: 0.05, zeroTiming: 0.30, scrapeFree: 0.3,  scrapeFull: 1.8 },
-  { name: 'Expert',       fullCents: 3,  zeroCents: 15, fullTiming: 0.03, zeroTiming: 0.20, scrapeFree: 0.12, scrapeFull: 1.0 },
+  // not counted, and from which it counts as one whole error; in between, part of one.
+  // blipFree / blipFull (seconds, pieces only): an extra note shorter than blipFree is a blip
+  // and not counted; from blipFull it is a whole extra note; in between, part of one.
+  { name: 'Beginner',     fullCents: 15, zeroCents: 60, fullTiming: 0.15, zeroTiming: 0.60, scrapeFree: 2.5,  scrapeFull: 8,   blipFree: 0.30, blipFull: 0.70 },
+  { name: 'Elementary',   fullCents: 10, zeroCents: 45, fullTiming: 0.10, zeroTiming: 0.50, scrapeFree: 1.2,  scrapeFull: 5,   blipFree: 0.22, blipFull: 0.50 },
+  { name: 'Intermediate', fullCents: 7,  zeroCents: 35, fullTiming: 0.07, zeroTiming: 0.40, scrapeFree: 0.6,  scrapeFull: 3,   blipFree: 0.15, blipFull: 0.35 },
+  { name: 'Advanced',     fullCents: 5,  zeroCents: 25, fullTiming: 0.05, zeroTiming: 0.30, scrapeFree: 0.3,  scrapeFull: 1.8, blipFree: 0.10, blipFull: 0.22 },
+  { name: 'Expert',       fullCents: 3,  zeroCents: 15, fullTiming: 0.03, zeroTiming: 0.20, scrapeFree: 0.12, scrapeFull: 1.0, blipFree: 0.06, blipFull: 0.12 },
 ];
 
 // Singers: pitch tolerances one and a half times as wide, timing a third wider
@@ -34,6 +36,8 @@ export function precisionAt(value, instrument = null) {
     zeroTiming: lerp('zeroTiming') * tm,
     scrapeFree: lerp('scrapeFree'),
     scrapeFull: lerp('scrapeFull'),
+    blipFree: lerp('blipFree'),
+    blipFull: lerp('blipFull'),
   };
 }
 
@@ -50,6 +54,16 @@ export function scrapeSize(dur, relDb = 0) {
 export function scrapeWeight(size, prec) {
   if (!(size > prec.scrapeFree)) return 0;
   return Math.min(1, (size - prec.scrapeFree) / (prec.scrapeFull - prec.scrapeFree));
+}
+
+/**
+ * How much of an extra note a stray note in a piece is at a precision level: 0 … 1 by its
+ * length. Pieces are harder than scales, so short blips (a string touched, a slip between
+ * notes) are let off – more so at the easier levels.
+ */
+export function blipWeight(dur, prec) {
+  if (!(dur > prec.blipFree)) return 0;
+  return Math.min(1, (dur - prec.blipFree) / (prec.blipFull - prec.blipFree));
 }
 
 /** 100 inside `full`, linear down to 0 at `zero`. */

@@ -72,6 +72,13 @@ function tempoNote(result) {
   return `<p class="small">Tempo: ${sign} ≈ ${played}${set}, ${pct}% of the written ${sign} = ${written}, so the total was reduced by ${cut < 1 ? cut.toFixed(1) : Math.round(cut)}%. Practising slower is a good way to learn a piece – play at the written tempo for the full score.</p>`;
 }
 
+/** A piece: stray notes too short to count in full. */
+function blipNote(result, prec) {
+  if (!result.piece || !result.blips) return '';
+  const n = result.blips;
+  return `<p class="muted small">${n} short stray note${n === 1 ? '' : 's'} (a string touched, a slip between notes) ${n === 1 ? 'was' : 'were'} let off or counted only in part – in a piece at ${esc(prec.name)} precision, a stray note under ${Math.round(prec.blipFree * 100) / 100} s isn't counted.</p>`;
+}
+
 function offsetNotice(result) {
   const g = result.globalOffset;
   if (!g) return '';
@@ -126,6 +133,7 @@ export function renderSummary(el, { result, seq, labels = null, prec, settings =
         <div class="stat"><div class="v">${fmtErrors(result.errors ?? result.extras.length)}</div><div class="l">Errors${result.penalty != null ? ` (−${fmtErrors(result.penalty)})` : ''}</div></div>
       </div>
       ${tempoNote(result)}
+      ${blipNote(result, prec)}
       ${offsetNotice(result)}
       ${details ? scrapeNote(result, prec) : ''}
       <p class="muted small">Precision: ${esc(prec.name)} (full marks within ±${prec.fullCents.toFixed(0)} cents)${vib} · ${result.missing} missing · ${result.wrong} wrong${tempo}${timed}</p>

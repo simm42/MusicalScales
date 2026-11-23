@@ -585,6 +585,7 @@ export class PracticeSession {
       fold: refined.fold,
       targetBpm: this.o.targetBpm || null,
       setBpm: this.o.settings.bpm,
+      piece: !!this.o.exercise.isPiece,
     });
     result.noiseFloor = this.noiseFloor;
     if (!this.doubleStop) result.globalOffset = detectGlobalOffset(notes, seq.events);
