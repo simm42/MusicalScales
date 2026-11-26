@@ -329,11 +329,30 @@ table.notes th:first-child, table.notes td:first-child, table.notes td:nth-child
 }
 .res-block svg { width: 100%; height: auto; display: block; }
 
-/* Name the note, easier: each choice lights up as it is played, then the note's row */
-.game-easy { display: flex; gap: 8px; align-items: flex-start; margin: 6px 0 10px; }
-.choice.sounding { outline: 3px solid var(--accent); outline-offset: 2px; }
-.choice-row .hearing-label { display: none; margin-left: 6px; }
-.choice-row.hearing .hearing-label { display: inline; color: var(--accent); font-weight: 600; }
+/* Ear training: levels in stages; answers as buttons, shape pictures or a sol-fa ladder */
+.ear-stage h4 { margin: 14px 0 2px; font-size: 15px; }
+.ear-stage > p { margin: 0; }
+.ear-title { margin: 4px 0 0; }
+.choice { display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; padding: 6px 8px; }
+.choice small { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.choice.right small, .choice.wrong small { color: inherit; }
+.ear-choices.n2 { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 460px; }
+.ear-choices.n3 { grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 560px; }
+.ear-choices .choice { min-height: 64px; }
+.choices.shapes { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 460px; }
+.choices.shapes .choice { min-height: 86px; }
+.choices.shapes .cl { font-size: 12.5px; font-weight: 600; color: var(--muted); }
+.choice .shape { color: var(--fg); }
+.choice.right .shape { color: var(--good); }
+.choice.wrong .shape { color: var(--bad); }
+.ladder { display: flex; flex-direction: column; gap: 5px; max-width: 260px; margin-top: 4px; }
+.ladder .choice { flex-direction: row; justify-content: space-between; min-height: 42px; font-size: 18px; padding: 4px 14px; }
+.ladder .choice.off { opacity: .28; }
+.ear-slots { display: flex; gap: 8px; margin: 4px 0 10px; }
+.ear-slot { min-width: 58px; padding: 6px 10px; border: 2px dashed var(--border); border-radius: 10px; text-align: center; font-weight: 700; color: var(--muted); }
+.ear-slot.filled { border-style: solid; border-color: var(--accent); color: var(--fg); }
+.ear-slot.right { border-color: var(--good); color: var(--good); }
+.ear-slot.wrong { border-color: var(--bad); color: var(--bad); }
 
 /* fingering: tap a note, choose a finger or a position change */
 #score.fingering { cursor: pointer; }

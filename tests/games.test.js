@@ -1,46 +1,13 @@
 // Pitch-training games: questions, answer choices, singing judged, scores and levels.
 import { test, eq, assert, near } from './harness.js';
 import {
-  LISTEN_LEVELS, SING_LEVELS, GAME, listenQuestion, singQuestion, answerChoices, majorKey, tonicMidi,
+  SING_LEVELS, GAME, singQuestion, majorKey, tonicMidi,
   sungMatches, HoldJudge, recordRound, isUnlocked, stars, rng,
 } from '../js/games.js';
 
 const pcOf = (m) => ((m % 12) + 12) % 12;
 const NAME_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
 const pcOfName = (n) => (NAME_PC[n[0]] + (n.includes('♯') ? 1 : n.includes('♭') ? -1 : 0) + 12) % 12;
-
-test('name the note: four different choices, one of them right, and the note is in the key', () => {
-  const r = rng(42);
-  for (const L of LISTEN_LEVELS) {
-    for (let k = 0; k < 30; k++) {
-      const q = listenQuestion(L.id, { low: 48, high: 84, r });
-      eq(q.notes.length, L.notes);
-      if (q.notes.length === 2) assert(q.notes[0].name !== q.notes[1].name, 'two different notes');
-      q.notes.forEach((n, i) => {
-        const c = q.choices[i];
-        eq(c.length, 4);
-        eq(new Set(c).size, 4, 'all different');
-        assert(c.includes(n.name), 'the right answer is offered');
-        eq(pcOfName(n.name), pcOf(n.midi), 'the name is the note played');
-        assert(q.key.degrees.some((p) => pcOfName(p.l != null ? 'CDEFGAB'[p.l] + (p.a > 0 ? '♯' : p.a < 0 ? '♭' : '') : '') === pcOf(n.midi)), 'in the key');
-        assert(n.midi >= 48 && n.midi <= 84 + 12, 'in a comfortable range');
-      });
-      eq(q.keyShown, L.key);
-      eq(q.reference.length, L.hearKey ? 4 : 0);
-    }
-  }
-});
-
-test('with the key known the wrong answers are other notes of the key; without it, near semitones', () => {
-  const key = majorKey('D');
-  const note = { midi: 66, degree: 2, name: 'F♯' };
-  const withKey = answerChoices(note, key, true, rng(1));
-  const keyNames = key.degrees.map((p) => 'CDEFGAB'[p.l] + (p.a > 0 ? '♯' : p.a < 0 ? '♭' : ''));
-  assert(withKey.every((c) => keyNames.includes(c)), withKey.join(' '));
-  const noKey = answerChoices(note, key, false, rng(1));
-  assert(noKey.some((c) => !keyNames.includes(c)), 'near notes outside the key: ' + noKey.join(' '));
-  assert(noKey.every((c) => Math.min(Math.abs(pcOfName(c) - 6), 12 - Math.abs(pcOfName(c) - 6)) <= 3), noKey.join(' '));
-});
 
 test('keys are spelled properly (B♭ in F major, F♯ in G major)', () => {
   const name = (key) => majorKey(key).degrees.map((p) => 'CDEFGAB'[p.l] + (p.a > 0 ? '♯' : p.a < 0 ? '♭' : '')).join(' ');
@@ -93,38 +60,16 @@ test('singing is judged in any octave, within the level\'s tolerance', () => {
 });
 
 test('a round of 70% or more opens the next level; best scores and stars kept', () => {
-  const p = { listen: { best: {} }, sing: { best: {} } };
-  assert(isUnlocked(p, 'listen', 1) && !isUnlocked(p, 'listen', 2));
-  let r = recordRound(p, 'listen', 1, 0.6);
+  const p = { ear: { best: {} }, sing: { best: {} } };
+  assert(isUnlocked(p, 'sing', 1) && !isUnlocked(p, 'sing', 2));
+  let r = recordRound(p, 'sing', 1, 0.6);
   eq([r.newBest, r.unlocked], [true, false]);
-  r = recordRound(p, 'listen', 1, 0.8);
+  r = recordRound(p, 'sing', 1, 0.8);
   eq([r.best, r.unlocked], [0.8, true]);
-  assert(isUnlocked(p, 'listen', 2));
-  r = recordRound(p, 'listen', 1, 0.5);
+  assert(isUnlocked(p, 'sing', 2));
+  r = recordRound(p, 'sing', 1, 0.5);
   eq([r.best, r.newBest, r.unlocked], [0.8, false, false]);
-  assert(!isUnlocked(p, 'sing', 2), 'each game has its own levels');
-  // the easier Name the note keeps its own scores and levels
-  const q = { listen: { best: {} }, listenEasy: { best: {} }, sing: { best: {} } };
-  recordRound(q, 'listenEasy', 1, 0.9);
-  assert(isUnlocked(q, 'listenEasy', 2) && !isUnlocked(q, 'listen', 2), 'easier rounds open only easier levels');
+  assert(!isUnlocked(p, 'ear', 2), 'each game has its own levels');
   eq([stars(0.4), stars(0.5), stars(0.7), stars(0.95)], [0, 1, 2, 3]);
   eq(GAME.unlockAt, 0.7);
-});
-
-test('easier Name the note: each choice sounds next to the note, the right one is the note', () => {
-  for (const L of LISTEN_LEVELS) {
-    const r = rng(L.id * 7 + 3);
-    for (let n = 0; n < 30; n++) {
-      const q = listenQuestion(L.id, { low: 48, high: 84, r });
-      eq(q.choiceMidis.length, q.notes.length);
-      q.notes.forEach((note, k) => {
-        const mids = q.choiceMidis[k];
-        eq(mids.length, 4, 'four sounds for four choices');
-        eq(new Set(mids).size, 4, 'four different sounds');
-        const right = q.choices[k].indexOf(note.name);
-        eq(mids[right], note.midi, 'the right choice is the note itself');
-        assert(mids.every((m) => m - note.midi >= -6 && m - note.midi <= 5), `in the octave closest to the note (level ${L.id})`);
-      });
-    }
-  }
 });

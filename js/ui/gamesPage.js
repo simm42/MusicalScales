@@ -1,10 +1,11 @@
-// Games tab: "Name the note" (listening) and "Sing the note" (singing).
-// The rules are in games.js; this is the screen, the sound and the microphone.
+// Games tab: "Ear training" (listening, levels in ear.js) and "Sing the note" (singing).
+// The rules are in games.js and ear.js; this is the screen, the sound and the microphone.
 
 import {
-  LISTEN_LEVELS, SING_LEVELS, GAME, listenQuestion, singQuestion, HoldJudge,
+  SING_LEVELS, GAME, singQuestion, HoldJudge,
   loadProgress, saveProgress, recordRound, isUnlocked, stars, rng,
 } from '../games.js';
+import { EAR_LEVELS, EAR_STAGES, earLevel, earQuestion, earStars, passFraction, answerRight, openStrings, shapeWords } from '../ear.js';
 import { instrumentInfo, voiceSetup } from '../instruments.js';
 import { noteName, spellMidi, freqToMidi } from '../theory.js';
 import { Meter, fmtCents } from './meter.js';
@@ -12,38 +13,37 @@ import { MicError } from '../audio/mic.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const starText = (n) => '★'.repeat(n) + '☆'.repeat(3 - n);
+/** Ear training's own pass marks (Sing the note uses 70 % throughout). */
+const EAR_RULES = { count: EAR_LEVELS.length, passOf: passFraction };
 
-/**
- * Name the note, easier: for each note its four choices in the order of the buttons, a pause,
- * and the note. The key isn't played as well – the choices already set the scene.
- * `marks` says what each sound is, to light it up.
- */
-function easyListenSeq(q) {
-  const events = [], glyphs = [], marks = [];
-  const add = (midi, beats, sounding, mark) => {
-    const i = events.length;
-    glyphs.push({ beats: sounding });
-    events.push({ index: i, glyphIndex: i, beats, midis: [midi], slurred: false });
-    marks.push(mark);
-  };
-  q.notes.forEach((n, row) => {
-    q.choiceMidis[row].forEach((m, k) => add(m, k === q.choiceMidis[row].length - 1 ? 1.7 : 0.8, 0.65, { row, name: q.choices[row][k] }));
-    add(n.midi, row < q.notes.length - 1 ? 2.2 : 1.1, 0.95, { row, note: true });
+/** A few sounds as a little "sequence" the synthesiser can play: each { midis, beats, hold }. */
+function seqOf(sounds) {
+  const events = [], glyphs = [];
+  sounds.forEach((s, i) => {
+    glyphs.push({ beats: s.hold });
+    events.push({ index: i, glyphIndex: i, beats: s.beats, midis: s.midis, slurred: false });
   });
-  return { seq: { events, glyphs }, marks };
+  return { events, glyphs };
 }
 
-/** A few notes as a little "sequence" the synthesiser can play: the key, a pause, then the notes. */
+/** The key (if played) and/or notes, as sounds. */
 function soundSeq(reference, notes) {
-  const events = [], glyphs = [];
-  const add = (midi, beats, sounding) => {
-    const i = events.length;
-    glyphs.push({ beats: sounding });
-    events.push({ index: i, glyphIndex: i, beats, midis: [midi], slurred: false });
-  };
-  reference.forEach((m, k) => add(m, k === reference.length - 1 ? (notes.length ? 2 : 1) : 0.5, 0.45));
-  notes.forEach((m) => add(m, 1.1, 0.95));
-  return { events, glyphs };
+  return seqOf([
+    ...reference.map((m, k) => ({ midis: [m], beats: k === reference.length - 1 ? (notes.length ? 2 : 1) : 0.5, hold: 0.45 })),
+    ...notes.map((m) => ({ midis: [m], beats: 1.1, hold: 0.95 })),
+  ]);
+}
+
+/** A tune's shape as a little picture: "udu" → a line going up, down, up. */
+function shapeSvg(s) {
+  const n = s.length + 1, w = 84, h = 44, pad = 8;
+  let y = 0;
+  const ys = [0, ...[...s].map((c) => (y += c === 'u' ? 1 : -1))];
+  const mn = Math.min(...ys), mx = Math.max(...ys);
+  const X = (i) => pad + ((w - 2 * pad) * i) / (n - 1);
+  const Y = (v) => (mx === mn ? h / 2 : h - pad - ((h - 2 * pad) * (v - mn)) / (mx - mn));
+  const pts = ys.map((v, i) => `${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(' ');
+  return `<svg class="shape" viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" aria-hidden="true"><polyline points="${pts}" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>${ys.map((v, i) => `<circle cx="${X(i).toFixed(1)}" cy="${Y(v).toFixed(1)}" r="4" fill="currentColor"/>`).join('')}</svg>`;
 }
 
 export class GamesPage {
@@ -71,39 +71,41 @@ export class GamesPage {
   home() {
     this.stop();
     this.progress = loadProgress();
-    const easy = !!this.progress.listenEasier;
-    const levelButtons = (game, levels) => levels.map((L) => {
-      const track = game === 'listen' && easy ? 'listenEasy' : game; // the easier version keeps its own scores
-      const open = isUnlocked(this.progress, track, L.id);
-      const best = (this.progress[track] || { best: {} }).best[L.id];
-      return `<button type="button" class="game-level" data-game="${game}" data-level="${L.id}" ${open ? '' : 'disabled'}
+    const singButtons = SING_LEVELS.map((L) => {
+      const open = isUnlocked(this.progress, 'sing', L.id);
+      const best = (this.progress.sing || { best: {} }).best[L.id];
+      return `<button type="button" class="game-level" data-game="sing" data-level="${L.id}" ${open ? '' : 'disabled'}
         title="${esc(L.detail)}"><span class="lv">Level ${L.id}</span><span class="nm">${esc(L.label)}</span>
         <span class="st">${open ? (best != null ? `${starText(stars(best))} ${Math.round(best * 100)}%` : 'Not played yet') : '🔒 Score 70% on the level before'}</span></button>`;
     }).join('');
+    const earButton = (L) => {
+      const open = isUnlocked(this.progress, 'ear', L.id, passFraction);
+      const best = (this.progress.ear || { best: {} }).best[L.id];
+      const prev = L.id > 1 ? earLevel(L.id - 1) : null;
+      return `<button type="button" class="game-level" data-game="ear" data-level="${L.id}" ${open ? '' : 'disabled'}
+        title="${esc(L.how + ' ' + L.ask)}"><span class="lv">Level ${L.id}</span><span class="nm">${esc(L.title)}</span>
+        <span class="st">${open ? (best != null ? `${starText(earStars(L.id, best))} ${Math.round(best * L.total)} of ${L.total}` : 'Not played yet') : `🔒 ${prev.pass} of ${prev.total} on the level before`}</span></button>`;
+    };
+    const stages = EAR_STAGES.map((S) => `<div class="ear-stage"><h4>${esc(S.title)}</h4><p class="muted small">${esc(S.intro)}</p>
+      <div class="game-levels">${EAR_LEVELS.filter((L) => L.stage === S.id).map(earButton).join('')}</div></div>`).join('');
     this.root.innerHTML = `
       <h2>Games</h2>
-      <p class="muted">Train your ear and your voice. Each level is a round of questions; score 70% or more to open the next level.</p>
+      <p class="muted">Train your ear and your voice. Each level is a round of questions; pass it to open the next.</p>
       <div class="game-cards">
-        <div class="game-card">
-          <h3>🎧 Name the note</h3>
-          <p class="muted small">A note is played – choose its name from four. At first the key is given and played; later it isn't, and there are two notes.</p>
-          <label class="check small game-easy"><input type="checkbox" id="listenEasy" ${easy ? 'checked' : ''}> <span><b>Easier:</b> hear the four choices before each note <span class="muted">(its own scores and levels)</span></span></label>
-          <div class="game-levels">${levelButtons('listen', LISTEN_LEVELS)}</div>
+        <div class="game-card ear-card">
+          <h3>🎧 Ear training</h3>
+          <p class="muted small">From the very start – which way does the music go? – to naming notes in a key and hearing when a note is a little sharp or flat. Little and often works best: a few rounds a day.</p>
+          ${stages}
         </div>
         <div class="game-card">
           <h3>🎤 Sing the note</h3>
           <p class="muted small">Sing the note asked for, and hold it until it turns green. At first the key and the note are played; later only the name is given, then two or three notes in a row.</p>
-          <div class="game-levels">${levelButtons('sing', SING_LEVELS)}</div>
+          <div class="game-levels">${singButtons}</div>
         </div>
       </div>`;
-    this.root.querySelector('#listenEasy').addEventListener('change', (e) => {
-      this.progress.listenEasier = e.target.checked;
-      saveProgress(this.progress);
-      this.home();
-    });
     this.root.querySelectorAll('.game-level').forEach((b) => b.addEventListener('click', () => {
       const level = Number(b.dataset.level);
-      if (b.dataset.game === 'listen') this.startListen(level); else this.startSing(level);
+      if (b.dataset.game === 'ear') this.startEar(level); else this.startSing(level);
     }));
   }
 
@@ -139,98 +141,120 @@ export class GamesPage {
     });
   }
 
-  // ---------------------------------------------------------------- name the note
-  listenRange() {
+  // ---------------------------------------------------------------- ear training
+  /** Where the questions are played: the instrument's range from C3 up, at most two octaves or so (phone speakers). */
+  earRange() {
     const info = instrumentInfo(this.getInstrument());
     const low = info.lowestMidi + info.transpose, high = info.highestMidi + info.transpose;
-    // phone speakers hardly play the lowest notes: keep the questions from C3 up
     const lo = Math.max(low + 5, 48);
-    return { low: lo, high: Math.max(high, lo + 14) };
+    return { low: lo, high: Math.min(Math.max(high, lo + 19), Math.max(84, lo + 19)), strings: openStrings(info) };
   }
 
-  startListen(level) {
-    this.view = 'listen';
-    this.round = { game: 'listen', easy: !!this.progress.listenEasier, level, i: 0, right: 0, total: GAME.listenRound, asked: 0 };
-    this.nextListen(true);
+  startEar(level) {
+    this.view = 'ear';
+    const L = earLevel(level);
+    this.round = { game: 'ear', level: L.id, i: 0, right: 0, total: L.total };
+    this.nextEar(true);
   }
 
-  nextListen(first = false) {
+  nextEar(first = false) {
     const R = this.round;
     if (R.i >= R.total) { this.endRound(); return; }
-    R.q = listenQuestion(R.level, { ...this.listenRange(), r: this.r });
-    R.picked = R.q.notes.map(() => null);
+    R.q = earQuestion(R.level, { ...this.earRange(), r: this.r });
+    R.picked = [];
     R.checked = false;
-    this.renderListen();
-    if (!first) this.playQuestion();
+    this.renderEar();
+    if (!first) this.playEar();
   }
 
-  playQuestion() {
-    const R = this.round, q = R.q;
-    if (!R.easy) return this.playSounds(q.reference, q.notes.map((n) => n.midi));
-    // easier: each choice lights up as it sounds, then the note's row
-    const { seq, marks } = easyListenSeq(q);
-    const light = (mark) => {
-      this.root.querySelectorAll('.choice.sounding').forEach((b) => b.classList.remove('sounding'));
-      this.root.querySelectorAll('.choice-row.hearing').forEach((r) => r.classList.remove('hearing'));
-      if (!mark) return;
-      if (mark.note) { const row = this.root.querySelector(`.choice-row[data-row="${mark.row}"]`); if (row) row.classList.add('hearing'); return; }
-      const b = [...this.root.querySelectorAll(`.choice[data-row="${mark.row}"]`)].find((x) => x.dataset.name === mark.name);
-      if (b) b.classList.add('sounding');
-    };
-    return this.playSeq(seq, (k) => light(marks[k])).then(() => light(null));
+  playEar() {
+    const R = this.round;
+    R.started = true;
+    const btn = this.root.querySelector('[data-act="play"]');
+    if (btn) btn.textContent = '▶ Play again';
+    return this.playSeq(seqOf(R.q.play));
   }
 
-  renderListen() {
-    const R = this.round, q = R.q, L = LISTEN_LEVELS.find((x) => x.id === R.level);
-    const keyLine = q.keyShown ? `Key: <b>${esc(q.key.title)}</b>${q.hearKey && !R.easy ? ' – you hear the key first' : ''}` : 'Key: <b>not given</b>';
-    const rows = q.notes.map((n, k) => `
-      <div class="choice-row" data-row="${k}">
-        ${q.notes.length > 1 ? `<span class="muted small">${k === 0 ? 'First' : 'Second'} note</span>` : ''}
-        <div class="choices">${q.choices[k].map((c) => `<button type="button" class="choice" data-row="${k}" data-name="${esc(c)}">${esc(c)}</button>`).join('')}</div>
-        ${R.easy ? '<span class="hearing-label muted small">← now the note</span>' : ''}
-      </div>`).join('');
-    this.root.innerHTML = `${this.header(`Name the note · Level ${R.level}`, R.i, R.total, R.right)}
-      <p class="muted small">${esc(L.detail)}${R.easy ? ` <b>Easier:</b> you hear the four choices (each lights up), then the note${q.hearKey ? ' – the key isn’t played' : ''}.` : ''}</p>
-      <p>${keyLine}</p>
+  /** The answers, in the way the level asks for them. */
+  answersHtml(q) {
+    const btn = (o, extra = '') => `<button type="button" class="choice${extra}" data-id="${esc(o.id)}" ${o.off ? 'disabled' : ''}>${o.svg || ''}<span class="cl">${esc(o.label)}</span>${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</button>`;
+    if (q.answer === 'ladder' || q.answer === 'letters') {
+      const n = q.correct.length;
+      const slots = n > 1 ? `<div class="ear-slots">${q.correct.map((_, k) => `<span class="ear-slot" data-k="${k}">${k + 1}</span>`).join('')}</div>` : '';
+      return `${slots}<div class="ladder">${q.options.map((o) => btn(o, o.off ? ' off' : '')).join('')}</div>`;
+    }
+    if (q.answer === 'shape') return `<div class="choices shapes">${q.options.map((o) => btn({ ...o, svg: shapeSvg(o.id), label: shapeWords(o.id) })).join('')}</div>`;
+    return `<div class="choices ear-choices n${q.options.length}">${q.options.map((o) => btn(o)).join('')}</div>`;
+  }
+
+  renderEar() {
+    const R = this.round, q = R.q, L = earLevel(R.level);
+    this.root.innerHTML = `${this.header(`Ear training · Level ${R.level}`, R.i, R.total, R.right)}
+      <p class="ear-title"><b>${esc(L.title)}</b></p>
+      <p class="muted small">${esc(L.how)} ${esc(L.tip)}</p>
+      ${q.info ? `<p>${esc(q.info)}</p>` : ''}
       <div class="row"><button type="button" class="btn primary big" data-act="play">▶ ${R.i === 0 && !R.started ? 'Start' : 'Play again'}</button></div>
-      <p class="game-ask">${q.notes.length > 1 ? 'Which two notes were played, in order?' : 'Which note was played?'}</p>
-      ${rows}
+      <p class="game-ask">${esc(L.ask)}</p>
+      ${this.answersHtml(q)}
       <p class="game-feedback" role="status"></p>
-      <div class="row"><button type="button" class="btn primary" data-act="next" hidden>Next ▶</button></div>`;
+      <p class="muted small ear-compare" hidden>Tap any answer to hear it.</p>
+      <div class="row">${q.correct.length > 1 ? '<button type="button" class="btn" data-act="clear">↺ Start the answer again</button>' : ''}<button type="button" class="btn primary" data-act="next" hidden>Next ▶</button></div>`;
     this.wire({
       home: () => this.home(),
-      play: () => { R.started = true; this.root.querySelector('[data-act="play"]').textContent = '▶ Play again'; this.playQuestion(); },
-      next: () => { R.i++; this.nextListen(); },
+      play: () => this.playEar(),
+      next: () => { R.i++; this.nextEar(); },
+      clear: () => { if (R.checked) return; R.picked = []; this.showPicked(); },
     });
-    this.root.querySelectorAll('.choice').forEach((b) => b.addEventListener('click', () => this.pick(Number(b.dataset.row), b.dataset.name)));
+    this.root.querySelectorAll('.choice').forEach((b) => b.addEventListener('click', () => this.earPick(b.dataset.id)));
   }
 
-  pick(row, name) {
+  /** Fill the answer slots (questions with more than one note). */
+  showPicked() {
     const R = this.round;
-    if (R.checked) return;
-    if (!R.started) { this.say('Press ▶ Start to hear the note first.'); return; }
-    R.picked[row] = name;
-    this.root.querySelectorAll(`.choice[data-row="${row}"]`).forEach((b) => b.classList.toggle('picked', b.dataset.name === name));
-    if (R.picked.some((p) => p == null)) return;
-    // all answered: mark them
-    R.checked = true;
-    let allRight = true;
-    R.q.notes.forEach((n, k) => {
-      const ok = R.picked[k] === n.name;
-      if (!ok) allRight = false;
-      R.right += ok ? 1 / R.q.notes.length : 0;
-      this.root.querySelectorAll(`.choice[data-row="${k}"]`).forEach((b) => {
-        b.disabled = true;
-        if (b.dataset.name === n.name) b.classList.add('right');
-        else if (b.dataset.name === R.picked[k]) b.classList.add('wrong');
-      });
+    this.root.querySelectorAll('.ear-slot').forEach((el) => {
+      const k = Number(el.dataset.k), id = R.picked[k];
+      const o = id != null && R.q.options.find((x) => x.id === id);
+      el.textContent = o ? o.label : String(k + 1);
+      el.classList.toggle('filled', !!o);
     });
-    const answer = R.q.notes.map((n) => n.name).join(' then ');
-    this.say(allRight ? '✓ Right!' : `✗ It was ${answer}.`, allRight);
+  }
+
+  earPick(id) {
+    const R = this.round, q = R.q;
+    // after answering: tap an answer to hear it
+    if (R.checked) { if (q.hear[id] != null) this.playSeq(seqOf([{ midis: [q.hear[id]], beats: 1.1, hold: 0.9 }])); return; }
+    if (!R.started) { this.say('Press ▶ Start to hear the question first.'); return; }
+    R.picked.push(id);
+    this.showPicked();
+    if (R.picked.length < q.correct.length) return;
+    // all answered: mark it
+    R.checked = true;
+    const rights = q.correct.map((_, k) => answerRight(q, k, R.picked[k]));
+    const got = rights.filter(Boolean).length / q.correct.length;
+    R.right += got;
+    const label = (x) => (q.options.find((o) => o.id === x) || { label: x }).label;
+    const words = (x) => (q.answer === 'shape' ? shapeWords(x) : label(x));
+    this.root.querySelectorAll('.choice').forEach((b) => {
+      const isRight = q.correct.some((c, k) => answerRight(q, k, b.dataset.id) && c != null);
+      if (isRight) b.classList.add('right');
+      else if (R.picked.includes(b.dataset.id)) b.classList.add('wrong');
+      // tap to hear (where the answers have a sound of their own)
+      b.disabled = q.hear[b.dataset.id] == null;
+    });
+    this.root.querySelectorAll('.ear-slot').forEach((el) => { const k = Number(el.dataset.k); el.classList.add(rights[k] ? 'right' : 'wrong'); });
+    const answer = q.correct.map(words).join(' then ');
+    const extra = q.answer.startsWith('tuning') && q.cents ? ` (${q.cents > 0 ? '+' : '−'}${Math.abs(q.cents)} cents)` : '';
+    const all = got === 1;
+    this.say(all ? `✓ Right – ${answer}${extra}.` : `✗ It was ${answer}${extra}${q.correct.length === 1 ? ` – you chose ${words(R.picked[0])}` : ''}.`, all);
     this.root.querySelector('.game-head .muted').textContent = `Question ${R.i + 1} of ${R.total} · ${Math.round(R.right * 10) / 10} right`;
+    if (Object.keys(q.hear).length && !q.answer.startsWith('direction')) this.root.querySelector('.ear-compare').hidden = false;
+    const clear = this.root.querySelector('[data-act="clear"]');
+    if (clear) clear.hidden = true;
     const next = this.root.querySelector('[data-act="next"]');
     next.hidden = false;
     next.textContent = R.i + 1 >= R.total ? 'See your score ▶' : 'Next ▶';
+    // in a key: the note walks home to Do, so its place is heard as well as named
+    if (q.after.length) this.playSeq(seqOf(q.after));
   }
 
   say(text, good = null) {
@@ -453,20 +477,24 @@ export class GamesPage {
   endRound() {
     const R = this.round;
     this.stopListening();
+    const ear = R.game === 'ear';
     const fraction = R.game === 'sing' ? (R.notesAsked ? R.notesRight / R.notesAsked : 0) : R.right / R.total;
-    const track = R.game === 'listen' && R.easy ? 'listenEasy' : R.game;
-    const res = recordRound(this.progress, track, R.level, fraction);
+    const res = ear ? recordRound(this.progress, 'ear', R.level, fraction, EAR_RULES) : recordRound(this.progress, 'sing', R.level, fraction);
     saveProgress(this.progress);
-    const levels = R.game === 'listen' ? LISTEN_LEVELS : SING_LEVELS;
-    const hasNext = R.level < levels.length && isUnlocked(this.progress, track, R.level + 1);
+    const count = ear ? EAR_LEVELS.length : SING_LEVELS.length;
+    const hasNext = R.level < count && (ear ? isUnlocked(this.progress, 'ear', R.level + 1, passFraction) : isUnlocked(this.progress, 'sing', R.level + 1));
+    const L = ear ? earLevel(R.level) : null;
+    const n = ear ? earStars(R.level, fraction) : stars(fraction);
+    const passText = ear ? `Get ${L.pass} of ${L.total} right to open the next level.` : 'Score 70% or more to open the next level.';
     this.view = 'end';
     this.root.innerHTML = `
       <div class="game-end">
-        <h2>${R.game === 'listen' ? `Name the note${R.easy ? ' (easier)' : ''}` : 'Sing the note'} · Level ${R.level}</h2>
-        <p class="game-score">${Math.round(fraction * 100)}%</p>
-        <p class="game-stars" aria-label="${stars(fraction)} stars">${starText(stars(fraction))}</p>
-        <p>${res.newBest ? 'A new best score for this level!' : `Your best: ${Math.round(res.best * 100)}%`}</p>
-        ${res.unlocked ? `<p class="good"><b>Level ${R.level + 1} is now open!</b></p>` : fraction < GAME.unlockAt && R.level < levels.length && !hasNext ? '<p class="muted">Score 70% or more to open the next level.</p>' : ''}
+        <h2>${ear ? `Ear training · Level ${R.level}` : `Sing the note · Level ${R.level}`}</h2>
+        ${ear ? `<p class="muted">${esc(L.title)}</p>` : ''}
+        <p class="game-score">${ear ? `${Math.round(R.right * 10) / 10} of ${R.total}` : `${Math.round(fraction * 100)}%`}</p>
+        <p class="game-stars" aria-label="${n} stars">${starText(n)}</p>
+        <p>${res.newBest ? 'A new best score for this level!' : ear ? `Your best: ${Math.round(res.best * R.total)} of ${R.total}` : `Your best: ${Math.round(res.best * 100)}%`}</p>
+        ${res.unlocked ? `<p class="good"><b>Level ${R.level + 1} is now open!</b></p>` : R.level < count && !hasNext ? `<p class="muted">${passText}</p>` : ''}
         <div class="row">
           <button type="button" class="btn" data-act="again">Play again</button>
           ${hasNext ? '<button type="button" class="btn primary" data-act="nextLevel">Next level ▶</button>' : ''}
@@ -474,8 +502,8 @@ export class GamesPage {
         </div>
       </div>`;
     this.wire({
-      again: () => (R.game === 'listen' ? this.startListen(R.level) : this.startSing(R.level)),
-      nextLevel: () => (R.game === 'listen' ? this.startListen(R.level + 1) : this.startSing(R.level + 1)),
+      again: () => (ear ? this.startEar(R.level) : this.startSing(R.level)),
+      nextLevel: () => (ear ? this.startEar(R.level + 1) : this.startSing(R.level + 1)),
       home: () => this.home(),
     });
   }

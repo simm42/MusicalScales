@@ -1,26 +1,14 @@
 // Pitch-training games: the rules, without any screen or sound. No DOM access
 // (apart from localStorage for the scores), so it can be tested.
 //
-//  Name the note (listening): a note (or two) is played; choose its name from
-//  four. Easier levels give the key and play it first; harder ones don't.
-//  "Easier" (a switch, with its own scores): the four choices are played first,
-//  then the note.
+//  Ear training (listening): its levels and questions are in ear.js.
 //  Sing the note: sing the note(s) asked for. Easier levels give the key and
 //  play the note; harder ones only name it, then two or three in a row, then
 //  without the key.
 
-import { transpose, spellMidi, noteName, midiOf, parsePc } from './theory.js';
+import { transpose, noteName, midiOf, parsePc } from './theory.js';
 
 // ---------------------------------------------------------------- levels
-
-export const LISTEN_LEVELS = [
-  { id: 1, notes: 1, key: true, hearKey: true, keys: 'easy', label: 'One note', detail: 'The key is shown and played first.' },
-  { id: 2, notes: 1, key: true, hearKey: false, keys: 'easy', label: 'One note', detail: 'The key is shown but not played.' },
-  { id: 3, notes: 2, key: true, hearKey: true, keys: 'easy', label: 'Two notes', detail: 'Two notes in the key. The key is shown and played first.' },
-  { id: 4, notes: 2, key: true, hearKey: false, keys: 'all', label: 'Two notes', detail: 'Two notes in the key. The key is shown but not played.' },
-  { id: 5, notes: 1, key: false, hearKey: false, keys: 'all', label: 'One note, no key', detail: 'No key given – just the note.' },
-  { id: 6, notes: 2, key: false, hearKey: false, keys: 'all', label: 'Two notes, no key', detail: 'Two notes in the same (secret) key.' },
-];
 
 export const SING_LEVELS = [
   { id: 1, notes: 1, key: true, hearKey: true, hearNote: true, keys: 'easy', label: 'Copy the note', detail: 'The key and the note are played – sing it back.' },
@@ -33,7 +21,6 @@ export const SING_LEVELS = [
 ];
 
 export const GAME = {
-  listenRound: 10,     // questions in a round
   singRound: 6,
   unlockAt: 0.7,       // a round this good unlocks the next level
   singHoldSec: 0.5,    // hold the note this long…
@@ -55,7 +42,6 @@ export function rng(seed = Date.now()) {
   return () => { s ^= s << 13; s >>>= 0; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
 }
 const pick = (r, a) => a[Math.floor(r() * a.length)];
-function shuffle(r, a) { const b = a.slice(); for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; }
 
 /** A major key: its seven notes (spelled for the key) and how to spell other notes. */
 export function majorKey(name) {
@@ -83,73 +69,6 @@ export function tonicMidi(key, lowMidi, highMidi) {
 
 /** The key note, its third and fifth and the octave: played to set the key. */
 export const keyChord = (tonic) => [tonic, tonic + 4, tonic + 7, tonic + 12];
-
-// ---------------------------------------------------------------- name the note
-
-/**
- * One question.
- * @returns {{ key, keyShown, hearKey, reference:number[], notes:Array<{midi, name, degree}>, choices:string[][] }}
- */
-export function listenQuestion(level, { low, high, r = rng() }) {
-  const L = LISTEN_LEVELS.find((x) => x.id === level) || LISTEN_LEVELS[0];
-  const key = majorKey(pick(r, L.keys === 'easy' ? EASY_KEYS : ALL_KEYS));
-  const tonic = tonicMidi(key, low, high);
-  const notes = [];
-  for (let i = 0; i < L.notes; i++) {
-    let d;
-    do { d = Math.floor(r() * 8); } while (notes.some((n) => n.degree === d % 7)); // two different notes
-    const degree = d % 7;
-    const midi = tonic + MAJOR[degree] + (d === 7 ? 12 : 0);
-    notes.push({ midi, degree, name: pcName(key.degrees[degree]) });
-  }
-  const choices = notes.map((n) => answerChoices(n, key, L.key, r));
-  // where each choice sounds (next to the note), for the easier version that plays them first
-  const choiceMidis = notes.map((n, k) => choiceSounds(n, key, L.key, choices[k]));
-  return { level: L.id, key, keyShown: L.key, hearKey: L.hearKey, reference: L.hearKey ? keyChord(tonic) : [], notes, choices, choiceMidis };
-}
-
-/**
- * Four names to choose from, one of them right. With the key known the others
- * are other notes of the key (mostly near ones); without it, notes a semitone
- * or a tone either side – harder to tell apart.
- */
-export function answerChoices(note, key, keyKnown, r = rng()) {
-  const right = note.name;
-  const pool = choicePool(note, key, keyKnown).map((c) => c.name);
-  const others = [...new Set(pool.filter((n) => n !== right))];
-  const chosen = shuffle(r, others.slice(0, 4)).slice(0, 3);
-  return shuffle(r, [right, ...chosen]);
-}
-
-/**
- * The wrong answers a note can have, nearest first, each with where it sounds next to the
- * note: other notes of the key a step to three steps away, or (without a key) a semitone
- * to three semitones away.
- */
-function choicePool(note, key, keyKnown) {
-  if (keyKnown) {
-    const base = note.midi - MAJOR[note.degree];
-    return [1, -1, 2, -2, 3, -3].map((s) => {
-      const t = note.degree + s, d = ((t % 7) + 7) % 7;
-      return { name: pcName(key.degrees[d]), midi: base + MAJOR[d] + 12 * Math.floor(t / 7) };
-    });
-  }
-  return [1, -1, 2, -2, 3, -3].map((s) => ({ name: pcName(spellMidi(note.midi + s, key.pref)), midi: note.midi + s }));
-}
-
-/**
- * Where each of a question's choices sounds (in the same order as the names): the right one is
- * the note itself; the others in whichever octave is closest to the note (within a tritone).
- */
-export function choiceSounds(note, key, keyKnown, names) {
-  const pool = choicePool(note, key, keyKnown);
-  const nearest = (m) => note.midi + ((((m - note.midi) % 12) + 18) % 12) - 6; // -6 … +5 semitones away
-  return names.map((name) => {
-    if (name === note.name) return note.midi;
-    const c = pool.find((x) => x.name === name);
-    return c ? nearest(c.midi) : note.midi;
-  });
-}
 
 // ---------------------------------------------------------------- sing the note
 
@@ -218,8 +137,8 @@ export class HoldJudge {
 // ---------------------------------------------------------------- scores and levels unlocked
 
 const KEY = 'scales.games.v1';
-// listenEasy: Name the note with the choices played first – its own scores and levels
-const empty = () => ({ listen: { best: {} }, listenEasy: { best: {} }, sing: { best: {} } });
+// ear: Ear training (ear.js); the old Name the note scores (listen, listenEasy) are left alone
+const empty = () => ({ ear: { best: {} }, sing: { best: {} } });
 
 export function loadProgress(storage = typeof localStorage !== 'undefined' ? localStorage : null) {
   try { const p = JSON.parse(storage.getItem(KEY)); return { ...empty(), ...(p || {}) }; } catch { return empty(); }
@@ -228,23 +147,26 @@ export function saveProgress(p, storage = typeof localStorage !== 'undefined' ? 
   try { storage.setItem(KEY, JSON.stringify(p)); } catch { /* private mode */ }
 }
 
-/** Record a finished round (fraction right, 0–1). @returns { best, newBest, unlocked } */
-export function recordRound(p, game, level, fraction) {
+/**
+ * Record a finished round (fraction right, 0–1). `rules` gives the number of levels and each
+ * level's pass mark (Sing the note: 70 % for all; Ear training: its own, see ear.js).
+ * @returns { best, newBest, unlocked }
+ */
+export function recordRound(p, game, level, fraction, rules = { count: SING_LEVELS.length }) {
   const g = p[game] || (p[game] = { best: {} });
-  const levels = game === 'sing' ? SING_LEVELS : LISTEN_LEVELS;
-  const hasNext = level < levels.length;
-  const nextWasOpen = hasNext && isUnlocked(p, game, level + 1);
+  const hasNext = level < rules.count;
+  const nextWasOpen = hasNext && isUnlocked(p, game, level + 1, rules.passOf);
   const was = g.best[level] ?? null;
   const newBest = was == null || fraction > was;
   if (newBest) g.best[level] = Math.round(fraction * 100) / 100;
-  return { best: g.best[level], newBest, unlocked: hasNext && !nextWasOpen && isUnlocked(p, game, level + 1) };
+  return { best: g.best[level], newBest, unlocked: hasNext && !nextWasOpen && isUnlocked(p, game, level + 1, rules.passOf) };
 }
 
-/** Level 1 is always open; the next opens after a round of 70 % or more. */
-export function isUnlocked(p, game, level) {
+/** Level 1 is always open; the next opens after a round at the pass mark of the level before (70 % unless given). */
+export function isUnlocked(p, game, level, passOf = () => GAME.unlockAt) {
   if (level <= 1) return true;
   const prev = (p[game] && p[game].best[level - 1]) ?? null;
-  return prev != null && prev >= GAME.unlockAt;
+  return prev != null && prev >= passOf(level - 1) - 0.005;
 }
 
 /** Stars for a round: ★ 50 %, ★★ 70 %, ★★★ 90 %. */
