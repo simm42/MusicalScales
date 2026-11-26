@@ -211,7 +211,7 @@ test('a piece: where the mistakes are, bar by bar, with every run added up', () 
 });
 
 // ---------------------------------------------------------------- what goes wrong, note by note
-import { pieceNoteStats, noteObservations, moveKind } from '../js/noteStats.js';
+import { pieceNoteStats, noteObservations, moveKind, storedNote } from '../js/noteStats.js';
 import { pieceSequence, pieceNoteLabels } from '../js/pieces.js';
 import { parsePiece } from '../js/pieceText.js';
 import { instrumentInfo } from '../js/instruments.js';
@@ -248,6 +248,17 @@ test('a piece: which notes lean sharp or flat, and which go out after a particul
   eq(pr.bars, [3]);
   assert(st.moves.some((m) => m.kind === 'step down' && m.n > 0));
   eq([moveKind(0), moveKind(2), moveKind(-3), moveKind(7)], ['same', 'step up', 'skip down', 'leap up']);
+  // runs read by the names they stored: the piece edited since (or no text at all) doesn't matter
+  const nl = seq.events.map((e) => `${'CDEFGAB'[e.notes[0].l]}${e.notes[0].a > 0 ? '♯' : ''}${e.notes[0].o}`);
+  const named = runs.map((r) => ({ ...r, nl }));
+  const edited = pieceSequence(parsePiece(['T: x', 'M: 4/4', 'L: 1/4', 'K: C', 'C D E F | G A B c |]'].join('\n')), instrumentInfo('violin')).events;
+  for (const ev of [edited, []]) {
+    const sn = pieceNoteStats(named, ev, p);
+    eq(sn.heard, 55); eq(sn.sharp.map((x) => x.name).sort(), ['D4', 'F♯4']);
+    eq(sn.pairs.map((x) => `${x.name}<${x.prev}`), ['D4<E4']);
+  }
+  eq(storedNote('D3 · Re'), { name: 'D3', midi: 50 }); eq(storedNote('F♯4'), { name: 'F♯4', midi: 66 });
+  eq(storedNote('D3 + A3'), null); eq(storedNote(''), null);
   // a note that is less out after a particular note than elsewhere is not a problem there
   const less = (i, run) => (seq.events[i].midis[0] % 12 === 6 ? (seq.events[i - 1].midis[0] % 12 === 4 ? 14 : 34) + (run % 3) : ((run + i) % 5) - 2);
   const st2 = pieceNoteStats(Array.from({ length: 5 }, (_, run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [less(i, run), 100, 100, 0, 0]) })), seq.events, p);

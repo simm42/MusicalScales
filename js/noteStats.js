@@ -3,7 +3,7 @@
 // a string crossing). No DOM access.
 
 import { barsOfSteps } from './barSurface.js';
-import { noteName } from './theory.js';
+import { noteName, parseNote, midiOf } from './theory.js';
 
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const sd = (a) => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
@@ -19,15 +19,27 @@ export const STATS = {
 };
 
 /**
- * Every note heard in a piece's runs, with the note before it.
- * @param {object[]} runs stored full runs of the piece (all the same shape: see sameShape)
- * @param {object[]} events the whole piece's notes (pieceSequence(...).events), in order
+ * A stored note name ("F♯4", "D3 · Re" when singing) as { name, midi }; null for a double stop
+ * ("D3 + A3") or anything unreadable.
+ */
+export function storedNote(label) {
+  if (!label || typeof label !== 'string' || label.includes('+')) return null;
+  const txt = label.split('·')[0].trim();
+  try { const n = parseNote(txt); return { name: noteName(n, { octave: true }), midi: midiOf(n) }; } catch { return null; }
+}
+
+/**
+ * Every note heard in a piece's runs, with the note before it. Each run is read by what it
+ * stored itself – its note names (nl) and bars (labels) – so runs from before the piece was
+ * edited count too; the piece's notes now (events) are used only for runs without names.
+ * @param {object[]} runs stored full runs of the piece
+ * @param {object[]} events the whole piece's notes now (pieceSequence(...).events), in order
  * @returns {object[]} { name, midi, bar, status, cents, prev: {name, midi}|null, run }
  */
-export function noteObservations(runs, events) {
+export function noteObservations(runs, events = []) {
   const out = [];
   runs.forEach((run, ri) => {
-    if (!run.labels || run.labels.length !== events.length || !Array.isArray(run.notes)) return;
+    if (!run.labels || !run.labels.length || !Array.isArray(run.notes)) return;
     const barOf = barsOfSteps(run.labels);
     const bars = Math.max(...barOf);
     const from = run.sec ? run.sec[0] : 1, to = run.sec ? run.sec[1] : bars;
@@ -35,17 +47,22 @@ export function noteObservations(runs, events) {
     const count = barOf.filter((b) => b >= from && b <= to).length;
     if (start < 0 || run.notes.length !== count) return;
     const single = (ev) => ev && ev.midis && ev.midis.length === 1 && ev.notes && ev.notes.length === 1;
+    // the note at k: by the name the run stored, else (an old run) by the piece as it is now
+    const fromEvents = events.length === run.labels.length;
+    const noteAt = (k) => {
+      if (Array.isArray(run.nl) && run.nl.length === run.notes.length) return storedNote(run.nl[k]);
+      const ev = fromEvents ? events[start + k] : null;
+      return single(ev) ? { name: noteName(ev.notes[0], { octave: true }), midi: ev.midis[0] } : null;
+    };
     run.notes.forEach((n, k) => {
-      const ev = events[start + k];
-      if (!single(ev)) return; // double stops are left out
-      const pe = k > 0 ? events[start + k - 1] : null;
+      const here = noteAt(k);
+      if (!here) return; // double stops are left out
       out.push({
-        name: noteName(ev.notes[0], { octave: true }),
-        midi: ev.midis[0],
+        ...here,
         bar: barOf[start + k],
         status: n[3] === 0 ? 'ok' : n[3] === 1 ? 'wrong' : 'missing',
         cents: n[3] === 0 && n[0] != null ? n[0] : null,
-        prev: single(pe) ? { name: noteName(pe.notes[0], { octave: true }), midi: pe.midis[0] } : null,
+        prev: k > 0 ? noteAt(k - 1) : null,
         run: ri,
       });
     });

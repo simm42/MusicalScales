@@ -162,8 +162,13 @@ export async function makePdf(o) {
       }
       // what goes wrong, note by note
       let st = null;
-      if (o.charts.notes && item.pieceText) {
-        try { st = pieceNoteStats(sameShape(recent), pieceSequence(parsePiece(item.pieceText), instrumentInfo(item.settings.instrument)).events, prec); } catch (e) { console.error(e); }
+      if (o.charts.notes && !recent.length) { text('What goes wrong - note by note', 11, 'bold'); text(o.range === '2w' ? 'No runs of this piece in the last 2 weeks.' : 'No runs yet.', 9, 'normal', [102, 98, 111]); }
+      if (o.charts.notes && recent.length) {
+        let events = [];
+        try { if (item.pieceText) events = pieceSequence(parsePiece(item.pieceText), instrumentInfo(item.settings.instrument)).events; } catch (e) { console.error(e); }
+        st = pieceNoteStats(recent, events, prec);
+        // never left out without a word
+        if (!st.heard) { text('What goes wrong - note by note', 11, 'bold'); text('No notes were measured in these runs, so there is nothing to analyse yet.', 9, 'normal', [102, 98, 111]); }
       }
       if (st && st.heard) {
         const grey = [102, 98, 111];
