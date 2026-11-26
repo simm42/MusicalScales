@@ -209,3 +209,62 @@ test('a piece: where the mistakes are, bar by bar, with every run added up', () 
   const svg = mistakesChart({ data: m, width: 600, palette: { fg: '#000', muted: '#666', grid: '#ddd', bg: '#fff', errors: '#c00' }, dates: () => 'd' });
   assert(svg.startsWith('<svg') && svg.includes('All runs') && svg.includes('1 missed, 1 wrong or far out of tune'));
 });
+
+// ---------------------------------------------------------------- what goes wrong, note by note
+import { pieceNoteStats, noteObservations, moveKind } from '../js/noteStats.js';
+import { pieceSequence, pieceNoteLabels } from '../js/pieces.js';
+import { parsePiece } from '../js/pieceText.js';
+import { instrumentInfo } from '../js/instruments.js';
+import { pieceRunCharts } from '../js/ui/charts.js';
+
+test('a piece: which notes lean sharp or flat, and which go out after a particular note', () => {
+  // D E F♯ G | A G F♯ E | D E D2 | (D after E three times a run; D after F♯ never)
+  const text = 'T: x\nM: 4/4\nL: 1/4\nK: D\nD E F G | A G F E | D E D2 |]\n';
+  const seq = pieceSequence(parsePiece(text), instrumentInfo('violin'));
+  const labels = pieceNoteLabels(seq);
+  const names = seq.events.map((e) => e.notes.map((n) => n.l).join());
+  eq(seq.events.length, 11);
+  // F♯ is always 15–21 cents sharp; D straight after E is 22–28 sharp, other D in tune
+  const cents = (i, run) => {
+    const ev = seq.events[i], prev = seq.events[i - 1];
+    const isFs = ev.midis[0] % 12 === 6, isD = ev.midis[0] % 12 === 2;
+    if (isFs) return 15 + ((run + i) % 4) * 2;
+    if (isD && prev && prev.midis[0] % 12 === 4) return 22 + ((run + i) % 4) * 2;
+    return ((run * 3 + i) % 5) - 2;
+  };
+  const runs = Array.from({ length: 5 }, (_, run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [cents(i, run), 100, 100, 0, 0]) }));
+  const p = precisionAt(1); // in tune within ±10
+  const st = pieceNoteStats(runs, seq.events, p);
+  eq(st.runs, 5); eq(st.heard, 55);
+  eq(st.sharp.map((x) => x.name).sort(), ['D4', 'F♯4'], 'F♯ always, and D overall (because of what follows)');
+  eq(st.flat.length, 0);
+  const fs = st.notes.find((x) => x.name === 'F♯4');
+  eq([fs.played, fs.n, fs.sharp], [10, 10, 1]);
+  // …but D4 is only sharp after E4: the pairs find it
+  eq(st.pairs.length, 1);
+  const pr = st.pairs[0];
+  eq([pr.name, pr.prev, pr.lean, pr.n, pr.kind], ['D4', 'E4', 'sharp', 10, 'step down']);
+  assert(pr.diff > 15 && Math.abs(pr.elsewhere) < 3, `${pr.diff} ${pr.elsewhere}`);
+  eq(pr.bars, [3]);
+  assert(st.moves.some((m) => m.kind === 'step down' && m.n > 0));
+  eq([moveKind(0), moveKind(2), moveKind(-3), moveKind(7)], ['same', 'step up', 'skip down', 'leap up']);
+  // a run of bars 2–3 lines up with the piece's notes; a run that doesn't line up is left out
+  const sec = { d: 9, labels, sec: [2, 3], notes: seq.events.slice(4).map(() => [0, 100, 100, 0, 0]) };
+  const obs = noteObservations([sec, { d: 10, labels, sec: null, notes: [[0, 100, 100, 0, 0]] }], seq.events);
+  eq(obs.length, 7); eq(obs[0].bar, 2); eq(obs[0].prev, null, 'the first note played has no note before it');
+  // a missed note and a wrong one are counted, but not measured
+  const odd = [{ d: 1, labels, sec: null, notes: seq.events.map((_, i) => (i === 0 ? [null, 0, 0, 2, null] : i === 1 ? [null, 0, 50, 1, 5] : [0, 100, 100, 0, 0])) }];
+  const so = pieceNoteStats(odd, seq.events, p);
+  const d4 = so.notes.find((x) => x.name === 'D4'), e4 = so.notes.find((x) => x.name === 'E4');
+  eq([d4.missed, d4.played, d4.n], [1, 3, 2]); eq([e4.wrong, e4.n], [1, 2]);
+  assert(names.length === 11);
+});
+
+test('a piece: one run bar by bar – overall, intonation and timing', () => {
+  const run = pieceRun(1, 6, 3, (b) => (b === 2 ? [50, 0, 100, 0, 0] : [0, 100, 100, 0, 0]));
+  const html = pieceRunCharts({ run, prec: precisionAt(1), palette: { fg: '#000', muted: '#666', grid: '#ddd', bg: '#fff' }, width: 500 });
+  assert(html.includes('Overall') && html.includes('Intonation') && html.includes('Timing'));
+  eq((html.match(/<svg/g) || []).length, 3);
+  assert(html.includes('Bar 2: 0') && html.includes('Bar 1: 100'), 'bar 2 scored nothing for intonation');
+  eq(pieceRunCharts({ run: { ...run, notes: [] }, prec: precisionAt(1) }), '', 'nothing to draw');
+});

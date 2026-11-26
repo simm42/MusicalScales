@@ -22,7 +22,8 @@ import { APP_VERSION } from './version.js';
 import { SEG } from './segmenter.js';
 import { RUN } from './practice.js';
 import { scoresAtLevels } from './scoring.js';
-import { Meter, fmtCents } from './ui/meter.js';
+import { Meter, fmtCents, readPalette } from './ui/meter.js';
+import { chartPalette, pieceRunCharts } from './ui/charts.js';
 import { renderSummary } from './ui/summary.js';
 import { TunerPage } from './ui/tunerPage.js';
 import { CalibrationWizard } from './ui/calibrationWizard.js';
@@ -670,12 +671,22 @@ function finishSession(result) {
     run.level = settings.precision;
     run.vib = !!settings.vibrato;
     run.met = !!settings.metronome;
+    showRunBars(run);
     recordRun(results, 'piece:' + currentPiece.id, run);
     const saved = saveResults(results);
     if (resultsPage) resultsPage.invalidate();
     setStatus(`Finished – score ${Math.round(result.total)} / 100${section ? ` for bars ${section.from + 1}–${section.to + 1}` : ''}. ${saved ? `Saved to the results for “${currentPiece.name}”.` : NOT_SAVED}`);
     if (saved) askKeepOnce();
   }
+}
+
+/** A piece: this run's overall, intonation and timing, bar by bar, under the scores. */
+function showRunBars(run) {
+  try {
+    const html = pieceRunCharts({ run, prec: precisionAt(settings.precision, settings.instrument), palette: chartPalette(), scale: readPalette(), width: Math.max(320, Math.min(900, $('summary').clientWidth || 760)) });
+    const totals = $('summary').querySelector('.totals');
+    if (html) (totals || $('summary')).insertAdjacentHTML(totals ? 'afterend' : 'beforeend', html);
+  } catch (e) { console.error(e); }
 }
 
 const NOT_SAVED = 'It could not be saved: this browser’s storage is full or blocked. Export everything (Config) to keep a copy.';
@@ -841,7 +852,7 @@ $('pieceTempoReset').addEventListener('click', () => setPieceTempo(pieceTarget()
 
 /** Pieces on the Results page and in the PDF, next to the syllabus exercises. */
 function pieceItems() {
-  return loadPieces().map((p) => ({ id: 'piece:' + p.id, name: `Piece: ${p.name}`, piece: true, settings: { instrument: settings.instrument } }));
+  return loadPieces().map((p) => ({ id: 'piece:' + p.id, name: `Piece: ${p.name}`, piece: true, pieceText: p.text, settings: { instrument: settings.instrument } }));
 }
 /** A piece was deleted on the Pieces tab: its results and chosen bars go too. */
 function pieceDeleted(id) {

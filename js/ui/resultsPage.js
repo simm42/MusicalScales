@@ -6,8 +6,13 @@
 import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, sameShape, DAYS, detailCleared } from '../results.js';
 import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
-import { lineChart, multiLineChart, legendHtml, chartPalette, mistakesChart } from './charts.js';
+import { lineChart, multiLineChart, legendHtml, chartPalette, mistakesChart, pieceRunCharts } from './charts.js';
 import { pieceBarSurfaces, pieceMistakes } from '../barSurface.js';
+import { pieceNoteStats } from '../noteStats.js';
+import { noteStatsHtml } from './noteStatsView.js';
+import { pieceSequence } from '../pieces.js';
+import { parsePiece } from '../pieceText.js';
+import { instrumentInfo } from '../instruments.js';
 import { Surface3D } from './surface3d.js';
 import { readPalette } from './meter.js';
 import { precisionAt } from '../precision.js';
@@ -197,6 +202,7 @@ export class ResultsPage {
     // a piece: three plots averaged by groups of bars, and where the mistakes are bar by bar
     const bars = item.piece && !cleared ? pieceBarSurfaces(plotted, precNow) : null;
     const mistakes = item.piece && !cleared ? pieceMistakes(sameShape(last), precNow) : null;
+    const stats = item.piece && !cleared ? this.pieceStats(item, sameShape(last), precNow) : null;
     const pieceBlock = item.piece ? `<div class="res-block"><h3>Last ${plotted.length || 10} runs – bar by bar</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
         ${edited ? `<p class="muted small">${edited} earlier run${edited === 1 ? ' is' : 's are'} left out because the piece has been edited since, so ${edited === 1 ? 'its' : 'their'} notes no longer line up. ${edited === 1 ? 'It is' : 'They are'} still in the charts and tables below.</p>` : ''}
@@ -204,7 +210,8 @@ export class ResultsPage {
           ${PIECE_SURFACES.map((p) => `<h4 class="surface-title">${esc(p.title)} <span class="muted small">– ${esc(p.note)}</span></h4><div class="surface-wrap"><canvas data-surface="${p.key}" width="${Math.round(width * 1.5)}" height="${Math.round(width * 0.62)}"></canvas></div>`).join('')}` : '<p class="muted">No runs yet.</p>'}</div>
       ${mistakes ? `<div class="res-block"><h3>Where the mistakes are – bar by bar</h3>
         <p class="muted small">The bars to work on. Each row is a run (newest at the bottom), and the last row adds them all up. A bar is redder the more of its notes had a mistake: missed, a wrong note or far out of tune (±${Math.round(precNow.zeroCents)} cents or more), or badly out of time. The number is how many notes; on a computer, point at a bar to see which kind.</p>
-        <div class="table-wrap">${mistakesChart({ data: mistakes, width: Math.max(width, Math.min(1400, 78 + mistakes.bars * 12)), palette: pal, dates: shortDate })}</div></div>` : ''}` : '';
+        <div class="table-wrap">${mistakesChart({ data: mistakes, width: Math.max(width, Math.min(1400, 78 + mistakes.bars * 12)), palette: pal, dates: shortDate })}</div></div>` : ''}
+      ${stats ? `<div class="res-block"><h3>What goes wrong – note by note</h3>${noteStatsHtml(stats, precNow)}</div>` : ''}` : '';
     this.body.innerHTML = `${levelNote}
       ${item.piece ? pieceBlock : `<div class="res-block"><h3>Last ${plotted.length || 10} runs – how sharp or flat each note was</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
@@ -238,6 +245,15 @@ export class ResultsPage {
     this.surface = new Surface3D(canvas, { runs: plotted, labels, palette: { ...pal, bg: 'transparent' }, prec: precNow, colors: readPalette() });
   }
 
+  /** A piece's note-by-note statistics over its runs (null if the piece no longer matches them). */
+  pieceStats(item, runs, prec) {
+    if (!item.pieceText || !runs.length) return null;
+    try {
+      const seq = pieceSequence(parsePiece(item.pieceText), instrumentInfo(item.settings.instrument));
+      return pieceNoteStats(runs, seq.events, prec);
+    } catch (e) { console.error(e); return null; }
+  }
+
   /** The same detailed summary as after a run, for a stored run (scored at the precision it was played at). */
   renderRun(el, item, run) {
     let names = null;
@@ -245,6 +261,12 @@ export class ResultsPage {
     const d = runDetail(run, names);
     if (!d) { el.innerHTML = '<p class="muted">The details of this run were not kept.</p>'; return; }
     renderSummary(el, { result: d.result, labels: d.labels, prec: precisionAt(run.level ?? 2, item.settings.instrument), settings: { vibrato: run.vib, metronome: run.met, instrument: item.settings.instrument }, title: null, details: this.details });
+    // a piece: the run bar by bar, as straight after playing it
+    if (item.piece) {
+      const html = pieceRunCharts({ run, prec: precisionAt(run.level ?? 2, item.settings.instrument), palette: chartPalette(), scale: readPalette(), width: Math.max(320, Math.min(900, el.clientWidth || 760)) });
+      const totals = el.querySelector('.totals');
+      if (html && totals) totals.insertAdjacentHTML('afterend', html);
+    }
     const note = document.createElement('p');
     note.className = 'muted small';
     note.textContent = `Played ${dateTime(run.d)}${playedHow(run) ? ' – ' + playedHow(run) : ''}. Scores are as marked at the time, at the precision used then.`;

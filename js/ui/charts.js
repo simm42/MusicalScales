@@ -1,6 +1,8 @@
 // Small SVG charts for the Results tab and the PDF: total / intonation /
 // timing as lines (0–100) and errors as bars on a right-hand axis.
 
+import { pieceBarSurfaces } from '../barSurface.js';
+
 export const SERIES = [
   { key: 't', name: 'Total', colorKey: 'total', width: 2.6 },
   { key: 'i', name: 'Intonation', colorKey: 'intonation', width: 1.6 },
@@ -217,4 +219,46 @@ export function mistakesChart({ data, width = 760, palette = chartPalette(), dat
   }
   s += `<text x="${L + W / 2}" y="${H - 6}" font-size="11" text-anchor="middle" fill="${palette.muted}">bar</text>`;
   return s + '</svg>';
+}
+
+// green / amber / red, as on the 3D plots (scores: green from 90, amber about 60, red at 30)
+const SCORE_SCALE = { good: [31, 138, 76], warn: [201, 138, 0], bad: [198, 47, 47] };
+function scoreColor(v, scale = SCORE_SCALE) {
+  const b = Math.max(0, Math.min(1, (90 - v) / 60));
+  const mix = (c1, c2, t) => c1.map((x, k) => Math.round(x + (c2[k] - x) * t));
+  return `rgb(${(b < 0.5 ? mix(scale.good, scale.warn, b / 0.5) : mix(scale.warn, scale.bad, (b - 0.5) / 0.5)).join(',')})`;
+}
+
+/**
+ * One run of a piece, bar by bar: overall, intonation and timing as three column charts, the bars
+ * grouped as on the Results page's 3D plots (two or three at a time in a long piece).
+ * @param {object} o { run: a stored piece run, prec, palette, scale: {good,warn,bad} RGB, width }
+ * @returns {string} HTML ('' if the run can't be laid out by bar)
+ */
+export function pieceRunCharts({ run, prec, palette = chartPalette(), scale = SCORE_SCALE, width = 760 }) {
+  const b = pieceBarSurfaces([run], prec);
+  if (!b || b.overall[0].steps.every((v) => v == null)) return '';
+  const G = b.groups.length;
+  const chart = (title, values) => {
+    const L = 34, R = 6, T = 8, H = 92, B = 18, W = width - L - R, cw = W / G;
+    const h = T + H + B;
+    let s = `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${h}" viewBox="0 0 ${width} ${h}" font-family="Helvetica, Arial, sans-serif" role="img" aria-label="${esc(title)} by bar">`;
+    for (const g of [0, 50, 100]) {
+      const y = T + H - (H * g) / 100;
+      s += `<line x1="${L}" x2="${L + W}" y1="${y}" y2="${y}" stroke="${palette.grid}" stroke-width="1"/><text x="${L - 5}" y="${y + 4}" font-size="10.5" text-anchor="end" fill="${palette.muted}">${g}</text>`;
+    }
+    values.forEach((v, g) => {
+      if (v == null) return;
+      const x = L + g * cw, y = T + H - (H * v) / 100;
+      const grp = b.groups[g];
+      const where = grp.from === grp.to ? `Bar ${grp.from}` : `Bars ${grp.from}–${grp.to}`;
+      s += `<rect x="${(x + Math.min(2, cw * 0.15)).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, cw - 2 * Math.min(2, cw * 0.15)).toFixed(1)}" height="${(T + H - y).toFixed(1)}" fill="${scoreColor(v, scale)}" rx="1.5"><title>${esc(where)}: ${Math.round(v)}</title></rect>`;
+    });
+    const every = Math.max(1, Math.ceil(26 / cw));
+    b.labels.forEach((lab, g) => { if (g % every === 0) s += `<text x="${(L + g * cw + cw / 2).toFixed(1)}" y="${T + H + 13}" font-size="10.5" text-anchor="middle" fill="${palette.muted}">${esc(lab)}</text>`; });
+    return `<h4 class="run-bars-title">${esc(title)}</h4>${s}</svg>`;
+  };
+  const by = b.size === 1 ? 'bar by bar' : `${b.size} bars at a time`;
+  return `<div class="run-bars"><p class="muted small">This run ${by} – higher and greener is better (missing notes count as 0; bar numbers along the bottom).</p>
+    ${chart('Overall', b.overall[0].steps)}${chart('Intonation', b.intonation[0].steps)}${chart('Timing (tempo)', b.timing[0].steps)}</div>`;
 }
