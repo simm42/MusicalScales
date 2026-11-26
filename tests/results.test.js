@@ -268,6 +268,15 @@ test('a piece: which notes lean sharp or flat, and which go out after a particul
   // a lean inside the in-tune zone isn't called sharp: 8 cents at Elementary (±10)
   const st3 = pieceNoteStats([0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [seq.events[i].midis[0] % 12 === 6 ? 8 : 0, 100, 100, 0, 0]) })), seq.events, p);
   eq(st3.sharp.length, 0);
+  // often flat but in tune the rest of the time: D4 flat by 25 in 2 of its 3 places, in 4 runs (8 of 12)
+  const sometimes = (i, run) => (seq.events[i].midis[0] % 12 === 2 && i !== 0 ? -25 + (run % 3) : (run + i) % 3 - 1);
+  const st4 = pieceNoteStats([0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [sometimes(i, run), 100, 100, 0, 0]) })), seq.events, p);
+  eq(st4.flat.map((x) => x.name), ['D4']);
+  const often = st4.flat[0];
+  eq([Math.round(often.flat * often.n), often.n], [8, 12]);
+  // once or twice out isn't "often"
+  const once = (i, run) => (seq.events[i].midis[0] % 12 === 2 && i === 8 && run === 0 ? -30 : 0);
+  eq(pieceNoteStats([0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [once(i, run), 100, 100, 0, 0]) })), seq.events, p).flat.length, 0);
   // a run of bars 2–3 lines up with the piece's notes; a run that doesn't line up is left out
   const sec = { d: 9, labels, sec: [2, 3], notes: seq.events.slice(4).map(() => [0, 100, 100, 0, 0]) };
   const obs = noteObservations([sec, { d: 10, labels, sec: null, notes: [[0, 100, 100, 0, 0]] }], seq.events);
