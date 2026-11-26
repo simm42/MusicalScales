@@ -310,6 +310,7 @@ export class ResultsPage {
         <fieldset><legend>For each exercise</legend>
           <label class="check"><input type="checkbox" data-pdf-chart="surface" checked> 3D surfaces of the last 10 runs (pieces: overall, intonation and timing, by bar)</label>
           <label class="check"><input type="checkbox" data-pdf-chart="mistakes" checked> Pieces: where the mistakes are, bar by bar</label>
+          <label class="check"><input type="checkbox" data-pdf-chart="notes" checked> Pieces: what goes wrong, note by note</label>
           <label class="check"><input type="checkbox" data-pdf-chart="twoWeeks" checked> Last 2 weeks – every run</label>
           <label class="check"><input type="checkbox" data-pdf-chart="sixMonths" checked> Past 6 months – daily averages</label>
           <label class="check"><input type="checkbox" data-pdf-chart="allTime" checked> All time – monthly averages</label>
@@ -339,7 +340,7 @@ export class ResultsPage {
     try {
       const { makePdf } = await import('../pdf.js');
       const list = this.getList();
-      const opts = options || { items: list.map((x) => x.id), charts: { surface: true, mistakes: true, twoWeeks: true, sixMonths: true, allTime: true, table: true }, range: 'all' };
+      const opts = options || { items: list.map((x) => x.id), charts: { surface: true, mistakes: true, notes: true, twoWeeks: true, sixMonths: true, allTime: true, table: true }, range: 'all' };
       const out = await makePdf({ list, results: this.getResults(), studentName: this.getStudentName(), precision: this.getPrecision(), ...opts });
       out.save();
       msg.textContent = `PDF ready: ${out.filename} (${out.pages} page${out.pages === 1 ? '' : 's'}).`;

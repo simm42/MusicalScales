@@ -13,7 +13,7 @@ const tOf = (a) => { const s = sd(a); return a.length < 2 ? 0 : s === 0 ? (mean(
 export const STATS = {
   minNotes: 4,     // times a note must be heard before saying it leans sharp or flat
   minPair: 3,      // times a pair must come up
-  lean: 6,         // cents: a lean smaller than this (or 60 % of the in-tune zone) isn't worth a mention
+  lean: 6,         // cents: a lean smaller than this – or than the level's in-tune zone – isn't worth a mention
   pairWorse: 8,    // cents: how much worse a note is after a particular note than elsewhere
   sure: 2,         // t: how consistent the lean must be
 };
@@ -69,7 +69,7 @@ function summary(cents, prec) {
 /** Does it lean sharp or flat, clearly and consistently? 'sharp' | 'flat' | null */
 function leanOf(s, prec, minN = STATS.minNotes) {
   if (s.n < minN || s.mean == null) return null;
-  if (Math.abs(s.mean) < Math.max(STATS.lean, prec.fullCents * 0.6) || Math.abs(s.t) < STATS.sure) return null;
+  if (Math.abs(s.mean) < Math.max(STATS.lean, prec.fullCents) || Math.abs(s.t) < STATS.sure) return null;
   return s.mean > 0 ? 'sharp' : 'flat';
 }
 
@@ -128,8 +128,8 @@ export function pieceNoteStats(runs, events, prec) {
     if (!lean) continue;
     const elsewhere = others.length ? mean(others) : null;
     const diff = elsewhere == null ? s.mean : s.mean - elsewhere;
-    // clearly worse here than elsewhere (or never heard elsewhere)
-    if (Math.abs(diff) < STATS.pairWorse) continue;
+    // clearly worse here than elsewhere – further out, the same way it leans (or never heard elsewhere)
+    if (Math.abs(s.mean) - Math.abs(elsewhere ?? 0) < STATS.pairWorse || Math.abs(diff) < STATS.pairWorse) continue;
     if (others.length >= 2) {
       const se = Math.sqrt((s.sd ** 2) / here.length + (sd(others) ** 2) / others.length);
       if (se > 0 && Math.abs(diff) / se < STATS.sure) continue;

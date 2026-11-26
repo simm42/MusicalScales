@@ -5,6 +5,11 @@ import { chartPalette, svgToPng, mistakesChart } from './ui/charts.js';
 import { Surface3D } from './ui/surface3d.js';
 import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS, CLEARED_NOTE, PIECE_SURFACES, barGroupText, shortDate } from './ui/resultsPage.js';
 import { pieceBarSurfaces, pieceMistakes } from './barSurface.js';
+import { pieceNoteStats } from './noteStats.js';
+import { statsIntro, leanWords, pairWords, MOVE_WORDS, c0, pct } from './ui/noteStatsView.js';
+import { pieceSequence } from './pieces.js';
+import { parsePiece } from './pieceText.js';
+import { instrumentInfo } from './instruments.js';
 import { lastRuns, atLevel, surfaceRuns, sameShape, detailCleared } from './results.js';
 import { precisionAt } from './precision.js';
 
@@ -26,7 +31,7 @@ function loadJsPdf() {
 // the built-in PDF fonts only cover Latin-1
 const plain = (s) => String(s ?? '')
   .replace(/♭/g, 'b').replace(/♯/g, '#').replace(/[𝄫]/g, 'bb').replace(/[𝄪]/g, 'x')
-  .replace(/♩/g, 'crotchet').replace(/♪/g, 'quaver').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
+  .replace(/−/g, '-').replace(/…/g, '...').replace(/♩/g, 'crotchet').replace(/♪/g, 'quaver').replace(/[–—]/g, '-').replace(/[“”]/g, '"').replace(/[‘’]/g, "'")
   .replace(/[^\x20-\x7E\xA0-\xFF]/g, '');
 
 const W_SVG = 760, H_SVG = 230;
@@ -37,7 +42,7 @@ const W_SVG = 760, H_SVG = 230;
  * @param {object} o.results results store
  * @param {string} o.studentName
  * @param {string[]} o.items ids to include
- * @param {object} o.charts { surface, mistakes, twoWeeks, sixMonths, allTime, table }
+ * @param {object} o.charts { surface, mistakes, notes, twoWeeks, sixMonths, allTime, table }
  * @param {'all'|'2w'} o.range
  * @returns {Promise<{doc, save, filename, pages, blob}>}
  */
@@ -58,6 +63,23 @@ export async function makePdf(o) {
     need(lines.length * size * 0.42 + 1);
     doc.text(lines, M, y + size * 0.35);
     y += lines.length * size * 0.42 + 1.5;
+  };
+  /** A small table: cols [[heading, width mm], …], rows of cells; the first column left, the rest as given. */
+  const table = (cols, rows) => {
+    const row = (cells, bold) => {
+      need(5.5);
+      doc.setFont('helvetica', bold ? 'bold' : 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(28, 26, 34);
+      let x = M;
+      cells.forEach((cv, k) => { doc.text(plain(cv).slice(0, 48), x, y + 3.5); x += cols[k][1]; });
+      y += 4.8;
+      doc.setDrawColor(228, 225, 234);
+      doc.line(M, y - 0.8, M + cols.reduce((a, c) => a + c[1], 0), y - 0.8);
+    };
+    row(cols.map((c) => c[0]), true);
+    rows.forEach((r) => row(r, false));
+    y += 2;
   };
   const image = async (svg, h = 54) => {
     if (!svg) return;
@@ -137,6 +159,30 @@ export async function makePdf(o) {
         text('Where the mistakes are - bar by bar', 11, 'bold');
         text(`Each row is a run (newest at the bottom); the last row adds them all up. A bar is redder the more of its notes had a mistake: missed, a wrong note or far out of tune (${Math.round(prec.zeroCents)} cents or more), or badly out of time.`, 9, 'normal', [102, 98, 111]);
         await image(mistakesChart({ data: mk, width: W_SVG, palette: pal, dates: shortDate }));
+      }
+      // what goes wrong, note by note
+      let st = null;
+      if (o.charts.notes && item.pieceText) {
+        try { st = pieceNoteStats(sameShape(recent), pieceSequence(parsePiece(item.pieceText), instrumentInfo(item.settings.instrument)).events, prec); } catch (e) { console.error(e); }
+      }
+      if (st && st.heard) {
+        const grey = [102, 98, 111];
+        text('What goes wrong - note by note', 11, 'bold');
+        text(statsIntro(st, prec), 9, 'normal', grey);
+        if (st.sharp.length) { text('Often sharp', 9.5, 'bold'); st.sharp.forEach((x) => text(`- ${x.name}${leanWords(x)}`, 9)); }
+        if (st.flat.length) { text('Often flat', 9.5, 'bold'); st.flat.forEach((x) => text(`- ${x.name}${leanWords(x)}`, 9)); }
+        if (!st.sharp.length && !st.flat.length) text('No note leans clearly sharp or flat.', 9);
+        text('Notes that go out after a particular note', 9.5, 'bold');
+        if (st.pairs.length) st.pairs.slice(0, 8).forEach((p) => text(`- ${p.name} after ${p.prev}${pairWords(p)}`, 9));
+        else text('No note goes clearly out of tune after one particular note.', 9, 'normal', grey);
+        if (st.moves.length) {
+          text('In tune after steps and leaps (average: which way it leans; average off: how far out, in cents)', 9.5, 'bold');
+          table([['After...', 62], ['Times', 18], ['In tune', 20], ['Average', 20], ['Average off', 24]],
+            st.moves.map((m) => [MOVE_WORDS[m.kind] || m.kind, m.n, pct(m.inTune), c0(m.mean), Math.round(m.meanAbs)]));
+        }
+        text('Every note', 9.5, 'bold');
+        table([['Note', 22], ['Played', 18], ['In tune', 18], ['Sharp', 18], ['Flat', 18], ['Average', 20], ['Wrong', 18], ['Missed', 18]],
+          st.notes.map((x) => [x.name, x.played, x.n ? pct(x.inTune) : '-', x.n ? pct(x.sharp) : '-', x.n ? pct(x.flat) : '-', c0(x.mean), x.wrong || '', x.missed || '']));
       }
     } else if (o.charts.surface) {
       const recent = o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10;

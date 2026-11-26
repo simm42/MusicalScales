@@ -248,6 +248,15 @@ test('a piece: which notes lean sharp or flat, and which go out after a particul
   eq(pr.bars, [3]);
   assert(st.moves.some((m) => m.kind === 'step down' && m.n > 0));
   eq([moveKind(0), moveKind(2), moveKind(-3), moveKind(7)], ['same', 'step up', 'skip down', 'leap up']);
+  // a note that is less out after a particular note than elsewhere is not a problem there
+  const less = (i, run) => (seq.events[i].midis[0] % 12 === 6 ? (seq.events[i - 1].midis[0] % 12 === 4 ? 14 : 34) + (run % 3) : ((run + i) % 5) - 2);
+  const st2 = pieceNoteStats(Array.from({ length: 5 }, (_, run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [less(i, run), 100, 100, 0, 0]) })), seq.events, p);
+  eq(st2.sharp.map((x) => x.name), ['F♯4']);
+  eq(st2.pairs.filter((x) => x.name === 'F♯4' && x.prev === 'E4').length, 0, 'F♯ after E is less sharp than elsewhere: not a problem there');
+  eq(st2.pairs.filter((x) => x.name === 'F♯4' && x.prev === 'G4').length, 1, '…but after G it is sharper than elsewhere');
+  // a lean inside the in-tune zone isn't called sharp: 8 cents at Elementary (±10)
+  const st3 = pieceNoteStats([0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [seq.events[i].midis[0] % 12 === 6 ? 8 : 0, 100, 100, 0, 0]) })), seq.events, p);
+  eq(st3.sharp.length, 0);
   // a run of bars 2–3 lines up with the piece's notes; a run that doesn't line up is left out
   const sec = { d: 9, labels, sec: [2, 3], notes: seq.events.slice(4).map(() => [0, 100, 100, 0, 0]) };
   const obs = noteObservations([sec, { d: 10, labels, sec: null, notes: [[0, 100, 100, 0, 0]] }], seq.events);
