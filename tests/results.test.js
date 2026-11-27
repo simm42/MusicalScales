@@ -217,7 +217,7 @@ import { parsePiece } from '../js/pieceText.js';
 import { instrumentInfo } from '../js/instruments.js';
 import { pieceRunCharts } from '../js/ui/charts.js';
 
-test('a piece: which notes lean sharp or flat, and which go out after a particular note', () => {
+test('a piece: which notes are often sharp or flat, and which go out after a particular note', () => {
   // D E F♯ G | A G F♯ E | D E D2 | (D after E three times a run; D after F♯ never)
   const text = 'T: x\nM: 4/4\nL: 1/4\nK: D\nD E F G | A G F E | D E D2 |]\n';
   const seq = pieceSequence(parsePiece(text), instrumentInfo('violin'));
@@ -243,8 +243,9 @@ test('a piece: which notes lean sharp or flat, and which go out after a particul
   // …but D4 is only sharp after E4: the pairs find it
   eq(st.pairs.length, 1);
   const pr = st.pairs[0];
-  eq([pr.name, pr.prev, pr.lean, pr.n, pr.kind], ['D4', 'E4', 'sharp', 10, 'step down']);
-  assert(pr.diff > 15 && Math.abs(pr.elsewhere) < 3, `${pr.diff} ${pr.elsewhere}`);
+  eq([pr.name, pr.prev, pr.way, pr.n, pr.k, pr.kind], ['D4', 'E4', 'sharp', 10, 10, 'step down']);
+  eq([pr.elseN, pr.elseK], [5, 0], 'elsewhere (the first note) D4 is in tune');
+  assert(pr.by > 20, String(pr.by));
   eq(pr.bars, [3]);
   assert(st.moves.some((m) => m.kind === 'step down' && m.n > 0));
   eq([moveKind(0), moveKind(2), moveKind(-3), moveKind(7)], ['same', 'step up', 'skip down', 'leap up']);
@@ -259,12 +260,14 @@ test('a piece: which notes lean sharp or flat, and which go out after a particul
   }
   eq(storedNote('D3 · Re'), { name: 'D3', midi: 50 }); eq(storedNote('F♯4'), { name: 'F♯4', midi: 66 });
   eq(storedNote('D3 + A3'), null); eq(storedNote(''), null);
-  // a note that is less out after a particular note than elsewhere is not a problem there
-  const less = (i, run) => (seq.events[i].midis[0] % 12 === 6 ? (seq.events[i - 1].midis[0] % 12 === 4 ? 14 : 34) + (run % 3) : ((run + i) % 5) - 2);
+  // F♯ in tune after E, sharp after G: the pair after G is the problem, not the one after E
+  const less = (i, run) => (seq.events[i].midis[0] % 12 === 6 ? (seq.events[i - 1].midis[0] % 12 === 4 ? run % 3 : 30 + (run % 3)) : ((run + i) % 5) - 2);
   const st2 = pieceNoteStats(Array.from({ length: 5 }, (_, run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [less(i, run), 100, 100, 0, 0]) })), seq.events, p);
-  eq(st2.sharp.map((x) => x.name), ['F♯4']);
-  eq(st2.pairs.filter((x) => x.name === 'F♯4' && x.prev === 'E4').length, 0, 'F♯ after E is less sharp than elsewhere: not a problem there');
-  eq(st2.pairs.filter((x) => x.name === 'F♯4' && x.prev === 'G4').length, 1, '…but after G it is sharper than elsewhere');
+  eq(st2.sharp.map((x) => x.name), ['F♯4'], 'sharp half the time');
+  eq(st2.pairs.map((x) => `${x.name}<${x.prev}`), ['F♯4<G4']);
+  // the same note always out, wherever it comes from, is not a problem of one particular note before it
+  const always = (i) => (seq.events[i].midis[0] % 12 === 6 ? 25 : 0);
+  eq(pieceNoteStats([0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [always(i), 100, 100, 0, 0]) })), seq.events, p).pairs.length, 0);
   // a lean inside the in-tune zone isn't called sharp: 8 cents at Elementary (±10)
   const st3 = pieceNoteStats([0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [seq.events[i].midis[0] % 12 === 6 ? 8 : 0, 100, 100, 0, 0]) })), seq.events, p);
   eq(st3.sharp.length, 0);
@@ -274,9 +277,15 @@ test('a piece: which notes lean sharp or flat, and which go out after a particul
   eq(st4.flat.map((x) => x.name), ['D4']);
   const often = st4.flat[0];
   eq([Math.round(often.flat * often.n), often.n], [8, 12]);
-  // once or twice out isn't "often"
-  const once = (i, run) => (seq.events[i].midis[0] % 12 === 2 && i === 8 && run === 0 ? -30 : 0);
-  eq(pieceNoteStats([0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [once(i, run), 100, 100, 0, 0]) })), seq.events, p).flat.length, 0);
+  // a quarter of the time well out, in tune the rest: listed, though the average (−7.5) is in tune
+  const quarter = (k) => (i, run) => (seq.events[i].midis[0] % 12 === 2 && i === 8 && run < k ? -30 : 0);
+  const runsOf = (f) => [0, 1, 2, 3].map((run) => ({ d: run, labels, sec: null, notes: seq.events.map((_, i) => [f(i, run), 100, 100, 0, 0]) }));
+  const sq = pieceNoteStats(runsOf(quarter(3)), seq.events, p);
+  eq(sq.flat.map((x) => x.name), ['D4']);
+  eq([sq.flat[0].flatN, sq.flat[0].n, Math.round(sq.flat[0].mean * 10) / 10, sq.flat[0].flatBy], [3, 12, -7.5, -30]);
+  // 2 of 12 (17 %) and 1 of 12 aren't "often"
+  eq(pieceNoteStats(runsOf(quarter(2)), seq.events, p).flat.length, 0);
+  eq(pieceNoteStats(runsOf(quarter(1)), seq.events, p).flat.length, 0);
   // a run of bars 2–3 lines up with the piece's notes; a run that doesn't line up is left out
   const sec = { d: 9, labels, sec: [2, 3], notes: seq.events.slice(4).map(() => [0, 100, 100, 0, 0]) };
   const obs = noteObservations([sec, { d: 10, labels, sec: null, notes: [[0, 100, 100, 0, 0]] }], seq.events);

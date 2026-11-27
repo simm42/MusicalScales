@@ -6,7 +6,7 @@ import { Surface3D } from './ui/surface3d.js';
 import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS, CLEARED_NOTE, PIECE_SURFACES, barGroupText, shortDate } from './ui/resultsPage.js';
 import { pieceBarSurfaces, pieceMistakes } from './barSurface.js';
 import { pieceNoteStats } from './noteStats.js';
-import { statsIntro, leanWords, pairWords, MOVE_WORDS, c0, pct } from './ui/noteStatsView.js';
+import { statsIntro, oftenWords, pairWords, MOVE_WORDS, c0, pct } from './ui/noteStatsView.js';
 import { pieceSequence } from './pieces.js';
 import { parsePiece } from './pieceText.js';
 import { instrumentInfo } from './instruments.js';
@@ -174,16 +174,16 @@ export async function makePdf(o) {
         const grey = [102, 98, 111];
         text('What goes wrong - note by note', 11, 'bold');
         text(statsIntro(st, prec), 9, 'normal', grey);
-        if (st.sharp.length) { text('Often sharp', 9.5, 'bold'); st.sharp.forEach((x) => text(`- ${x.name}${leanWords(x)}`, 9)); }
-        if (st.flat.length) { text('Often flat', 9.5, 'bold'); st.flat.forEach((x) => text(`- ${x.name}${leanWords(x)}`, 9)); }
-        if (!st.sharp.length && !st.flat.length) text('No note leans clearly sharp or flat.', 9);
+        if (st.sharp.length) { text('Often sharp', 9.5, 'bold'); st.sharp.forEach((x) => text(`- ${x.name}${oftenWords(x, 'sharp')}`, 9)); }
+        if (st.flat.length) { text('Often flat', 9.5, 'bold'); st.flat.forEach((x) => text(`- ${x.name}${oftenWords(x, 'flat')}`, 9)); }
+        if (!st.sharp.length && !st.flat.length) text('No note is often sharp or flat.', 9);
         text('Notes that go out after a particular note', 9.5, 'bold');
         if (st.pairs.length) st.pairs.slice(0, 8).forEach((p) => text(`- ${p.name} after ${p.prev}${pairWords(p)}`, 9));
-        else text('No note goes clearly out of tune after one particular note.', 9, 'normal', grey);
+        else text('No note goes out more often after one particular note.', 9, 'normal', grey);
         if (st.moves.length) {
-          text('In tune after steps and leaps (average: which way it leans; average off: how far out, in cents)', 9.5, 'bold');
-          table([['After...', 62], ['Times', 18], ['In tune', 20], ['Average', 20], ['Average off', 24]],
-            st.moves.map((m) => [MOVE_WORDS[m.kind] || m.kind, m.n, pct(m.inTune), c0(m.mean), Math.round(m.meanAbs)]));
+          text('In tune after steps and leaps (average off: how far out, either way, in cents)', 9.5, 'bold');
+          table([['After...', 62], ['Times', 16], ['In tune', 18], ['Sharp', 16], ['Flat', 16], ['Average off', 24]],
+            st.moves.map((m) => [MOVE_WORDS[m.kind] || m.kind, m.n, pct(m.inTune), pct(m.sharp), pct(m.flat), Math.round(m.meanAbs)]));
         }
         text('Every note', 9.5, 'bold');
         table([['Note', 22], ['Played', 18], ['In tune', 18], ['Sharp', 18], ['Flat', 18], ['Average', 20], ['Wrong', 18], ['Missed', 18]],

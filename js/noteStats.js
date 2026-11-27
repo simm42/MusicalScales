@@ -1,23 +1,21 @@
 // What goes wrong in a piece, note by note, over its stored runs: which notes are often
-// sharp or flat, and which notes go out of tune after a particular note (a shift, a stretch,
-// a string crossing). No DOM access.
+// sharp or flat – clearly out (beyond the level's in-tune zone) a quarter of the times or more,
+// however in tune they are the rest of the time – and which notes go out after a particular
+// note (a shift, a stretch, a string crossing). No DOM access.
 
 import { barsOfSteps } from './barSurface.js';
 import { noteName, parseNote, midiOf } from './theory.js';
 
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const sd = (a) => { if (a.length < 2) return 0; const m = mean(a); return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / (a.length - 1)); };
-/** How sure a lean is: the mean against its spread (a one-sample t). */
-const tOf = (a) => { const s = sd(a); return a.length < 2 ? 0 : s === 0 ? (mean(a) === 0 ? 0 : Infinity) : mean(a) / (s / Math.sqrt(a.length)); };
 
 export const STATS = {
-  minNotes: 4,     // times a note must be heard before saying it leans sharp or flat
-  minPair: 3,      // times a pair must come up
-  lean: 6,         // cents: a lean smaller than this – or than the level's in-tune zone – isn't worth a mention
-  pairWorse: 8,    // cents: how much worse a note is after a particular note than elsewhere
-  sure: 2,         // t: how consistent the lean must be
-  often: 0.33,     // or: out the same way this share of the times it was measured…
-  oftenMin: 3,     // …at least this many times, and at least twice as often as the other way
+  minNotes: 4,     // times a note must be measured before saying it is often out
+  minPair: 3,      // times a note must come after the same note before judging the pair
+  often: 0.25,     // a note is often sharp (or flat) when it is out that way this share of the times…
+  oftenMin: 2,     // …and at least this many times – however in tune it is the rest of the time
+  pairOften: 0.5,  // after a particular note: out that way at least half the times…
+  pairMore: 0.25,  // …and this much more often than the same note elsewhere
 };
 
 /**
@@ -72,31 +70,26 @@ export function noteObservations(runs, events = []) {
   return out;
 }
 
-/** How a set of readings leans: { n, mean, sd, t, inTune, sharp, flat } (shares 0–1 of n). */
+/**
+ * How a set of readings falls: { n, mean, sd, inTune, sharp, flat, sharpBy, flatBy } – shares
+ * 0–1 of n; out = beyond the level's in-tune zone; sharpBy / flatBy: the average of the
+ * readings that were out that way (cents).
+ */
 function summary(cents, prec) {
   const n = cents.length;
-  if (!n) return { n: 0, mean: null, sd: null, t: 0, inTune: 0, sharp: 0, flat: 0 };
+  if (!n) return { n: 0, mean: null, sd: null, inTune: 0, sharp: 0, flat: 0, sharpN: 0, flatN: 0, sharpBy: null, flatBy: null };
   const full = prec.fullCents;
+  const hi = cents.filter((c) => c > full), lo = cents.filter((c) => c < -full);
   return {
-    n, mean: mean(cents), sd: sd(cents), t: tOf(cents),
+    n, mean: mean(cents), sd: sd(cents),
     inTune: cents.filter((c) => Math.abs(c) <= full).length / n,
-    sharp: cents.filter((c) => c > full).length / n,
-    flat: cents.filter((c) => c < -full).length / n,
+    sharp: hi.length / n, flat: lo.length / n, sharpN: hi.length, flatN: lo.length,
+    sharpBy: hi.length ? mean(hi) : null, flatBy: lo.length ? mean(lo) : null,
   };
 }
 
-/** Does it lean sharp or flat, clearly and consistently? 'sharp' | 'flat' | null */
-function leanOf(s, prec, minN = STATS.minNotes) {
-  if (s.n < minN || s.mean == null) return null;
-  // often out the same way – even if it is in tune the rest of the time
-  const sharp = Math.round(s.sharp * s.n), flat = Math.round(s.flat * s.n);
-  const often = (k, other) => k >= STATS.oftenMin && k / s.n >= STATS.often && k >= 2 * other;
-  if (often(flat, sharp)) return 'flat';
-  if (often(sharp, flat)) return 'sharp';
-  // or out on average, clearly and consistently
-  if (Math.abs(s.mean) < Math.max(STATS.lean, prec.fullCents) || Math.abs(s.t) < STATS.sure) return null;
-  return s.mean > 0 ? 'sharp' : 'flat';
-}
+/** Is it often out that way – a quarter of the times or more – whatever the average says? */
+const often = (s, way, minN = STATS.minNotes) => s.n >= minN && s[`${way}N`] >= STATS.oftenMin && s[way] >= STATS.often - 1e-9;
 
 /** A movement from one note to the next, in words. */
 export function moveKind(semis) {
@@ -112,9 +105,11 @@ export const MOVES = ['same', 'step up', 'step down', 'skip up', 'skip down', 'l
 /**
  * The statistics for a piece.
  * @returns {{ runs:number, heard:number, notes:object[], sharp:object[], flat:object[], pairs:object[], moves:object[] }}
- *   notes: per written note (lowest first) – { name, midi, played, missed, wrong, ...summary, lean }
- *   pairs: notes that go out after a particular note – { name, prev, n, mean, elsewhere, diff, bars, lean }
- *   moves: how in tune a note is after the same note, a step, a skip or a leap – { kind, n, mean, meanAbs, inTune }
+ *   notes: per written note (lowest first) – { name, midi, played, missed, wrong, bars, ...summary, oftenSharp, oftenFlat }
+ *   sharp / flat: the notes often out that way, most often first
+ *   pairs: notes often out after a particular note, and more often than elsewhere –
+ *     { name, prev, way, n, k, share, elseN, elseK, elseShare, by, bars }
+ *   moves: how in tune a note is after the same note, a step, a skip or a leap – { kind, n, inTune, sharp, flat, meanAbs }
  */
 export function pieceNoteStats(runs, events, prec) {
   const obs = noteObservations(runs, events);
@@ -131,11 +126,11 @@ export function pieceNoteStats(runs, events, prec) {
       missed: g.list.filter((o) => o.status === 'missing').length,
       wrong: g.list.filter((o) => o.status === 'wrong').length,
       bars: [...new Set(g.list.map((o) => o.bar))].sort((a, b) => a - b),
-      ...s, lean: leanOf(s, prec),
+      ...s, oftenSharp: often(s, 'sharp'), oftenFlat: often(s, 'flat'),
     };
   }).sort((a, b) => a.midi - b.midi);
 
-  // a note after a particular note, against the same note elsewhere
+  // a note after a particular note: often out there, and more often than elsewhere
   const pairMap = new Map();
   for (const o of obs) {
     if (!o.prev || o.cents == null || o.prev.name === o.name) continue;
@@ -146,31 +141,30 @@ export function pieceNoteStats(runs, events, prec) {
   const pairs = [];
   for (const p of pairMap.values()) {
     if (p.list.length < STATS.minPair) continue;
-    const here = p.list.map((o) => o.cents);
-    const others = obs.filter((o) => o.name === p.name && o.cents != null && !(o.prev && o.prev.name === p.prev)).map((o) => o.cents);
-    const s = summary(here, prec);
-    const lean = leanOf(s, prec, STATS.minPair);
-    if (!lean) continue;
-    const elsewhere = others.length ? mean(others) : null;
-    const diff = elsewhere == null ? s.mean : s.mean - elsewhere;
-    // clearly worse here than elsewhere – further out, the same way it leans (or never heard elsewhere)
-    if (Math.abs(s.mean) - Math.abs(elsewhere ?? 0) < STATS.pairWorse || Math.abs(diff) < STATS.pairWorse) continue;
-    if (others.length >= 2) {
-      const se = Math.sqrt((s.sd ** 2) / here.length + (sd(others) ** 2) / others.length);
-      if (se > 0 && Math.abs(diff) / se < STATS.sure) continue;
+    const here = summary(p.list.map((o) => o.cents), prec);
+    const other = summary(obs.filter((o) => o.name === p.name && o.cents != null && !(o.prev && o.prev.name === p.prev)).map((o) => o.cents), prec);
+    for (const way of ['sharp', 'flat']) {
+      const k = here[`${way}N`];
+      const more = here[way] - (other.n ? other[way] : 0);
+      if (k < STATS.oftenMin || here[way] < STATS.pairOften - 1e-9 || more < STATS.pairMore - 1e-9) continue;
+      pairs.push({
+        name: p.name, prev: p.prev, move: p.move, kind: moveKind(p.move), way,
+        n: here.n, k, share: here[way], by: here[`${way}By`],
+        elseN: other.n, elseK: other[`${way}N`], elseShare: other.n ? other[way] : null, more,
+        bars: [...new Set(p.list.map((o) => o.bar))].sort((a, b) => a - b),
+      });
     }
-    pairs.push({ name: p.name, prev: p.prev, move: p.move, kind: moveKind(p.move), n: s.n, mean: s.mean, elsewhere, elsewhereN: others.length, diff, lean, bars: [...new Set(p.list.map((o) => o.bar))].sort((a, b) => a - b) });
   }
-  pairs.sort((a, b) => Math.abs(b.diff) * Math.sqrt(b.n) - Math.abs(a.diff) * Math.sqrt(a.n));
+  pairs.sort((a, b) => b.more * Math.sqrt(b.n) - a.more * Math.sqrt(a.n));
 
   // in tune after each kind of movement
   const moves = MOVES.map((kind) => {
     const cents = obs.filter((o) => o.prev && o.cents != null && moveKind(o.midi - o.prev.midi) === kind).map((o) => o.cents);
     const s = summary(cents, prec);
-    return { kind, n: s.n, mean: s.mean, meanAbs: cents.length ? mean(cents.map(Math.abs)) : null, inTune: s.inTune };
+    return { kind, n: s.n, inTune: s.inTune, sharp: s.sharp, flat: s.flat, mean: s.mean, meanAbs: cents.length ? mean(cents.map(Math.abs)) : null };
   }).filter((m) => m.n > 0);
 
   // most often out first
-  const lean = (w) => notes.filter((x) => x.lean === w).sort((a, b) => b[w] - a[w] || Math.abs(b.mean) - Math.abs(a.mean));
-  return { runs: new Set(obs.map((o) => o.run)).size, heard: obs.filter((o) => o.cents != null).length, notes, sharp: lean('sharp'), flat: lean('flat'), pairs, moves };
+  const list = (way) => notes.filter((x) => x[way === 'sharp' ? 'oftenSharp' : 'oftenFlat']).sort((a, b) => b[way] - a[way] || b[`${way}N`] - a[`${way}N`]);
+  return { runs: new Set(obs.map((o) => o.run)).size, heard: obs.filter((o) => o.cents != null).length, notes, sharp: list('sharp'), flat: list('flat'), pairs, moves };
 }
