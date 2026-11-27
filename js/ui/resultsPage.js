@@ -3,7 +3,7 @@
 // the last 2 weeks, daily averages for 6 months, monthly all-time; and a
 // summary across the whole syllabus. Also hosts the PDF export controls.
 
-import { lastRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, sameShape, DAYS, detailCleared } from '../results.js';
+import { lastRuns, fullRuns, runsSince, daily, monthly, firstTime, summaryDaily, summaryMonthly, atLevel, runDetail, surfaceRuns, sameShape, DAYS, detailCleared } from '../results.js';
 import { renderSummary } from './summary.js';
 import { RHYTHMS } from '../sequence.js';
 import { lineChart, multiLineChart, legendHtml, chartPalette, mistakesChart, pieceRunCharts } from './charts.js';
@@ -202,7 +202,8 @@ export class ResultsPage {
     // a piece: three plots averaged by groups of bars, and where the mistakes are bar by bar
     const bars = item.piece && !cleared ? pieceBarSurfaces(plotted, precNow) : null;
     const mistakes = item.piece && !cleared ? pieceMistakes(sameShape(last), precNow) : null;
-    const stats = item.piece && !cleared ? this.pieceStats(item, last, precNow) : null;
+    // every run kept (up to 6 weeks), so a problem can be checked against the latest runs
+    const stats = item.piece && !cleared ? this.pieceStats(item, fullRuns(store, item.id), precNow) : null;
     const pieceBlock = item.piece ? `<div class="res-block"><h3>Last ${plotted.length || 10} runs – bar by bar</h3>
         ${left ? `<p class="muted small">${left} of the last ${last.length} runs ${left === 1 ? 'is' : 'are'} left out because more than half the notes were missing.</p>` : ''}
         ${edited ? `<p class="muted small">${edited} earlier run${edited === 1 ? ' is' : 's are'} left out because the piece has been edited since, so ${edited === 1 ? 'its' : 'their'} notes no longer line up. ${edited === 1 ? 'It is' : 'They are'} still in the charts and tables below.</p>` : ''}

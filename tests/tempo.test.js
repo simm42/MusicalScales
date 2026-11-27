@@ -104,12 +104,13 @@ test('a piece run keeps its tempo: in the record, the summary and the results ta
   eq(d.result.targetBpm, 120);
   eq(d.result.playedBpm, 90);
   near(d.result.tempoFactor, 0.947, 0.001);
-  // once it is no longer one of the last 10 runs, its tempo is still shown
+  // once it is no longer one of the full runs kept, its tempo is still shown
   const store = {};
   recordRun(store, 'piece:p', run, 2000);
-  for (let k = 0; k < RES.fullRuns; k++) recordRun(store, 'piece:p', { ...run, d: 1001 + k, tempo: 120, tbpm: 120 }, 2000);
+  for (let k = 0; k < RES.pieceRuns; k++) recordRun(store, 'piece:p', { ...run, d: 1001 + k, tempo: 120, tbpm: 120 }, 2000);
   const oldest = runsSince(store, 'piece:p', 0)[0];
   eq(oldest.d, 1000);
+  eq(store['piece:p'].older[0].d, 1000, 'summarised');
   eq(playedHow(oldest), 'bars 2–5 · ♩ = 90 (75%)');
 });
 

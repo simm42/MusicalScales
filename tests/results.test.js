@@ -298,6 +298,116 @@ test('a piece: which notes are often sharp or flat, and which go out after a par
   assert(names.length === 11);
 });
 
+import { fixedWords, oftenWords, pairWords } from '../js/ui/noteStatsView.js';
+
+test('a piece: problems checked against the latest runs – put right, getting better, started lately', () => {
+  const text = 'T: x\nM: 4/4\nL: 1/4\nK: D\nD E F G | A G F E | D E D2 |]\n';
+  const seq = pieceSequence(parsePiece(text), instrumentInfo('violin'));
+  const labels = pieceNoteLabels(seq);
+  const p = precisionAt(1); // in tune within ±10
+  const DAY = 86400000;
+  const isD = (i) => seq.events[i].midis[0] % 12 === 2;
+  // runs on the given days; f(i, run) gives the cents of note i
+  const runsOn = (days, f, sec = null) => days.map((day, run) => ({ d: day * DAY, labels, sec, notes: seq.events.map((_, i) => [f(i, run), 100, 100, 0, 0]) }));
+  const days = [0, 1, 2, 3, 4, 5, 20, 21, 22, 23, 24, 25];
+  // D4 flat every time in the first 6 runs, in tune in the 6 of the last week: put right
+  const fixed = pieceNoteStats(runsOn(days, (i, run) => (isD(i) && run < 6 ? -30 : 0)), seq.events, p);
+  eq(fixed.flat.length, 0, 'no longer listed');
+  eq(fixed.fixed.map((f) => `${f.name} ${f.way}`), ['D4 flat']);
+  const f = fixed.fixed[0];
+  eq([f.trend.runs, f.trend.n, f.trend.beforeK, f.trend.beforeN], [6, 18, 18, 18]);
+  assert(fixedWords(f).includes('not flat once in the last 6 runs (18 times measured)'), fixedWords(f));
+  assert(!fixed.notes.find((x) => x.name === 'D4').oftenFlat, 'not highlighted in the table');
+  eq(fixed.from, 0); eq(fixed.to, 25 * DAY);
+  // put right for longer, so the good runs dilute it overall (under a quarter): still said to be put right
+  const longer = pieceNoteStats(runsOn([0, 1, 2, 3, 4, ...Array.from({ length: 16 }, (_, k) => 20 + k)],(i, run) => (isD(i) && run < 5 ? -30 : 0)), seq.events, p);
+  assert(longer.notes.find((x) => x.name === 'D4').flat < 0.25);
+  eq(longer.flat.length, 0);
+  eq(longer.fixed.map((x) => `${x.name} ${x.way} ${x.trend.runs}`), ['D4 flat 8']);
+  // …once in the latest runs: still listed, and getting better
+  const better = pieceNoteStats(runsOn(days, (i, run) => (isD(i) && (run < 6 || (run === 6 && i === 0)) ? -30 : 0)), seq.events, p);
+  eq(better.flat.map((x) => x.name), ['D4']);
+  const bt = better.flat[0].flatTrend;
+  eq([bt.state, bt.k, bt.n, bt.beforeK, bt.beforeN], ['better', 1, 18, 18, 18]);
+  assert(oftenWords(better.flat[0], 'flat').includes('Getting better: flat 1 of the 18 times in the last 6 runs (6%), against 18 of 18 before (100%).'), oftenWords(better.flat[0], 'flat'));
+  // still as bad lately: no trend
+  const same = pieceNoteStats(runsOn(days, (i) => (isD(i) ? -30 : 0)), seq.events, p);
+  eq(same.flat[0].flatTrend, null);
+  // runs of other bars (no D in bar 2) don't count as playing D well
+  const other = runsOn(days.slice(0, 6), (i) => (isD(i) ? -30 : 0)).concat(runsOn(days.slice(6), () => 0, [2, 2]).map((r) => ({ ...r, notes: r.notes.slice(4, 8) })));
+  const so = pieceNoteStats(other, seq.events, p);
+  eq(so.flat.map((x) => x.name), ['D4'], 'still listed: not measured lately');
+  eq(so.fixed.length, 0);
+  // out in every one of the last 5 runs, after 25 in tune: diluted overall (17 %), listed as started lately
+  const month = Array.from({ length: 30 }, (_, k) => k);
+  const late = pieceNoteStats(runsOn(month, (i, run) => (isD(i) && run >= 25 ? -30 : 0)), seq.events, p);
+  const d4 = late.notes.find((x) => x.name === 'D4');
+  assert(d4.flat < 0.25, String(d4.flat));
+  eq(late.flat.map((x) => x.name), ['D4']);
+  eq([d4.flatTrend.state, d4.flatTrend.runs, d4.flatTrend.k, d4.flatTrend.n], ['lately', 8, 15, 24]);
+  assert(oftenWords(d4, 'flat').includes('More often lately: flat 15 of the 24 times in the last 8 runs (63%).'));
+  // a note after a particular note, put right lately
+  const afterE = (i) => i > 0 && isD(i) && seq.events[i - 1].midis[0] % 12 === 4;
+  const pf = pieceNoteStats(runsOn(days, (i, run) => (afterE(i) && run < 6 ? 25 : 0)), seq.events, p);
+  eq(pf.pairs.length, 0);
+  eq(pf.fixed.map((x) => (x.prev ? `${x.name}<${x.prev}` : x.name)).sort(), ['D4', 'D4<E4']);
+  // …getting better: once lately
+  const pb = pieceNoteStats(runsOn(days, (i, run) => (afterE(i) && (run < 6 || (run === 6 && i === 8)) ? 25 : 0)), seq.events, p);
+  eq(pb.pairs.map((x) => x.trend && x.trend.state), ['better']);
+  assert(pairWords(pb.pairs[0]).includes('Getting better'), pairWords(pb.pairs[0]));
+});
+
+import { saveResults, trimPieceRuns, fullRuns } from '../js/results.js';
+
+test('a piece keeps its runs of the last 6 weeks, up to 100 – and always its newest 10', () => {
+  const H = 3600e3, DAY = 86400000;
+  const prun = (d) => ({ d, t: 80, i: 80, ti: 80, e: 0, pc: 1, sec: null, steps: [1, 2], notes: [[1, 90, 90, 0, 2]] });
+  const store = {};
+  for (let k = 0; k < 120; k++) recordRun(store, 'piece:a', prun(NOW - (120 - k) * H), NOW);
+  eq(store['piece:a'].runs.length, RES.pieceRuns, '100 at most');
+  eq(fullRuns(store, 'piece:a').length, 100);
+  eq(lastRuns(store, 'piece:a').length, 10, 'the plots still take the newest 10');
+  // older than 6 weeks: summarised, unless one of the newest 10
+  const old = {};
+  for (let k = 0; k < 15; k++) recordRun(old, 'piece:b', prun(NOW - 50 * DAY + k * H), NOW);
+  for (let k = 0; k < 5; k++) recordRun(old, 'piece:b', prun(NOW - k * H), NOW);
+  eq(old['piece:b'].runs.length, 10);
+  const mix = {};
+  for (let k = 0; k < 5; k++) recordRun(mix, 'piece:c', prun(NOW - 50 * DAY + k * H), NOW);
+  for (let k = 0; k < 20; k++) recordRun(mix, 'piece:c', prun(NOW - 20 * DAY + k * H), NOW);
+  eq(mix['piece:c'].runs.length, 20, 'all 20 of the last 6 weeks, none older');
+  // scales: still 10
+  const sc = {};
+  for (let k = 0; k < 20; k++) recordRun(sc, 's', run(NOW - (20 - k) * H, 70), NOW);
+  eq(sc.s.runs.length, 10);
+});
+
+test('storage full: the oldest extra piece runs are summarised until the store fits', () => {
+  const H = 3600e3;
+  const prun = (d) => ({ d, t: 80, i: 80, ti: 80, e: 0, pc: 1, sec: null, steps: new Array(50).fill(1.5), notes: new Array(50).fill([1.5, 90, 90, 0, 2]) });
+  const make = () => {
+    const store = {};
+    for (let k = 0; k < 40; k++) recordRun(store, 'piece:a', prun(NOW - (80 - k) * H), NOW);
+    for (let k = 0; k < 40; k++) recordRun(store, 'piece:b', prun(NOW - (40 - k) * H), NOW);
+    return store;
+  };
+  const full = make();
+  const size = JSON.stringify(full).length;
+  const limited = (max) => ({ data: null, setItem(k, v) { if (v.length > max) throw new Error('full'); this.data = v; } });
+  const box = limited(Math.round(size * 0.6));
+  assert(saveResults(full, box), 'saved after making room');
+  assert(box.data.length <= size * 0.6);
+  const a = full['piece:a'].runs.length, b = full['piece:b'].runs.length;
+  assert(a + b < 80 && a >= 10 && b >= 10, `${a} ${b}`);
+  assert(a <= b, 'the oldest runs (piece a) go first');
+  // nothing more to summarise: every piece keeps its newest 10, and it says it could not save
+  const none = make();
+  eq(saveResults(none, limited(10)), false);
+  eq([none['piece:a'].runs.length, none['piece:b'].runs.length], [10, 10]);
+  eq(trimPieceRuns(none), false);
+  assert(saveResults(make(), limited(1e9)), 'fits: nothing summarised');
+});
+
 test('a piece: one run bar by bar – overall, intonation and timing', () => {
   const run = pieceRun(1, 6, 3, (b) => (b === 2 ? [50, 0, 100, 0, 0] : [0, 100, 100, 0, 0]));
   const html = pieceRunCharts({ run, prec: precisionAt(1), palette: { fg: '#000', muted: '#666', grid: '#ddd', bg: '#fff' }, width: 500 });

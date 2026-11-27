@@ -3,7 +3,7 @@
 import { test, eq, assert, near } from './harness.js';
 import { parsePiece, extractPieceText, parseKey } from '../js/pieceText.js';
 import { pieceSequence, pieceExercise, joinPieces, newPiece, splitLength, loadPieces, savePieces, STARTER, AI_PROMPT, fixPrompt, claudeLink, pieceShareLink, readPieceShare, addSharedPiece, barStarts, clampSection, sectionSequence, pieceNoteLabels } from '../js/pieces.js';
-import { makeRun, recordRun, sameShape } from '../js/results.js';
+import { makeRun, recordRun, sameShape, RES } from '../js/results.js';
 import { playedHow } from '../js/ui/resultsPage.js';
 import { instrumentInfo, detectionRange } from '../js/instruments.js';
 import { renderPerformance } from '../js/audio/synth.js';
@@ -383,7 +383,8 @@ test('pieces: a run of some bars is saved note by note across the whole piece', 
   eq(playedHow({ pc: 1, sec: null }), 'whole piece');
   // kept when the run is later summarised
   const store = {};
-  for (let k = 0; k < 12; k++) recordRun(store, 'piece:x', { ...run, d: 1000 + k, pc: 1, sec: [2, 3] }, 2000);
+  for (let k = 0; k < RES.pieceRuns + 2; k++) recordRun(store, 'piece:x', { ...run, d: 1000 + k, pc: 1, sec: [2, 3] }, 2000);
+  eq(store['piece:x'].older.length, 2, 'a piece keeps up to 100 full runs');
   assert(store['piece:x'].older.every((o) => o.pc === 1 && o.sec[0] === 2), 'older runs keep the bars played');
 });
 

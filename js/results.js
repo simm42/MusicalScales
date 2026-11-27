@@ -1,13 +1,17 @@
 // Results for syllabus items and pieces (id "piece:<piece id>"), kept in this browser only.
 //
 // For each item:
-//   runs   – the newest 10 runs in full (per-note detail, per-scale-note cents)
+//   runs   – the newest 10 runs in full (per-note detail, per-scale-note cents); a piece keeps
+//            its runs of the last 6 weeks in full, up to 100 (and always its newest 10), for
+//            the note-by-note analysis
 //   older  – earlier runs: date, scores, errors
 //   days   – runs older than a month, averaged per day
 //   months – day averages older than a year, averaged per month
 //
 // A piece not practised for 6 months (pieceDetailDays) keeps only its scores: its
 // full runs (the note-by-note detail, the largest part of the store) become summaries.
+// If the browser's storage is full, the oldest of the pieces' extra runs (beyond each
+// piece's newest 10) become summaries until the store fits.
 //
 // Scores depend on the precision level, so every record keeps total,
 // intonation, timing and errors for all five levels in `lv`
@@ -19,14 +23,42 @@ const KEY = 'scales.results.v1';
 const DAY = 86400000;
 const LEVELS = 5;
 
-export const RES = { fullRuns: 10, dayAfterDays: 30, monthAfterDays: 365, pieceDetailDays: 182 };
+export const RES = { fullRuns: 10, pieceRuns: 100, pieceRunDays: 42, dayAfterDays: 30, monthAfterDays: 365, pieceDetailDays: 182 };
 
 export function loadResults() {
   try { return normaliseStore(JSON.parse(localStorage.getItem(KEY))); } catch { return {}; }
 }
-/** @returns false if it could not be saved (storage full or blocked) */
-export function saveResults(store) {
-  try { localStorage.setItem(KEY, JSON.stringify(store)); return true; } catch { return false; }
+/**
+ * Save the store. When it does not fit, the oldest of the pieces' extra full runs (beyond
+ * their newest 10) are summarised, a quarter at a time, until it does.
+ * @param {object} [storage] for the tests (default localStorage)
+ * @returns false if it could not be saved (storage full or blocked)
+ */
+export function saveResults(store, storage = null) {
+  const put = () => { try { (storage || localStorage).setItem(KEY, JSON.stringify(store)); return true; } catch { return false; } };
+  if (put()) return true;
+  while (trimPieceRuns(store)) if (put()) return true;
+  return false;
+}
+
+/**
+ * Make room: summarise the oldest quarter (at least one) of all the pieces' full runs beyond
+ * each piece's newest 10. @returns false when there are none left to summarise
+ */
+export function trimPieceRuns(store) {
+  const extra = [];
+  for (const rec of Object.values(store)) {
+    if (!rec || !Array.isArray(rec.runs) || !rec.runs.some((r) => r.pc)) continue;
+    rec.runs.slice(0, Math.max(0, rec.runs.length - RES.fullRuns)).forEach((r) => extra.push({ rec, r }));
+  }
+  if (!extra.length) return false;
+  extra.sort((a, b) => a.r.d - b.r.d);
+  for (const { rec, r } of extra.slice(0, Math.max(1, Math.ceil(extra.length / 4)))) {
+    rec.runs.splice(rec.runs.indexOf(r), 1);
+    rec.older.push(summaryOf(r));
+  }
+  for (const rec of new Set(extra.map((x) => x.rec))) compact(rec);
+  return true;
 }
 
 const isObj = (x) => !!x && typeof x === 'object' && !Array.isArray(x);
@@ -213,11 +245,16 @@ export function detailCleared(rec) { return !!rec && !rec.runs.length && rec.old
 
 /**
  * Apply the storage rules: 10 full runs, then summaries, then per-day, then per-month.
- * A piece not practised for RES.pieceDetailDays keeps no full runs at all.
+ * A piece keeps its full runs of the last 6 weeks, up to 100 – whichever limit comes first –
+ * and always its newest 10, until it has not been practised for RES.pieceDetailDays: then it
+ * keeps no full runs at all.
  */
 export function compact(rec, now = Date.now()) {
   rec.runs.sort((a, b) => a.d - b.d);
-  while (rec.runs.length > RES.fullRuns) rec.older.push(summaryOf(rec.runs.shift()));
+  const piece = rec.runs.some((r) => r.pc);
+  const cut = now - RES.pieceRunDays * DAY;
+  const tooMany = () => (piece ? rec.runs.length > RES.pieceRuns || rec.runs[0].d < cut : true);
+  while (rec.runs.length > RES.fullRuns && tooMany()) rec.older.push(summaryOf(rec.runs.shift()));
   const newest = rec.runs.length ? rec.runs[rec.runs.length - 1].d : null;
   if (newest != null && rec.runs.some((r) => r.pc) && now - newest > RES.pieceDetailDays * DAY) {
     while (rec.runs.length) rec.older.push(summaryOf(rec.runs.shift()));
@@ -273,6 +310,8 @@ const project = (x, level, extra = {}) => ({ ...extra, ...atLevel(x, level) });
 
 /** Newest full runs (oldest first), for the 3D surface. */
 export function lastRuns(store, id, n = RES.fullRuns) { return recOf(store, id).runs.slice(-n); }
+/** Every full run kept (oldest first) – for a piece, up to 6 weeks of them. */
+export function fullRuns(store, id) { return recOf(store, id).runs.slice(); }
 
 /** Runs worth drawing on the 3D plot: those with no more than half of their notes missing. */
 export function surfaceRuns(runs) {

@@ -6,11 +6,11 @@ import { Surface3D } from './ui/surface3d.js';
 import { itemData, summaryData, chartsSvg, summaryChartsSvg, dateTime, playedHow, TWO_WEEKS, CLEARED_NOTE, PIECE_SURFACES, barGroupText, shortDate } from './ui/resultsPage.js';
 import { pieceBarSurfaces, pieceMistakes } from './barSurface.js';
 import { pieceNoteStats } from './noteStats.js';
-import { statsIntro, oftenWords, pairWords, MOVE_WORDS, c0, pct } from './ui/noteStatsView.js';
+import { statsIntro, oftenWords, pairWords, fixedWords, MOVE_WORDS, c0, pct } from './ui/noteStatsView.js';
 import { pieceSequence } from './pieces.js';
 import { parsePiece } from './pieceText.js';
 import { instrumentInfo } from './instruments.js';
-import { lastRuns, atLevel, surfaceRuns, sameShape, detailCleared } from './results.js';
+import { lastRuns, fullRuns, atLevel, surfaceRuns, sameShape, detailCleared } from './results.js';
 import { precisionAt } from './precision.js';
 
 let loading = null;
@@ -130,7 +130,7 @@ export async function makePdf(o) {
     if (!data.any) { text('No runs yet.', 10, 'normal', [102, 98, 111]); continue; }
     const cleared = item.piece && detailCleared(o.results[id]);
     const prec = precisionAt(o.precision ?? 2, item.settings.instrument);
-    const recentRuns = () => (o.range === '2w' ? lastRuns(o.results, id).filter((r) => r.d >= since) : data.last10);
+    const recentRuns = () => (o.range === '2w' ? fullRuns(o.results, id).filter((r) => r.d >= since).slice(-10) : data.last10);
     if ((o.charts.surface || o.charts.mistakes) && cleared) text(CLEARED_NOTE, 9, 'normal', [102, 98, 111]);
     else if (item.piece) {
       // a piece: three plots by groups of bars, then where the mistakes are, bar by bar
@@ -162,11 +162,13 @@ export async function makePdf(o) {
       }
       // what goes wrong, note by note
       let st = null;
-      if (o.charts.notes && !recent.length) { text('What goes wrong - note by note', 11, 'bold'); text(o.range === '2w' ? 'No runs of this piece in the last 2 weeks.' : 'No runs yet.', 9, 'normal', [102, 98, 111]); }
-      if (o.charts.notes && recent.length) {
+      // over every run kept (as on the Results tab), so each problem can be checked against the latest runs
+      const kept = fullRuns(o.results, id);
+      if (o.charts.notes && !kept.length) { text('What goes wrong - note by note', 11, 'bold'); text('No runs kept yet.', 9, 'normal', [102, 98, 111]); }
+      if (o.charts.notes && kept.length) {
         let events = [];
         try { if (item.pieceText) events = pieceSequence(parsePiece(item.pieceText), instrumentInfo(item.settings.instrument)).events; } catch (e) { console.error(e); }
-        st = pieceNoteStats(recent, events, prec);
+        st = pieceNoteStats(kept, events, prec);
         // never left out without a word
         if (!st.heard) { text('What goes wrong - note by note', 11, 'bold'); text('No notes were measured in these runs, so there is nothing to analyse yet.', 9, 'normal', [102, 98, 111]); }
       }
@@ -177,6 +179,7 @@ export async function makePdf(o) {
         if (st.sharp.length) { text('Often sharp', 9.5, 'bold'); st.sharp.forEach((x) => text(`- ${x.name}${oftenWords(x, 'sharp')}`, 9)); }
         if (st.flat.length) { text('Often flat', 9.5, 'bold'); st.flat.forEach((x) => text(`- ${x.name}${oftenWords(x, 'flat')}`, 9)); }
         if (!st.sharp.length && !st.flat.length) text('No note is often sharp or flat.', 9);
+        if (st.fixed.length) { text('Put right lately', 9.5, 'bold'); st.fixed.forEach((f) => text(`- ${f.prev ? `${f.name} after ${f.prev}` : f.name}${fixedWords(f)}`, 9)); }
         text('Notes that go out after a particular note', 9.5, 'bold');
         if (st.pairs.length) st.pairs.slice(0, 8).forEach((p) => text(`- ${p.name} after ${p.prev}${pairWords(p)}`, 9));
         else text('No note goes out more often after one particular note.', 9, 'normal', grey);
